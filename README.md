@@ -30,6 +30,35 @@ any rights holder of WCW or nWo. All trademarks belong to their owners.
 
 Linux (x86-64) is planned first. Open design decisions are listed in [docs/DECISIONS.md](docs/DECISIONS.md).
 
+## Building (Linux and WSL)
+
+At this stage the program only loads your ROM, checks that it is the supported one, and prints what it found.
+
+Install the tools (Ubuntu 24.04):
+
+```
+sudo apt install build-essential gdb cmake ninja-build
+```
+
+From a terminal:
+
+```
+cmake --preset debug
+cmake --build --preset debug
+ctest --preset debug
+./build/debug/turnbuckle-dive /path/to/your/rom.z64
+```
+
+The presets are `debug`, `relwithdebinfo` and `asan` (AddressSanitizer). The ROM can also be given with the `TD_ROM`
+environment variable.
+
+**VS Code** (connected to WSL): open the folder and install the suggested C/C++ and CMake Tools extensions. F5 builds
+the program and starts it under the debugger (the first time, CMake Tools asks for a configure preset: pick Debug); F7
+only builds.
+
+**Visual Studio 2022**: install the "Linux and embedded development with C++" workload, open the folder, and pick the
+WSL target in the toolbar. Visual Studio uses the same presets and debugs with gdb inside WSL.
+
 ## Licence
 
 The code in this repository is MIT licensed (see [LICENSE](LICENSE)). It builds on LibUltraShip, its Fast3D renderer and

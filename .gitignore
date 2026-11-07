@@ -26,8 +26,13 @@ saves/
 imgui.ini
 logs/
 
-# Editors and local tool settings
-.vscode/
+# Editors and local tool settings (the shared VS Code launch and extension files are kept)
+.vscode/*
+!.vscode/extensions.json
+!.vscode/launch.json
+.vs/
+out/
+CMakeUserPresets.json
 .idea/
 .claude/settings.local.json
 .DS_Store
