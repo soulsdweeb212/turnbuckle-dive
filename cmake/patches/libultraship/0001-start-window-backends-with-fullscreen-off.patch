@@ -1,0 +1,22 @@
+Start the window backends with fullscreen off
+
+GfxWindowBackend::mFullScreen had no initial value, and neither backend constructor sets it, so it held
+whatever the heap held (0xc4 in a Linux debug build). IsFullscreen() then reported a normal window as
+fullscreen, Window::SaveWindowToConfig() saved Window.Fullscreen.Enabled = true on exit, and the next run
+started fullscreen. SetFullscreenImpl() also compares against it to skip redundant switches.
+
+Still present in LibUltraShip main on 2026-11-08; drop this patch once it is fixed there.
+
+diff --git a/include/fast/backends/gfx_window_manager_api.h b/include/fast/backends/gfx_window_manager_api.h
+index 3759991c..ad4a8521 100644
+--- a/include/fast/backends/gfx_window_manager_api.h
++++ b/include/fast/backends/gfx_window_manager_api.h
+@@ -48,7 +48,7 @@ class GfxWindowBackend {
+     bool (*mOnMouseButtonDown)(int btn);
+     bool (*mOnMouseButtonUp)(int btn);
+     uint32_t mTargetFps = 60;
+-    bool mFullScreen;
++    bool mFullScreen = false;
+     bool mIsRunning = true;
+     bool mVsyncEnabled = true;
+ };

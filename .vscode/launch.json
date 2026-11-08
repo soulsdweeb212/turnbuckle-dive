@@ -17,6 +17,23 @@
                     "ignoreFailures": true
                 }
             ]
+        },
+        {
+            "name": "Debug hello window",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${input:helloPath}",
+            "args": [],
+            "cwd": "${input:helloDirectory}",
+            "environment": [],
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ]
         }
     ],
     "inputs": [
@@ -25,6 +42,18 @@
             "type": "command",
             "command": "cmake.launchTargetPath",
             "args": { "targetName": "turnbuckle-dive" }
+        },
+        {
+            "id": "helloPath",
+            "type": "command",
+            "command": "cmake.launchTargetPath",
+            "args": { "targetName": "hello" }
+        },
+        {
+            "id": "helloDirectory",
+            "type": "command",
+            "command": "cmake.getLaunchTargetDirectory",
+            "args": { "targetName": "hello" }
         }
     ]
 }

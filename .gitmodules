@@ -1,0 +1,4 @@
+[submodule "lib/libultraship"]
+	path = lib/libultraship
+	url = https://github.com/Kenix3/libultraship.git
+	ignore = dirty

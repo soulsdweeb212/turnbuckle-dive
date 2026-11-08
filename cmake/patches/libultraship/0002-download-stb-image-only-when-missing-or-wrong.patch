@@ -1,0 +1,24 @@
+Download stb_image.h only when it is missing or wrong
+
+cmake/dependencies/common.cmake downloads stb_image.h on every configure, with no hash and no status check. When
+the download fails (offline, for example), CMake says nothing and leaves an empty file, so the configure succeeds
+and the build then fails in the GUI texture code. With EXPECTED_HASH, CMake keeps a file that already matches, so
+no network is needed, and it stops with an error when a needed download fails. The hash is of stb_image.h at the
+pinned stb commit 0bc88af4 (282848 bytes).
+
+Still present in LibUltraShip main on 2026-11-08; drop this patch once it is fixed there.
+
+diff --git a/cmake/dependencies/common.cmake b/cmake/dependencies/common.cmake
+index ff2045c3..6c757bc9 100644
+--- a/cmake/dependencies/common.cmake
++++ b/cmake/dependencies/common.cmake
+@@ -52,7 +52,8 @@ endif()
+ 
+ #=================== STB ===================
+ set(STB_DIR ${CMAKE_BINARY_DIR}/_deps/stb)
+-file(DOWNLOAD "https://github.com/nothings/stb/raw/0bc88af4de5fb022db643c2d8e549a0927749354/stb_image.h" "${STB_DIR}/stb_image.h")
++file(DOWNLOAD "https://github.com/nothings/stb/raw/0bc88af4de5fb022db643c2d8e549a0927749354/stb_image.h" "${STB_DIR}/stb_image.h"
++    EXPECTED_HASH SHA256=c54b15a689e6a1f32c75e2ec23afa442e3e0e37e894b73c1974d08679b20dd5c)
+ file(WRITE "${STB_DIR}/stb_impl.c" "#define STB_IMAGE_IMPLEMENTATION\n#include \"stb_image.h\"")
+ 
+ add_library(stb STATIC)
