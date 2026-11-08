@@ -1,0 +1,113 @@
+# Continuous integration (CI): after every push and for every pull request, GitHub builds Turnbuckle Dive on a Linux
+# machine and on a Windows machine, runs the tests, and opens hello's window to check its picture. The results are on
+# the repository's Actions tab. docs/CI.md explains every step in plain words, how to read the results, how to run the
+# same steps on your own computer, and what to do when a job fails.
+#
+# Each job uses the same CMake presets as a local build (CMakePresets.json), so "what CI does" and "what you type" are
+# the same commands.
+
+name: CI
+
+on:
+  push:
+  pull_request:
+  # Adds a "Run workflow" button on the Actions tab, to start a run by hand.
+  workflow_dispatch:
+
+# The jobs only need to read the code.
+permissions:
+  contents: read
+
+# When a branch gets a newer push, the run still going for the older one is cancelled.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    name: Linux (GCC)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Get the code, with the LibUltraShip submodule
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Install the tools and libraries
+        # The first line is the same list as in README.md; keep the two the same. xvfb (a virtual screen) and
+        # libgl1-mesa-dri (Mesa's software renderer) let hello open its window on a machine without a screen.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential gdb cmake ninja-build pkg-config libpng-dev libglew-dev libgl-dev libegl-dev libgles-dev libzip-dev zipcmp zipmerge ziptool nlohmann-json3-dev libtinyxml2-dev libspdlog-dev libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxfixes-dev libxi-dev libxss-dev libxtst-dev libxkbcommon-dev libwayland-dev libdecor-0-dev libpulse-dev libasound2-dev libudev-dev libdbus-1-dev
+          sudo apt-get install -y xvfb libgl1-mesa-dri
+
+      - name: Configure (preset "debug")
+        # Also downloads SDL3, ImGui and LibUltraShip's small libraries, and applies cmake/patches/libultraship.
+        run: cmake --preset debug
+
+      - name: Build
+        run: cmake --build --preset debug
+
+      - name: Run the tests
+        run: ctest --preset debug
+
+      - name: Check hello's picture
+        # xvfb-run gives hello a virtual screen, where Mesa draws on the CPU. --check reads the picture back after the
+        # third frame and makes hello exit with code 2 if the corner markers are wrong. The machine has no sound card,
+        # so SDL's "dummy" sound driver is used. timeout stops a hung run after 5 minutes.
+        working-directory: build/debug
+        env:
+          SDL_AUDIODRIVER: dummy
+        run: timeout 300 xvfb-run --auto-servernum --server-args="-screen 0 1280x1024x24" ./hello --check --frames 30
+
+  windows:
+    name: Windows (MSVC)
+    runs-on: windows-2022
+    timeout-minutes: 120
+    steps:
+      - name: Get the code, with the LibUltraShip submodule
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Restore the libraries vcpkg built in earlier runs
+        # On Windows, LibUltraShip gets SDL3, GLEW, zlib, bzip2, libzip, nlohmann-json, tinyxml2 and spdlog through
+        # vcpkg, which builds them from source (about 15 minutes) and keeps a zip of each in the folder below. Restoring
+        # those zips from the last run lets vcpkg skip the builds. They are saved again at the end of this job.
+        uses: actions/cache/restore@v6
+        with:
+          path: ~/AppData/Local/vcpkg/archives
+          key: vcpkg-archives-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: vcpkg-archives-
+
+      - name: Set up Visual Studio's compiler (cl) for 64-bit Windows
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Configure (preset "windows-relwithdebinfo")
+        # The first time, this downloads vcpkg into build/_vcpkg, then vcpkg builds or restores the libraries above.
+        run: cmake --preset windows-relwithdebinfo
+
+      - name: Save the libraries vcpkg built
+        # Runs even when a later step fails, so the next run does not build them again. If configure stopped before
+        # vcpkg ran there is nothing to save, and that is fine.
+        if: always()
+        continue-on-error: true
+        uses: actions/cache/save@v6
+        with:
+          path: ~/AppData/Local/vcpkg/archives
+          key: vcpkg-archives-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Build
+        run: cmake --build --preset windows-relwithdebinfo
+
+      - name: Run the tests
+        run: ctest --preset windows-relwithdebinfo
+
+      - name: Check hello's picture
+        # Same check as on Linux; here hello draws with Direct3D 11 (Windows' software renderer on this machine).
+        working-directory: build/windows-relwithdebinfo
+        timeout-minutes: 5
+        run: .\hello.exe --check --frames 30

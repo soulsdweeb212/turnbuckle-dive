@@ -29,7 +29,10 @@ function(td_strict target)
         CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
     if(MSVC)
         # clang-cl reads -Wall as -Weverything, so it gets /W4 like cl. Calling an undeclared function is an error.
+        # _CRT_SECURE_NO_WARNINGS: MSVC warns about standard C functions such as fopen and getenv and suggests its
+        # own fopen_s family instead, which other systems do not have.
         target_compile_options(${target} PRIVATE /W4)
+        target_compile_definitions(${target} PRIVATE _CRT_SECURE_NO_WARNINGS)
         if(CMAKE_C_COMPILER_ID STREQUAL "Clang")
             target_compile_options(${target} PRIVATE $<$<COMPILE_LANGUAGE:C>:-Werror=implicit-function-declaration>)
         else()
@@ -62,6 +65,11 @@ if(BUILD_TESTING)
     target_link_libraries(test_sha1 PRIVATE td_core)
     td_strict(test_sha1)
     add_test(NAME sha1 COMMAND test_sha1)
+
+    # The program itself, started with a ROM that does not exist: it must start and say so. (The tests never use a
+    # ROM, because CI machines must never have one.)
+    add_test(NAME rom_missing COMMAND turnbuckle-dive ${CMAKE_BINARY_DIR}/no-rom-here.z64)
+    set_tests_properties(rom_missing PROPERTIES PASS_REGULAR_EXPRESSION "no-rom-here\\.z64: file not found")
 endif()
 
 if(TD_BUILD_HELLO)

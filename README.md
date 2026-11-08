@@ -1,5 +1,7 @@
 # Turnbuckle Dive
 
+[![CI](https://github.com/soulsdweeb212/turnbuckle-dive/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/soulsdweeb212/turnbuckle-dive/actions/workflows/ci.yml)
+
 Turnbuckle Dive is a PC port of WCW/nWo Revenge (Nintendo 64), built on
 [LibUltraShip](https://github.com/Kenix3/libultraship) and the matching decompilation of the game.
 
@@ -88,6 +90,12 @@ the debugger (the first time, CMake Tools asks for a configure preset: pick Debu
 **Visual Studio 2022**: install the "Linux and embedded development with C++" workload, run
 `sudo apt install rsync zip` in WSL as well (Visual Studio copies files with them), open the folder, and pick the WSL
 target in the toolbar. Visual Studio uses the same presets and debugs with gdb inside WSL.
+
+## Continuous integration
+
+After every push, GitHub builds and tests the project on Linux and on Windows. [docs/CI.md](docs/CI.md) explains what
+runs, how to read the results, how to run the same steps on your own computer (including a native Windows build), and
+what to do when a run fails.
 
 ## Licence
 
