@@ -1,0 +1,191 @@
+Handle every field gSPModifyVertex can change
+
+gSPModifyVertex (G_MODIFYVTX) changes one field of a vertex that G_VTX has already loaded and transformed: its colour
+(G_MWO_POINT_RGBA), texture coordinates (G_MWO_POINT_ST), screen position (G_MWO_POINT_XYSCREEN) or screen depth
+(G_MWO_POINT_ZSCREEN). Fast3D handled only ST and asserted on the others (SUPPORT_CHECK), so a debug build stopped at
+the first other one and a release build wrote its value into the texture coordinates. WCW/nWo Revenge draws its
+sprites this way: VTX, four ZSCREEN, four XYSCREEN, RGBA and ST, then a QUAD.
+
+The number formats come from the N64 SDK. XYSCREEN holds x in its high half and y in its low half, each signed with
+2 fraction bits like the viewport's scale and translation (gbi.h's Vp comment). ZSCREEN holds a screen depth with 16
+fraction bits in the units of the viewport's z scale and translation: gbi.h gives screen depth 10 integer bits
+(G_MAXZ) plus 16 fraction bits, and its G_DEPTOZS builds this number for gSPBranchLessZ, which compares it with the
+same field of the vertex. With the usual viewport (G_MAXZ / 2 for z scale and translation) 0 is the near plane and
+0x3FE << 16 the far one.
+
+The N64 keeps screen coordinates for a loaded vertex; Fast3D keeps clip coordinates and lets the GPU divide by w and
+apply the viewport. So CalcAndSetViewport now keeps a copy of the viewport (RSP::viewport), and a new screen position
+or depth is worked back through it into clip coordinates at the vertex's own w (x then goes through
+AdjXForAspectRatio, as in GfxSpVertex). Keeping w keeps 1/w, and with it perspective-correct texturing, as on the
+N64. A depth beyond the near or far plane is moved onto that plane, because the GPU would clip it away. After a new
+position or depth the trivial-rejection flags are worked out again (GfxSpVertex's code for them is now
+ClipRejectFlags, used by both). The N64 keeps the flags G_VTX set, but those are for its clip box, usually larger
+than the screen, while Fast3D's are for the screen itself; keeping them would throw away a sprite whose vertices were
+loaded off screen. RGBA replaces the colour and the alpha, which holds the fog factor when G_FOG is on, as on the
+N64. An unknown field is now logged and ignored instead of asserting, and so is a vertex number past the end of the
+vertex buffer (the old code wrote past it).
+
+Not in LibUltraShip main on 2026-11-08; drop this patch once it is there.
+
+diff --git a/include/fast/interpreter.h b/include/fast/interpreter.h
+index f66cbf0e..1ff55a8a 100644
+--- a/include/fast/interpreter.h
++++ b/include/fast/interpreter.h
+@@ -262,6 +262,10 @@ struct RSP {
+     } texture_scaling_factor;
+ 
+     struct LoadedVertex loaded_vertices[MAX_VERTICES + 4];
++
++    // The viewport as the display list last loaded it (G_MV_VIEWPORT): x and y with 2 fraction bits, z in screen-depth
++    // units. GfxSpModifyVertex maps screen positions and depths back through it.
++    F3DVp_t viewport;
+ };
+ 
+ struct RDP {
+diff --git a/src/fast/interpreter.cpp b/src/fast/interpreter.cpp
+index 73f59f6e..3ef2b3fa 100644
+--- a/src/fast/interpreter.cpp
++++ b/src/fast/interpreter.cpp
+@@ -1605,6 +1605,30 @@ void Interpreter::AdjustWidthHeightForScale(uint32_t& width, uint32_t& height, u
+     }
+ }
+ 
++// The sides of the view volume that a vertex in clip coordinates lies outside. GfxSpTri1 skips a triangle whose three
++// vertices are all outside the same side.
++static uint8_t ClipRejectFlags(float x, float y, float z, float w) {
++    uint8_t clip_rej = 0;
++
++    if (x < -w) {
++        clip_rej |= 1; // CLIP_LEFT
++    }
++    if (x > w) {
++        clip_rej |= 2; // CLIP_RIGHT
++    }
++    if (y < -w) {
++        clip_rej |= 4; // CLIP_BOTTOM
++    }
++    if (y > w) {
++        clip_rej |= 8; // CLIP_TOP
++    }
++    // if (z < -w) clip_rej |= 16; // CLIP_NEAR
++    if (z > w) {
++        clip_rej |= 32; // CLIP_FAR
++    }
++    return clip_rej;
++}
++
+ void Interpreter::GfxSpVertex(size_t n_vertices, size_t dest_index, const F3DVtx* vertices) {
+     for (size_t i = 0; i < n_vertices; i++, dest_index++) {
+         const F3DVtx_t* v = &vertices[i].v;
+@@ -1750,23 +1774,7 @@ void Interpreter::GfxSpVertex(size_t n_vertices, size_t dest_index, const F3DVtx
+         d->v = V;
+ 
+         // trivial clip rejection
+-        d->clip_rej = 0;
+-        if (x < -w) {
+-            d->clip_rej |= 1; // CLIP_LEFT
+-        }
+-        if (x > w) {
+-            d->clip_rej |= 2; // CLIP_RIGHT
+-        }
+-        if (y < -w) {
+-            d->clip_rej |= 4; // CLIP_BOTTOM
+-        }
+-        if (y > w) {
+-            d->clip_rej |= 8; // CLIP_TOP
+-        }
+-        // if (z < -w) d->clip_rej |= 16; // CLIP_NEAR
+-        if (z > w) {
+-            d->clip_rej |= 32; // CLIP_FAR
+-        }
++        d->clip_rej = ClipRejectFlags(x, y, z, w);
+ 
+         d->x = x;
+         d->y = y;
+@@ -1793,15 +1801,71 @@ void Interpreter::GfxSpVertex(size_t n_vertices, size_t dest_index, const F3DVtx
+     }
+ }
+ 
++// G_MODIFYVTX (gSPModifyVertex) overwrites one field of a vertex that G_VTX has already loaded and transformed. The
++// N64 keeps such a vertex as clip coordinates (used only for clipping), screen x and y, screen depth, 1/w, a colour
++// and texture coordinates, and `where` names the field to replace. Fast3D keeps clip coordinates instead of screen
++// ones (x, y, z and w, x already adjusted for the aspect ratio) and leaves the division by w and the viewport to the
++// GPU. So a new screen position or depth is worked back, through the current viewport, into clip coordinates at the
++// vertex's own w. That keeps 1/w, as the N64 does, so perspective-correct texturing stays as it was. The
++// trivial-rejection flags are then worked out again: the N64 keeps the ones G_VTX set, but those are for its clip box,
++// usually larger than the screen (gSPClipRatio), while Fast3D's are for the screen itself, so keeping them would throw
++// away sprites the N64 draws. Fast3D clips at the viewport's edges, so a point placed outside the viewport is cut off
++// there; the N64 draws up to the scissor.
+ void Interpreter::GfxSpModifyVertex(uint16_t vtx_idx, uint8_t where, uint32_t val) {
+-    SUPPORT_CHECK(where == G_MWO_POINT_ST);
+-
+-    int16_t s = (int16_t)(val >> 16);
+-    int16_t t = (int16_t)val;
++    if (vtx_idx >= MAX_VERTICES) {
++        SPDLOG_WARN("G_MODIFYVTX: vertex {} is outside the vertex buffer", vtx_idx);
++        return;
++    }
+ 
+     LoadedVertex* v = &mRsp->loaded_vertices[vtx_idx];
+-    v->u = s;
+-    v->v = t;
++    const F3DVp_t* vp = &mRsp->viewport;
++
++    switch (where) {
++        case G_MWO_POINT_RGBA:
++            // The shade colour, 0xRRGGBBAA. It replaces the colour G_VTX worked out (lit, with G_LIGHTING) and the
++            // alpha, which holds the fog factor with G_FOG: the N64 keeps both in these four bytes.
++            v->color.r = (uint8_t)(val >> 24);
++            v->color.g = (uint8_t)(val >> 16);
++            v->color.b = (uint8_t)(val >> 8);
++            v->color.a = (uint8_t)val;
++            break;
++        case G_MWO_POINT_ST:
++            // Texture coordinates s (high half) and t (low half), signed with 5 fraction bits. They replace the ones
++            // G_VTX worked out, which already include G_TEXTURE's scale.
++            v->u = (int16_t)(val >> 16);
++            v->v = (int16_t)val;
++            break;
++        case G_MWO_POINT_XYSCREEN:
++            // Screen x (high half) and y (low half), signed with 2 fraction bits like the viewport's scale and
++            // translation. The N64 works them out from clip coordinates as vtrans + x/w * vscale and
++            // vtrans - y/w * vscale (screen y grows downwards, clip y upwards); this works backwards from them. Before
++            // any viewport is loaded there is nothing to work back through.
++            if (vp->vscale[0] != 0 && vp->vscale[1] != 0) {
++                float x = ((int16_t)(val >> 16) - vp->vtrans[0]) / (float)vp->vscale[0];
++                float y = (vp->vtrans[1] - (int16_t)val) / (float)vp->vscale[1];
++
++                v->x = AdjXForAspectRatio(x * v->w);
++                v->y = y * v->w;
++                v->clip_rej = ClipRejectFlags(v->x, v->y, v->z, v->w);
++            }
++            break;
++        case G_MWO_POINT_ZSCREEN:
++            // Screen depth, signed with 16 fraction bits, in the units of the viewport's z scale and translation: the
++            // N64 works it out as vtrans + z/w * vscale. With the usual viewport (G_MAXZ / 2 for both) 0 is the near
++            // plane and 0x3FE << 16 the far one. gbi.h's G_DEPTOZS makes the same number for gSPBranchLessZ, which
++            // compares it with this field. A depth beyond the near or far plane is moved onto that plane, because the
++            // GPU would clip it away where the N64 still draws it.
++            if (vp->vscale[2] != 0) {
++                float z = ((int32_t)val / 65536.0f - vp->vtrans[2]) / vp->vscale[2];
++
++                v->z = std::clamp(z, -1.0f, 1.0f) * v->w;
++                v->clip_rej = ClipRejectFlags(v->x, v->y, v->z, v->w);
++            }
++            break;
++        default:
++            SPDLOG_WARN("G_MODIFYVTX: offset 0x{:X} is not a vertex field", where);
++            break;
++    }
+ }
+ 
+ void Interpreter::GfxSpTri1(uint8_t vtx1_idx, uint8_t vtx2_idx, uint8_t vtx3_idx, bool is_rect) {
+@@ -2365,6 +2429,8 @@ void Interpreter::AdjustVIewportOrScissor(XYWidthHeight* area) {
+ }
+ 
+ void Interpreter::CalcAndSetViewport(const F3DVp_t* viewport) {
++    mRsp->viewport = *viewport;
++
+     // 2 bits fraction
+     float width = 2.0f * viewport->vscale[0] / 4.0f;
+     float height = 2.0f * viewport->vscale[1] / 4.0f;

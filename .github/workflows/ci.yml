@@ -54,12 +54,13 @@ jobs:
 
       - name: Check hello's picture
         # xvfb-run gives hello a virtual screen, where Mesa draws on the CPU. --check reads the picture back after the
-        # third frame and makes hello exit with code 2 if the corner markers are wrong. The machine has no sound card,
-        # so SDL's "dummy" sound driver is used. timeout stops a hung run after 5 minutes.
+        # third frame and makes hello exit with code 2 if the picture is wrong (its corner markers or its test shapes,
+        # described at the top of hello/main.cpp); in --check runs a crash ends hello at once. The machine has no sound
+        # card, so SDL's "dummy" sound driver is used. timeout stops a hung run after 2 minutes (exit code 124).
         working-directory: build/debug
         env:
           SDL_AUDIODRIVER: dummy
-        run: timeout 300 xvfb-run --auto-servernum --server-args="-screen 0 1280x1024x24" ./hello --check --frames 30
+        run: timeout 120 xvfb-run --auto-servernum --server-args="-screen 0 1280x1024x24" ./hello --check --frames 30
 
   windows:
     name: Windows (MSVC)
@@ -73,8 +74,8 @@ jobs:
 
       - name: Restore the libraries vcpkg built in earlier runs
         # On Windows, LibUltraShip gets SDL3, GLEW, zlib, bzip2, libzip, nlohmann-json, tinyxml2 and spdlog through
-        # vcpkg, which builds them from source and keeps a zip of each in the folder below. Restoring
-        # those zips from the last run lets vcpkg skip the builds. They are saved again at the end of this job.
+        # vcpkg, which builds them from source and keeps a zip of each in the folder below. Restoring those zips from the
+        # last run lets vcpkg skip the builds. They are saved again right after Configure.
         uses: actions/cache/restore@v6
         with:
           path: ~/AppData/Local/vcpkg/archives
@@ -91,8 +92,10 @@ jobs:
         run: cmake --preset windows-relwithdebinfo
 
       - name: Save the libraries vcpkg built
-        # Runs even when a later step fails, so the next run does not build them again. continue-on-error: if
-        # configure stopped before vcpkg ran, there is nothing to save, and the job goes on to report that failure.
+        # if: always() makes this step run even when Configure failed or the run was cancelled, because vcpkg may
+        # already have built some libraries. Build and the tests come after it, so they cannot stop the save.
+        # continue-on-error: if Configure stopped before vcpkg ran, there is nothing to save, and the job goes on to
+        # report that failure.
         if: always()
         continue-on-error: true
         uses: actions/cache/save@v6
@@ -107,7 +110,14 @@ jobs:
         run: ctest --preset windows-relwithdebinfo
 
       - name: Check hello's picture
-        # Same check as on Linux; here hello draws with Direct3D 11 (Windows' software renderer on this machine).
+        # Same check as on Linux; here hello draws with Direct3D 11 (Windows' software renderer on this machine). Some
+        # LibUltraShip errors open a message box that nobody can close here, so the step is stopped after 2 minutes.
         working-directory: build/windows-relwithdebinfo
-        timeout-minutes: 5
+        timeout-minutes: 2
         run: .\hello.exe --check --frames 30
+
+      - name: Show LibUltraShip's log (only when a step failed)
+        # On Windows, LibUltraShip writes its messages to this file next to hello rather than to the step's output.
+        if: failure()
+        working-directory: build/windows-relwithdebinfo
+        run: if (Test-Path logs/hello.log) { Get-Content logs/hello.log -Tail 200 }

@@ -18,5 +18,5 @@ it. Dates are when the decision was made. Several recommendations draw on the ex
 | D10 | Extras (widescreen, 60 fps, HD textures) | open | after P7; keep the original 30 fps logic first |
 | D11 | Windows compiler | open | clang-cl |
 | D12 | Storage of the two overlays' data on PC | open | a generated per-overlay reset that re-initialises the overlay's globals (portable) |
-| D13 | Reference emulator for comparisons and traces | open | two tiers: (A) a scriptable emulator for traces, chosen first; (B) an accurate LLE reference, built outside this repo |
+| D13 | Reference for comparisons and traces during development | open | an emulator used only as an outside measuring tool, never part of the port: (A) a scriptable one for screenshots and traces, chosen first; (B) an accurate low-level one as a second opinion |
 | D14 | Distribution model | open | (a) source only: users build with their own ROM; or (b) prebuilt binaries that contain no ROM bytes, which needs D3(c). Decided together with D3 |

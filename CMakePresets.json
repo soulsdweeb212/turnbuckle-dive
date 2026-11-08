@@ -58,7 +58,7 @@
         {
             "name": "windows-base",
             "hidden": true,
-            "description": "Visual Studio's compiler (cl) for 64-bit Windows; run from a Developer PowerShell or Visual Studio",
+            "description": "Visual Studio's compiler (cl) for 64-bit Windows; run from the x64 Native Tools Command Prompt for VS 2022 or from Visual Studio",
             "generator": "Ninja",
             "binaryDir": "${sourceDir}/build/${presetName}",
             "condition": {

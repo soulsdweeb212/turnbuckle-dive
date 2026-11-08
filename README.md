@@ -78,10 +78,12 @@ ctest --preset debug
 The presets are `debug`, `relwithdebinfo` and `asan` (AddressSanitizer). The ROM can also be given with the `TD_ROM`
 environment variable.
 
-`hello --check` draws at twice the window's resolution, reads the picture back and checks the markers drawn at its
-corners; `hello --frames 600` draws 600 frames and prints how long they took. hello writes `logs/`, `hello.cfg.json`
-and `imgui.ini` in the folder it is started from. Under WSL it draws with the GPU through Direct3D 12 when it can; set
-`GALLIUM_DRIVER=llvmpipe` to draw on the CPU instead.
+`hello --check` draws at twice the window's resolution, reads the picture back and checks it: the markers drawn at its
+corners, a triangle placed only by a force matrix (`gSPForceMatrix`), and a sprite built the way the game builds its
+sprites (`gSPModifyVertex`) at a depth between two walls. Each shape must fill exactly its box; the triangle and the
+sprite rely on fixes 0003 and 0004 in `cmake/patches/libultraship`. `hello --frames 600` draws 600 frames and prints
+how long they took. hello writes `logs/`, `hello.cfg.json` and `imgui.ini` in the folder it is started from. Under WSL
+it draws with the GPU through Direct3D 12 when it can; set `GALLIUM_DRIVER=llvmpipe` to draw on the CPU instead.
 
 **VS Code** (connected to WSL): open the folder and install the suggested C/C++ and CMake Tools extensions. Choose
 "Debug Turnbuckle Dive" or "Debug hello window" in the Run and Debug view; F5 builds that program and starts it under

@@ -73,6 +73,12 @@ if(BUILD_TESTING)
 endif()
 
 if(TD_BUILD_HELLO)
+    # Visual Studio's 32-bit compiler would only fail after vcpkg has spent minutes building 64-bit libraries, so stop
+    # at once if it is the one in use.
+    if(MSVC AND NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
+        message(FATAL_ERROR "This is Visual Studio's 32-bit compiler. Delete the build folder, open the "
+                            "\"x64 Native Tools Command Prompt for VS 2022\" and configure again.")
+    endif()
     include(cmake/libultraship.cmake)
 
     add_executable(hello hello/main.cpp)

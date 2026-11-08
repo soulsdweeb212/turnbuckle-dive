@@ -39,7 +39,10 @@ A job is a list of *steps* that run in order, top to bottom. A step is one of tw
 **Pass or fail.** Every command ends with an *exit code*: 0 means it worked, anything else means it did not. When a
 step's command ends with a non-zero code, the step fails, the job stops there, and the job is marked with a red cross.
 That is why our checks end with a non-zero code when something is wrong: `ctest` does when a test fails, and
-`hello --check` ends with code 2 when the picture is wrong (and 1 when hello cannot start).
+`hello --check` ends with code 2 when the picture is wrong and 1 when hello's own start-up checks fail. A crash fails
+the step at once, and a hang is stopped by the step's time limit of 2 minutes (on Linux this shows as exit code 124).
+On Windows the steps run in PowerShell, which reports only the exit code of a step's last command, so there every
+command has a step of its own.
 
 **What happens after a push:**
 
@@ -52,8 +55,8 @@ That is why our checks end with a non-zero code when something is wrong: `ctest`
    result of the latest run on `main`.
 
 **The cache.** Because runners are thrown away, anything built in one run is lost. The Windows job therefore saves
-vcpkg's built libraries in GitHub's storage at the end of a run and restores them at the start of the next, so they are
-not built every time.
+vcpkg's built libraries in GitHub's storage right after the Configure step and restores them at the start of the next
+run, so they are not built every time.
 
 **Safety.** The workflow needs no passwords or keys, and `permissions: contents: read` means it can only read the code.
 No ROM or file from the game may ever be in the repository, so none can reach CI.
@@ -84,7 +87,8 @@ The steps below have the same names as on GitHub.
    starts with a ROM path that does not exist and must say "file not found"). No test uses a ROM; CI must never have
    one.
 6. *Check hello's picture*: in `build/debug`, `xvfb-run ./hello --check --frames 30`. hello draws 30 frames; after the
-   third it reads the picture back and checks the white markers in its corners.
+   third it reads the picture back and checks the white markers in its corners and the shapes placed with
+   `gSPForceMatrix` and `gSPModifyVertex` (the comment at the top of `hello/main.cpp` describes the picture).
 
 **Windows (MSVC)**, on Windows Server 2022 with Visual Studio 2022:
 
@@ -97,9 +101,12 @@ The steps below have the same names as on GitHub.
    build (or unzip) the libraries, then everything else happens as on Linux.
 5. *Save the libraries vcpkg built*: stores the zips for the next run, even if a later step fails.
 6. *Build*, 7. *Run the tests*, 8. *Check hello's picture*: as on Linux. On Windows, hello draws with Direct3D 11.
+9. *Show LibUltraShip's log*, only when a step failed. On Windows, LibUltraShip writes its messages to
+   `logs/hello.log` next to hello rather than to the step's output, so this step prints that file.
 
 Windows uses RelWithDebInfo rather than Debug because in a Debug build LibUltraShip moves the program's output to a
-console window of its own, and CI would not see what hello prints.
+console window of its own, and CI would not see what hello prints. Some of LibUltraShip's errors on Windows open a
+message box; on CI nobody can close it, so such a run ends at the step's time limit.
 
 ## Running the same steps on your own computer
 
@@ -115,15 +122,18 @@ cd build/debug && ./hello --check --frames 30
 
 Under WSL, hello's window opens on your desktop, so no virtual screen is needed.
 
-**Windows**: install Visual Studio 2022 with the "Desktop development with C++" workload, and Git for Windows. Open
-"Developer PowerShell for VS 2022", go to the repository folder, and run:
+**Windows**: install Visual Studio 2022 with the "Desktop development with C++" workload, and Git for Windows. A
+Windows build needs its own clone on the Windows side: a copy inside WSL cannot be built from Windows. Open the
+"x64 Native Tools Command Prompt for VS 2022" (Start menu, Visual Studio 2022 folder; it sets up the 64-bit compiler,
+which the "Developer PowerShell" does not) and run:
 
 ```
-git submodule update --init
+git clone --recursive https://github.com/soulsdweeb212/turnbuckle-dive.git C:\src\turnbuckle-dive
+cd C:\src\turnbuckle-dive
 cmake --preset windows-relwithdebinfo
 cmake --build --preset windows-relwithdebinfo
 ctest --preset windows-relwithdebinfo
-cd build\windows-relwithdebinfo; .\hello.exe --check --frames 30
+cd build\windows-relwithdebinfo && hello.exe --check --frames 30
 ```
 
 The first configure downloads vcpkg into `build\_vcpkg` and builds the libraries, which takes a few minutes. Deleting
@@ -149,14 +159,21 @@ A test passes when its program ends with exit code 0, or, as here, when its outp
         run: gcc --version
 ```
 
-`name:` is what GitHub shows, and `run:` is the command. Steps run in the order they appear. To run several commands
-in one step, write `run: |` and put each command on its own line below it, indented further (the install step in
-`ci.yml` does this).
+`name:` is what GitHub shows, and `run:` is the command. Steps run in the order they appear. On Linux, several
+commands can share a step: write `run: |` and put each command on its own line below it, indented further (the install
+step in `ci.yml` does this); bash stops at the first one that fails. On Windows, give each command its own step (see
+"Pass or fail").
 
 **Adding another system** (macOS, for example). Copy a whole job, from its key (such as `linux:`) to the end of its
 steps, give it a new key and `name:`, and set `runs-on:` to that system's runner (for example `macos-15`). Then change
-the steps that differ: how the tools are installed (Homebrew's `brew install` on macOS instead of `apt-get`) and which
-preset to configure with (add it to `CMakePresets.json` first).
+the steps that differ:
+
+- how the tools are installed (Homebrew's `brew install` on macOS instead of `apt-get`);
+- every step that names a preset: add a configure, a build and a test preset with the same name to
+  `CMakePresets.json`, limited to that system by a `condition` like the existing ones;
+- "Check hello's picture": `xvfb-run` and the Mesa packages exist only on the Linux runner, so start hello directly
+  and put `timeout-minutes:` on the step instead of the `timeout` command. Whether hello can draw and pass `--check` on
+  a new system has to be tried there first.
 
 **Trying changes on a branch.** CI runs on every branch, so changes to `ci.yml` can be tried on a branch of their own
 and merged into `main` once that branch's run is green:

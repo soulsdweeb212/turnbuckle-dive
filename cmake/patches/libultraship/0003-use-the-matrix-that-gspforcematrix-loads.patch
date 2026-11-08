@@ -1,0 +1,90 @@
+Use the matrix that gSPForceMatrix loads
+
+On the N64, gSPForceMatrix gives the RSP a ready-made combined matrix (modelview x projection, in the N64's
+fixed-point Mtx format) instead of letting the RSP multiply the two itself. In F3DEX2 it is two commands: a
+G_MOVEMEM of the 64-byte Mtx to index G_MV_MATRIX, then a G_MOVEWORD G_MW_FORCEMTX that marks that matrix as
+current. Vertices loaded after it are transformed by it. Fast3D ignored both commands, so anything placed this way
+was drawn with whatever matrix came before. WCW/nWo Revenge places every 3D object like this and never sends G_MTX.
+
+G_MV_MATRIX now decodes the Mtx into MP_matrix, the matrix GfxSpVertex transforms vertices with. The decode is the
+one GfxSpMatrix already had, moved into DecodeMatrix so that both use it (its GBI_FLOATS memcpy now names the size
+of the whole matrix, because sizeof of an array parameter is the size of a pointer). The modelview stack and the
+projection are left alone, as on the N64: lighting and texture generation keep using the modelview, and the next
+G_MTX or G_POPMTX rebuilds MP_matrix from the two. G_MW_FORCEMTX is accepted and needs no action, because Fast3D
+multiplies the two matrices only inside GfxSpMatrix and GfxSpPopMatrix, so nothing later overwrites the loaded
+one. The F3D/F3DEX form of gSPForceMatrix (four 16-byte G_MV_MATRIX_n loads) is still not handled.
+
+Not in LibUltraShip main on 2026-11-08; drop this patch once it is there.
+
+diff --git a/include/fast/interpreter.h b/include/fast/interpreter.h
+index a7334a9a..f66cbf0e 100644
+--- a/include/fast/interpreter.h
++++ b/include/fast/interpreter.h
+@@ -447,6 +447,7 @@ class Interpreter {
+     void ImportTexture(int i, int tile, bool importReplacement);
+     void ImportTextureMask(int i, int tile);
+     void CalculateNormalDir(const F3DLight_t*, float coeffs[3]);
++    void DecodeMatrix(const int32_t* addr, float matrix[4][4]);
+ 
+     /**
+      * Opt-in memoization of OTR texture-path resolution, keyed by display-list
+diff --git a/src/fast/interpreter.cpp b/src/fast/interpreter.cpp
+index a1907a13..73f59f6e 100644
+--- a/src/fast/interpreter.cpp
++++ b/src/fast/interpreter.cpp
+@@ -1504,9 +1504,9 @@ void Interpreter::CalculateNormalDir(const F3DLight_t* light, float coeffs[3]) {
+     Interpreter::NormalizeVector(coeffs);
+ }
+ 
+-void Interpreter::GfxSpMatrix(uint8_t parameters, const int32_t* addr) {
+-    float matrix[4][4];
+-
++// Reads the matrix at addr into floats: the port's replacement for it when Run was given one, otherwise the N64's
++// fixed-point Mtx (or, with GBI_FLOATS, a plain float matrix). Used by G_MTX and by gSPForceMatrix's G_MV_MATRIX.
++void Interpreter::DecodeMatrix(const int32_t* addr, float matrix[4][4]) {
+     if (auto it = mCurMtxReplacements->find((Mtx*)addr); it != mCurMtxReplacements->end()) {
+         for (int i = 0; i < 4; i++) {
+             for (int j = 0; j < 4; j++) {
+@@ -1528,9 +1528,15 @@ void Interpreter::GfxSpMatrix(uint8_t parameters, const int32_t* addr) {
+         }
+ #else
+         // For a modified GBI where fixed point values are replaced with floats
+-        memcpy(matrix, addr, sizeof(matrix));
++        memcpy(matrix, addr, sizeof(float[4][4]));
+ #endif
+     }
++}
++
++void Interpreter::GfxSpMatrix(uint8_t parameters, const int32_t* addr) {
++    float matrix[4][4];
++
++    DecodeMatrix(addr, matrix);
+ 
+     const int8_t mtx_projection = get_attr(MTX_PROJECTION);
+     const int8_t mtx_load = get_attr(MTX_LOAD);
+@@ -2390,6 +2396,13 @@ void Interpreter::GfxSpMovememF3dex2(uint8_t index, uint8_t offset, const void*
+             }
+             break;
+         }
++        case F3DEX2_G_MV_MATRIX:
++            // gSPForceMatrix: the display list supplies the combined modelview x projection matrix, already multiplied
++            // (a whole fixed-point Mtx), and the next vertices are transformed by it. Only MP_matrix changes. The
++            // modelview stack and the projection stay as they were, as on the N64, so lighting keeps using the
++            // modelview, and the next G_MTX or G_POPMTX rebuilds MP_matrix from the two.
++            DecodeMatrix((const int32_t*)data, mRsp->MP_matrix);
++            break;
+     }
+ }
+ 
+@@ -2437,6 +2450,11 @@ void Interpreter::GfxSpMovewordF3dex2(uint8_t index, uint16_t offset, uintptr_t
+             if (segIndex == mInterpolationIndex)
+                 mSegmentPointers[segNumber] = data;
+         } break;
++        case F3DEX2_G_MW_FORCEMTX:
++            // The second half of gSPForceMatrix. It tells the RSP that the matrix G_MV_MATRIX just loaded is current,
++            // so the RSP does not multiply modelview x projection over it before the next vertices. Fast3D multiplies
++            // them only inside GfxSpMatrix and GfxSpPopMatrix, never later, so there is nothing to do.
++            break;
+     }
+ }
+ 
