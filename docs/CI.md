@@ -81,11 +81,14 @@ The steps below have the same names as on GitHub.
 2. *Install the tools and libraries*: the `apt` list from the README, plus `xvfb` (a virtual screen) and
    `libgl1-mesa-dri` (Mesa's software renderer), so hello can open a window on a machine without a screen.
 3. *Configure (preset "debug")*: `cmake --preset debug`. This downloads SDL3, ImGui and LibUltraShip's small libraries,
-   and applies the fixes in `cmake/patches/libultraship` to LibUltraShip.
+   and applies the fixes in `cmake/patches/libultraship` to LibUltraShip. CI has no copy of the decompilation, so
+   configure prints `Game code: not built (...)` and the build leaves the game's code out
+   ([GAME_CODE.md](GAME_CODE.md)); `turnbuckle-dive` then only checks the ROM.
 4. *Build*: `cmake --build --preset debug`.
 5. *Run the tests*: `ctest --preset debug`. The tests are `sha1` (known SHA-1 answers) and `rom_missing` (the program
-   starts with a ROM path that does not exist and must say "file not found"). No test uses a ROM; CI must never have
-   one.
+   starts with a ROM path that does not exist and must say "file not found"). No test on CI uses a ROM; CI must never
+   have one. The tests that do (`rom_loader` and `rom_loader_detects_change`) exist only in builds with the game's
+   code, so CI does not build them.
 6. *Check hello's picture*: in `build/debug`, `xvfb-run ./hello --check --frames 30`. hello draws 30 frames; after the
    third it reads the picture back and checks the white markers in its corners and the shapes placed with
    `gSPForceMatrix` and `gSPModifyVertex` (the comment at the top of `hello/main.cpp` describes the picture).
@@ -104,6 +107,7 @@ The steps below have the same names as on GitHub.
 9. *Show LibUltraShip's log*, only when a step failed. On Windows, LibUltraShip writes its messages to
    `logs/hello.log` next to hello rather than to the step's output, so this step prints that file.
 
+The Windows build also leaves the game's code out, because the game's C needs GCC or Clang (configure says so).
 Windows uses RelWithDebInfo rather than Debug because in a Debug build LibUltraShip moves the program's output to a
 console window of its own, and CI would not see what hello prints. Some of LibUltraShip's errors on Windows open a
 message box; on CI nobody can close it, so such a run ends at the step's time limit.
@@ -120,7 +124,17 @@ ctest --preset debug
 cd build/debug && ./hello --check --frames 30
 ```
 
-Under WSL, hello's window opens on your desktop, so no virtual screen is needed.
+Under WSL, hello's window opens on your desktop, so no virtual screen is needed. With the decompilation (its branch
+`port-groundwork`) in the folder next to the repository, your build also includes the game's code, and `ctest` also
+runs the two `rom_loader` tests on your ROM; CI has neither, so there they are not built. To build exactly what CI
+builds, point `TD_DECOMP_DIR` at a folder that does not exist, in a build folder of its own. From the repository
+folder:
+
+```
+cmake -S . -B build/no-game-code -G Ninja -DCMAKE_BUILD_TYPE=Debug -DTD_DECOMP_DIR=/nonexistent
+cmake --build build/no-game-code
+ctest --test-dir build/no-game-code
+```
 
 **Windows**: install Visual Studio 2022 with the "Desktop development with C++" workload, and Git for Windows. A
 Windows build needs its own clone on the Windows side: a copy inside WSL cannot be built from Windows. Open the
@@ -142,15 +156,21 @@ the `build` folder deletes them too.
 ## Adding to CI, or setting it up from nothing
 
 **Adding a test.** `ci.yml` does not change. Tests are listed in `CMakeLists.txt`, inside the `if(BUILD_TESTING)`
-block, with `add_test`, and `ctest` runs every test listed there, on your computer and on both runners. For example,
-the `rom_missing` test is:
+block, with `add_test`, and `ctest` runs every test listed there, on your computer and on both runners (except the
+tests that need the game's code, below). For example, the `rom_missing` test is:
 
 ```cmake
 add_test(NAME rom_missing COMMAND turnbuckle-dive ${CMAKE_BINARY_DIR}/no-rom-here.z64)
 set_tests_properties(rom_missing PROPERTIES PASS_REGULAR_EXPRESSION "no-rom-here\\.z64: file not found")
 ```
 
-A test passes when its program ends with exit code 0, or, as here, when its output contains the given text.
+A test passes when its program ends with exit code 0, or, as here, when its output contains the given text. Either
+way it fails when its output holds a report of AddressSanitizer, LeakSanitizer or UndefinedBehaviorSanitizer (an
+`asan` build): the last lines of the block set that for every test listed above them, so a new test goes above them.
+
+The tests inside the block's `if(TD_GAME_CODE)` part, such as `rom_loader`, exist only in builds with the game's code,
+so CI never builds or runs them. A test that must run on CI goes outside that part, and must need neither the ROM nor
+the decompilation.
 
 **Adding a step.** Add an entry under a job's `steps:`, indented exactly like the others:
 

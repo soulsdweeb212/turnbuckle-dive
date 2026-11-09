@@ -36,7 +36,10 @@ Linux (x86-64) is planned first. Open design decisions are listed in [docs/DECIS
 
 There are two programs so far:
 
-- `turnbuckle-dive` loads your ROM, checks that it is the supported one, and prints what it found.
+- `turnbuckle-dive` loads your ROM, checks that it is the supported one, and prints what it found. When the build
+  includes the game's code (below), it then loads all 7657 resources of the ROM with the game's own loader and prints
+  how many it loaded. `turnbuckle-dive --res 0x3` loads only resource 3 and prints its size and first 16 bytes (the id
+  can also be written in decimal).
 - `hello` opens a LibUltraShip window and draws a test picture made of N64 display-list commands, at the game's
   480x240 resolution shown at 4:3.
 
@@ -47,6 +50,21 @@ git clone --recursive https://github.com/soulsdweeb212/turnbuckle-dive.git
 ```
 
 In a clone made without `--recursive`, run `git submodule update --init`.
+
+**The game's code.** The build compiles the game's own C from the decompilation, in place. It needs the
+decompilation's branch `port-groundwork`, the one with the game's PC code, in the folder `source` next to this
+repository's folder (for example `projects/source` and `projects/turnbuckle-dive`). To get it there, run this in the
+folder where you ran the clone above:
+
+```
+git clone --branch port-groundwork https://github.com/soulsdweeb212/wcw-nwo-revenge.git source
+```
+
+Put your ROM in it as `source/baserom.z64`: the decompilation's own build reads it there, and `turnbuckle-dive` and
+the tests look for it there when they are given no ROM. For a decompilation in another folder, add
+`-DTD_DECOMP_DIR=/path/to/it` to the first `cmake --preset` command. Configure prints whether the build includes the
+game's code; without the decompilation, as on CI, it leaves it out. [docs/GAME_CODE.md](docs/GAME_CODE.md) explains
+how the game's code is compiled, tested and stepped through.
 
 Configuring applies the fixes in `cmake/patches/libultraship` to the submodule's files, and `git status` does not list
 them. When a pull moves the submodule to another commit, run `git -C lib/libultraship checkout -- .` before
@@ -76,7 +94,8 @@ ctest --preset debug
 ```
 
 The presets are `debug`, `relwithdebinfo` and `asan` (AddressSanitizer). The ROM can also be given with the `TD_ROM`
-environment variable.
+environment variable. With the game's code, `ctest` also runs `rom_loader`, which loads every resource of your ROM with
+the game's loader and checks them against a known digest; CTest lists it as skipped when it finds no ROM.
 
 `hello --check` draws at twice the window's resolution, reads the picture back and checks it: the markers drawn at its
 corners, a triangle placed only by a force matrix (`gSPForceMatrix`), and a sprite built the way the game builds its
@@ -87,7 +106,11 @@ it draws with the GPU through Direct3D 12 when it can; set `GALLIUM_DRIVER=llvmp
 
 **VS Code** (connected to WSL): open the folder and install the suggested C/C++ and CMake Tools extensions. Choose
 "Debug Turnbuckle Dive" or "Debug hello window" in the Run and Debug view; F5 builds that program and starts it under
-the debugger (the first time, CMake Tools asks for a configure preset: pick Debug). F7 only builds.
+the debugger (the first time, CMake Tools asks for a configure preset: pick Debug). F7 only builds. To step through
+the game's own code, open one of its files with File, Open File, for example the decompilation's
+`src/main/func_800037F4.c` (the game's decompressor), click left of a line number to set a breakpoint, and start
+"Debug Turnbuckle Dive": it stops there with the game's variables in the Variables view. "Debug Turnbuckle Dive: one
+resource" asks for a resource id and loads only that one.
 
 **Visual Studio 2022**: install the "Linux and embedded development with C++" workload, run
 `sudo apt install rsync zip` in WSL as well (Visual Studio copies files with them), open the folder, and pick the WSL

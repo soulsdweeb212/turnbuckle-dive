@@ -19,6 +19,23 @@
             ]
         },
         {
+            "name": "Debug Turnbuckle Dive: one resource",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${input:turnbuckleDivePath}",
+            "args": ["--res", "${input:resourceId}"],
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ]
+        },
+        {
             "name": "Debug hello window",
             "type": "cppdbg",
             "request": "launch",
@@ -42,6 +59,12 @@
             "type": "command",
             "command": "cmake.launchTargetPath",
             "args": { "targetName": "turnbuckle-dive" }
+        },
+        {
+            "id": "resourceId",
+            "type": "promptString",
+            "description": "Resource to load: 1 to 7657, or in hex 0x1 to 0x1DE9",
+            "default": "0x3"
         },
         {
             "id": "helloPath",
