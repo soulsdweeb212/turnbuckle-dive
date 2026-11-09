@@ -3,7 +3,7 @@
 // viewer.h), and draws them with LibUltraShip in the game's 480x240 picture, shown at 4:3 like hello. docs/VIEWER.md
 // explains it in full.
 //
-//   viewer [ROM]                  a wrestler's head: mesh 0xA63 with face texture 0xA6A and palette 0xA68, turning
+//   viewer [ROM]                  a wrestler's face: mesh 0xA69 with its texture 0xA6A and palette 0xA68, turning
 //   viewer --head MESH TEX PAL    another model: a mesh, a texture for it and the texture's palette
 //   viewer --angle DEG            the model at a fixed angle, in degrees, instead of turning
 //   viewer --sprite [TEX PAL]     an effect sprite, whose 16-colour palette the game reads as IA16 (texture 0x3EC with
@@ -53,8 +53,11 @@ namespace {
 constexpr uint32_t kWidth = td::kGameWidth;
 constexpr uint32_t kHeight = td::kGameHeight;
 
-// The subjects shown when no ids are given.
-constexpr uint32_t kHeadMesh = 0xA63;
+// The subjects shown when no ids are given. The head's ids are those the game gives a face: the head record at
+// 0x800319C0 (docs/VIEWER.md, "Where a model's texture comes from"), which the second and fourth costumes of the
+// wrestler with id 1 wear, names mesh 0xA69 for body part 5, which func_8000BDD0 loads, and texture 0xA6A and palette
+// 0xA68 for it, which func_8000C1B8 loads.
+constexpr uint32_t kHeadMesh = 0xA69;
 constexpr uint32_t kHeadTexture = 0xA6A;
 constexpr uint32_t kHeadPalette = 0xA68;
 constexpr uint32_t kSpriteTexture = 0x3EC;
@@ -407,6 +410,10 @@ bool DrawFrames(const std::shared_ptr<Fast::Fast3dWindow>& window, int count) {
     }
     return true;
 }
+
+// The most rows Fast3D gives its framebuffer (Fast3dGui::ApplyResolutionChanges); a picture past that is not kept at
+// 4:3.
+constexpr uint32_t kMaxFramebufferRows = 4320;
 
 // ---- The reference ----
 
@@ -797,7 +804,18 @@ int RunCheck(const std::shared_ptr<Fast::Fast3dWindow>& window, const Reference&
     }
     Camera camera = FitCamera(head.vertices, head.vertex_count);
     std::vector<bool> seen(ref.triangles.size(), false);
-    for (const HeadView& view : ref.views) {
+    // Between the head's two sides Fast3D draws at another resolution, so that it sizes its framebuffer again, as when
+    // someone stretches the window: LibUltraShip without cmake/patches/libultraship/0007 then loses the head's texture
+    // and draws it black until the program ends. It draws at 2.5 times the window's resolution, or at 1.75 times when
+    // 2.5 would pass Fast3D's limit on rows; the window itself keeps its size and place. After the head it draws at
+    // twice again, for one more frame of the head, whose commands point into the head's lists, so that frame comes
+    // before they are freed. The sprite and the picture are then drawn after a resize too.
+    for (size_t i = 0; i < ref.views.size(); i++) {
+        const HeadView& view = ref.views[i];
+        if (i == 1) {
+            window->SetResolutionMultiplier(pic.h * 5 / 4 <= kMaxFramebufferRows ? td::kReadBackResolution * 1.25f
+                                                                                 : td::kReadBackResolution * 0.875f);
+        }
         SetCamera(camera, view.angle);
         BuildHeadFrame(head, true);
         if (!DrawFrames(window, 3) || !ReadFrame(window, &pic)) {
@@ -812,6 +830,13 @@ int RunCheck(const std::shared_ptr<Fast::Fast3dWindow>& window, const Reference&
     }
     std::printf("check: the pictures compared show %zu of the %zu triangles of mesh 0x%X from the front\n",
                 (size_t)std::count(seen.begin(), seen.end(), true), seen.size(), ref.mesh);
+    if (ref.views.size() > 1) {
+        window->SetResolutionMultiplier(td::kReadBackResolution);
+        if (!DrawFrames(window, 1)) {
+            viewer_head_free(&head);
+            return 2;
+        }
+    }
     viewer_head_free(&head);
     ForgetTextures(window);
 

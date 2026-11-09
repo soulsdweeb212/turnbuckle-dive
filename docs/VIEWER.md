@@ -8,8 +8,9 @@ command.
 
 It has three subjects:
 
-- **A wrestler's head**: the mesh 0xA63 with the face texture 0xA6A (8-bit palette indices) and the palette 0xA68
-  (256 colours), turning slowly.
+- **A wrestler's face**: the mesh 0xA69 with its texture 0xA6A (8-bit palette indices) and its palette 0xA68 (256
+  colours), turning slowly. It is one of the three parts the game builds a head from ("Where a model's texture comes
+  from", below). The viewer calls this subject the head, after its option `--head`, whichever part it shows.
 - **An effect sprite**, one frame of the short sprite animations that the game plays on the wrestlers in a match: the
   texture 0x3EC (4-bit palette indices) with the palette 0x3DF (16 entries), which the game reads as IA16, a grey level
   and a transparency for each entry.
@@ -33,9 +34,9 @@ else `baserom.z64` in the current folder, else in the decompilation's folder. It
 
 | Command | What it does |
 |---|---|
-| `./viewer` | the head, turning half a degree per frame |
-| `./viewer --angle 120` | the head at a fixed angle, in degrees, about the vertical axis |
-| `./viewer --head 0xA63 0xA6A 0xA68` | a model: a mesh, a texture for it and the texture's palette |
+| `./viewer` | the face, turning half a degree per frame |
+| `./viewer --angle 120` | the face at a fixed angle, in degrees, about the vertical axis |
+| `./viewer --head 0xA63 0xA64 0xA62` | a model: a mesh, its texture and the texture's palette (here the hair of the same head) |
 | `./viewer --sprite` | the effect sprite 0x3EC with its palette 0x3DF |
 | `./viewer --sprite 0x3E8 0x3DB` | another effect sprite: a texture and its palette |
 | `./viewer --picture` | the TEX picture 0x3 |
@@ -53,10 +54,11 @@ PNG files).
 
 ## How it draws the head
 
-The game keeps a mesh in a display record, which `func_8000498C` fills from the mesh resource; `func_80007020`, which
-loads the meshes of a scene, then gives each a texture. The viewer cannot call those two yet, because on the PC they
-would keep the record's pointers in 32-bit numbers. So `viewer/viewer_game.c` does their steps itself, in the same
-order, and calls the game's functions that do the work:
+The game keeps a mesh in a display record, which `func_8000498C` fills from the mesh resource, and then gives the record
+a texture: `func_80004F80` does that for a wrestler's body part, and `func_80007020` for the meshes of a scene. The
+viewer cannot call `func_8000498C` and `func_80007020` yet, because on the PC they would keep the record's pointers in
+32-bit numbers. So `viewer/viewer_game.c` does their steps itself, in the same order, and calls the game's functions
+that do the work:
 
 1. It loads the mesh with the game's loader and copies its header into the record: the number of vertices and of
    triangles.
@@ -64,8 +66,12 @@ order, and calls the game's functions that do the work:
 3. The game's `buildVertexDisplayList` writes the triangle list: it turns back-face culling on, then has one
    `G_TRI2` command per two triangles, and ends with `G_ENDDL`. `buildObjectDisplayListTail` writes the material list,
    which branches to the triangle list.
-4. The game's `func_80004E08` loads the texture and its palette into the record, and `buildCiTextureDisplayList`
-   writes the material list again: it loads the palette and the texels, then branches to the triangle list.
+4. The game's `func_80004E08` loads the texture and its palette into the record, as `func_80004F80` has it do for a
+   wrestler's body part (`func_80007020` keeps each texture once, in a list its models share, and has
+   `func_80004E08` load only the palette). Then `buildCiTextureDisplayList` writes the material list again, in the
+   mode `func_80007020` uses, 1, which leaves the render state to the viewer's frame: it loads the palette and the
+   texels, then branches to the triangle list. For a wrestler's body part the game uses mode 0, which also writes the
+   wrestlers' render state at the start of the list.
 
 The viewer's frame then sets the render state that the game's frame would have set (one cycle, textures on, palettes
 read as RGBA16, and the state `func_80007020` sets before its models), places the camera with two matrices, loads the
@@ -75,6 +81,32 @@ which the check can compare pixel by pixel.
 
 The camera puts the middle of the model at the middle of the picture, turns the model about the vertical axis, and
 scales it so that it fits the picture at every angle. Its projection has no perspective.
+
+When the window's size changed, LibUltraShip went on drawing the model without its texture, in black, until the fix
+`cmake/patches/libultraship/0007-keep-the-bound-texture-cache-right.patch`.
+
+## Where a model's texture comes from
+
+The viewer draws the mesh, the texture and the palette it is given: nothing in a mesh says which texture belongs to it.
+In the game, tables say. For the objects of a scene, `func_80007020` is given a list of meshes and a list of palettes,
+and takes each mesh's texture from the resource after its palette. For a wrestler, `func_8000BDD0` loads the mesh of
+each body part into a display record of its own (through `func_80004BA8`, which calls `func_8000498C`), and
+`func_8000C1B8` loads each part's texture and palette (through `func_80004F80`, which calls `func_80004E08`, the
+function the viewer calls too).
+
+The head's parts come from a head record: it starts with the meshes of body parts 4, 5 and 20 (the game's numbers for
+the parts of a head; a head without part 20 has 0 there), followed by the palette and the texture of each. Each
+wrestler has a list of head records, and each of its four costumes names one of them, so two costumes can wear the same
+head (`func_8000B630` reads which, from the table `D_80036710`). The list of the wrestler with id 1 starts with the
+record at 0x800319C0, which that wrestler's second and fourth costumes wear. It gives the head these three parts:
+
+| Body part | Mesh | Texture | Palette | What it shows |
+|---|---|---|---|---|
+| 4 | 0xA66 | 0xA67 | 0xA65 | the lower part of the head: skin at the front, hair at the back |
+| 5 | 0xA69 | 0xA6A | 0xA68 | the face, with its paint: what `./viewer` draws |
+| 20 | 0xA63 | 0xA64 | 0xA62 | the hair over the top, the sides and the back of the head |
+
+`./viewer --head` followed by the three ids of a row draws that part. The viewer draws one part at a time.
 
 ## How it draws an effect sprite
 
@@ -121,16 +153,22 @@ compares:
 
 1. The vertices that the game's `func_8000486C` decoded with the tool's decode of the mesh, field by field.
 2. The triangles in the game's triangle list with the tool's, in order.
-3. Every pixel of the head at 120 degrees, and again at 300 degrees, the other side, so that every triangle the
-   camera sees from behind in one picture faces it in the other.
+3. Every pixel of the head at -60 degrees, and again at 120 degrees, the other side, so that every triangle the
+   camera sees from behind in one picture faces it in the other. For the second picture Fast3D draws at 2.5 times the
+   window's resolution instead of twice (or at 1.75 times, near its limit of 4320 rows), so that it sizes its
+   framebuffer again, as when someone stretches the window (the case patch 0007 fixes); after the head it draws at
+   twice again, so that the sprite and the picture are drawn after a resize too. The window keeps its size and place;
+   the framebuffer lines of the output give each size.
 4. Every pixel of the effect sprite.
 5. Every pixel of the picture, which the tool works out tile by tile as the N64 draws it (its comments say how).
 
 Each pixel must have the colour the tool works out, and pixels where the tool says the background shows must not be
 drawn. Where a triangle's edge or a texel's edge passes close to a pixel's middle, the tool allows the colour on each
 side, because the framebuffer pixel that is read back for a picture pixel does not have its middle exactly there (the
-check needs a framebuffer of at least 960x480 pixels; it draws at twice the window's resolution, so any window of at
-least 480x240 gives one, and the tool's comments give the distances). A colour may be 1 off in each of its red, green
+check needs a framebuffer of at least 960x480 pixels; it draws at twice the window's resolution, in the picture's 4:3
+shape, so a window at least 480 pixels wide and 360 high gives one, and as Fast3D gives its framebuffer at most 4320
+rows, the window must be at most 2160 high, or 2880 wide when it is taller than 4:3; the tool's comments give the
+distances). A colour may be 1 off in each of its red, green
 and blue (5 bits each as they read back), because LibUltraShip scales 5-bit colours to 8 bits for the GPU. Each line of
 the check's output says what was compared and whether it passed; the viewer ends with exit code 0 when all passed, and 2
 when one failed. All subjects need the ROM, and the check exits with code 77 when it finds none. A reference that is not
@@ -153,7 +191,7 @@ cd build/debug
 ```
 
 The tool's options choose other subjects: `--head MESH TEX PAL`, `--angle DEG` (the first of the head's two angles,
-120 when not given), `--sprite TEX PAL` and `--picture ID`. The reference holds data decoded from your ROM, so `--out`
+-60 when not given), `--sprite TEX PAL` and `--picture ID`. The reference holds data decoded from your ROM, so `--out`
 must name a file in the build folder, which git ignores.
 
 In the `asan` preset, `viewer_check` runs without LeakSanitizer, because the GPU driver and SDL's sound thread keep a

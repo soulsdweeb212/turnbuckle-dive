@@ -37,8 +37,11 @@ void PreferWslGpu();
 // when there is no screen to open the window on, it prints why and returns a LibUltraShip whose window is null.
 LibUltraShip StartLibUltraShip(const char* program, bool withCrashHandler);
 
+// The resolution a picture that is read back is drawn at, in multiples of the window's.
+constexpr float kReadBackResolution = 2.0f;
+
 // Shows the game's picture, 480x240 pixels, at 4:3 in the window, at 60 frames per second. readBack: Fast3D draws the
-// picture at twice the window's resolution, into a framebuffer of its own that a check can read back (ReadPicture in
+// picture at kReadBackResolution, into a framebuffer of its own that a check can read back (ReadPicture in
 // src/frame.h); this is not saved in the settings.
 void ShowGamePicture(const std::shared_ptr<Fast::Fast3dWindow>& window, bool readBack);
 

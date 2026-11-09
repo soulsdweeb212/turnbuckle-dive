@@ -40,12 +40,13 @@ WIDTH, HEIGHT = 480, 240
 # reference, -1 stands for a pixel where the background shows.
 BACKGROUND = (16, 24, 72)
 
-# The subjects the viewer's --check draws unless told otherwise: a wrestler's head, turned 120 degrees, which shows
-# its face and the side of its head, and then turned the other way (300 degrees), so that every triangle the camera
-# saw from behind faces it once; an effect sprite with an IA16 palette (one frame of the sprite animations the game
-# plays on the wrestlers in a match); and the TEX picture 0x3.
-HEAD = (0xA63, 0xA6A, 0xA68)
-ANGLE = 120.0
+# The subjects the viewer's --check draws unless told otherwise: a wrestler's face, with the mesh, texture and palette
+# that the head record at 0x800319C0 gives its body part 5 (docs/VIEWER.md), turned -60 degrees, which shows it from the
+# front and one side, and then the other way (120 degrees), so that every triangle the camera saw from behind faces it
+# once; an effect sprite with an IA16 palette (one frame of the sprite animations the game plays on the wrestlers in a
+# match); and the TEX picture 0x3.
+HEAD = (0xA69, 0xA6A, 0xA68)
+ANGLE = -60.0
 SPRITE = (0x3EC, 0x3DF)
 PICTURE = 0x3
 

@@ -28,10 +28,11 @@ void releaseHeapBlock(void *block);
  * a command is 16 bytes, so 32 of them keep the same room. buildCiTextureDisplayList writes at most 16. */
 #define MATERIAL_COMMANDS 32
 
-/* The game's func_8000498C loads a mesh into a display record and builds its untextured display lists, and
- * func_80007020 then gives the mesh a texture. The viewer cannot call either yet: on the PC they would keep the
- * record's pointers in 32-bit integers, and size their buffers for 8-byte commands. So this function does the same
- * steps itself, in the same order, and calls the game's functions that do the work. */
+/* The game's func_8000498C loads a mesh into a display record and builds its untextured display lists; then
+ * func_80004F80 (for a wrestler's body part) or func_80007020 (for the meshes of a scene) gives the mesh a texture.
+ * The viewer cannot call func_8000498C or func_80007020 yet: on the PC they would keep the record's pointers in 32-bit
+ * integers, and size their buffers for 8-byte commands. So this function does the same steps itself, in the same order,
+ * and calls the game's functions that do the work. */
 void viewer_head_load(uint32_t mesh, uint32_t texture, uint32_t palette, ViewerHead *head) {
     ResDesc desc;
     Nw2TextureDisplayObj *record;
@@ -74,10 +75,10 @@ void viewer_head_load(uint32_t mesh, uint32_t texture, uint32_t palette, ViewerH
     buildObjectDisplayListTail(record);
     releaseHeapBlock(raw);
 
-    /* func_80007020: load the texture and its palette into the record (func_80004E08), then let
-     * buildCiTextureDisplayList write the material list again, now loading the palette and the texels before it
-     * branches to the triangles. Mode 1 is the one func_80007020 uses for models; it leaves the render state to the
-     * caller. */
+    /* Load the texture and its palette into the record with func_80004E08, as func_80004F80 does for a wrestler's body
+     * part, then let buildCiTextureDisplayList write the material list again, now loading the palette and the texels
+     * before it branches to the triangles. Mode 1 is the one func_80007020 uses for its models; it leaves the render
+     * state to the caller (a wrestler's body part uses mode 0, which also writes the wrestlers' render state). */
     func_80004E08(record, (s16)texture, (s16)palette);
     buildCiTextureDisplayList(record, 1);
 

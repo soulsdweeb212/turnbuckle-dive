@@ -1,0 +1,59 @@
+Keep the bound-texture cache right
+
+GfxRenderingAPIOGL::SelectTexture remembers which texture each texture unit holds (mLastBoundTextures) and skips
+glBindTexture when the texture asked for is already there. Three functions change what a unit holds without telling
+that cache:
+- CreateFramebuffer, and UpdateFramebufferParameters when a framebuffer drawn without MSAA gets a new size or MSAA
+  level, bind the framebuffer's colour texture to set it up and then bind texture 0, on whichever unit is active.
+- DeleteTexture deletes a texture; OpenGL then binds texture 0 on every unit that held it, and glGenTextures hands the
+  deleted name out again.
+The cache then still names the texture the unit held before, so the next SelectTexture of that name binds nothing:
+whatever is drawn with it samples texture 0 and comes out black, and when Fast3D's texture cache, or NewTexture, gives
+that name to a new texture, the new texels go into texture 0 instead and the name goes on showing the old ones.
+
+A game rarely shows this, because it draws with many textures and the next different one binds the unit again. A
+scene drawn with a single texture never recovers. Turnbuckle Dive's asset viewer, which draws one model with one
+texture, showed it: stretching its window away from 4:3 makes Fast3D draw through a framebuffer of its own, which is
+then sized again, and from then on the model was black. LibUltraShip's Gfx Debugger deletes and makes GUI textures
+again in the same way.
+
+The three functions now record that the units concerned hold texture 0.
+
+Not in LibUltraShip main on 2026-11-09; drop this patch once it is there.
+
+diff --git a/src/fast/backends/gfx_opengl.cpp b/src/fast/backends/gfx_opengl.cpp
+index 6c4dfc86..c78fddc1 100644
+--- a/src/fast/backends/gfx_opengl.cpp
++++ b/src/fast/backends/gfx_opengl.cpp
+@@ -565,6 +565,13 @@ GLuint GfxRenderingAPIOGL::NewTexture() {
+ 
+ void GfxRenderingAPIOGL::DeleteTexture(uint32_t texID) {
+     glDeleteTextures(1, &texID);
++    // OpenGL binds texture 0 in place of a deleted texture on every unit that held it, and glGenTextures hands the
++    // name out again; SelectTexture must not skip binding it then.
++    for (GLuint& bound : mLastBoundTextures) {
++        if (bound == texID) {
++            bound = 0;
++        }
++    }
+ }
+ 
+ void GfxRenderingAPIOGL::SelectTexture(int tile, GLuint texture_id) {
+@@ -773,6 +780,8 @@ int GfxRenderingAPIOGL::CreateFramebuffer() {
+     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+     glBindTexture(GL_TEXTURE_2D, 0);
++    // The active unit now holds no texture; SelectTexture must not skip binding the one it held before.
++    mLastBoundTextures[mLastActiveTexture < 0 ? 0 : mLastActiveTexture] = 0;
+ 
+     GLuint clrbufMsaa;
+     glGenRenderbuffers(1, &clrbufMsaa);
+@@ -814,6 +823,8 @@ void GfxRenderingAPIOGL::UpdateFramebufferParameters(int fb_id, uint32_t width,
+                 glBindTexture(GL_TEXTURE_2D, fb.clrbuf);
+                 glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
+                 glBindTexture(GL_TEXTURE_2D, 0);
++                // As in CreateFramebuffer: the active unit now holds no texture.
++                mLastBoundTextures[mLastActiveTexture < 0 ? 0 : mLastActiveTexture] = 0;
+                 glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, fb.clrbuf, 0);
+             } else {
+                 glBindRenderbuffer(GL_RENDERBUFFER, fb.clrbufMsaa);

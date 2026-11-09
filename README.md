@@ -42,7 +42,7 @@ There are three programs so far:
   can also be written in decimal).
 - `hello` opens a LibUltraShip window and draws a test picture made of N64 display-list commands, at the game's
   480x240 resolution shown at 4:3.
-- `viewer`, the asset viewer, built with the game's code: it draws a wrestler's head, an effect sprite and a 2D
+- `viewer`, the asset viewer, built with the game's code: it draws a wrestler's face, an effect sprite and a 2D
   picture from your ROM with the game's own display-list functions. [docs/VIEWER.md](docs/VIEWER.md) explains its
   commands, its check (`viewer --check`), its command listing (`viewer --dump`), the debug menu that F1 shows with
   LibUltraShip's Gfx Debugger, and how to step through the game's functions.

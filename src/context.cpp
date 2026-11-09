@@ -48,8 +48,8 @@ constexpr unsigned int kGlVersion = 0x1F02;
 // Whether LibUltraShip's window really opened, with an OpenGL it can draw with; if not, prints what is missing. When
 // SDL cannot create the window, LibUltraShip's SDL backend logs it and carries on without one; when SDL cannot create
 // the window's OpenGL context, it carries on without logging anything; and an OpenGL older than 3.0 lets it start too.
-// The first frame then crashes. So this asks SDL and OpenGL themselves. Only SDL's OpenGL backend, the one Linux uses, is
-// asked: Windows' own backend, DXGI, opens its window without SDL.
+// The first frame then crashes. So this asks SDL and OpenGL themselves. Only SDL's OpenGL backend, the one Linux
+// uses, is asked: Windows' own backend, DXGI, opens its window without SDL.
 bool WindowOpened(const char* program, const std::shared_ptr<Fast::Fast3dWindow>& window) {
     if (window->GetWindowBackend() != Fast::FAST3D_SDL_OPENGL) {
         return true;
@@ -202,7 +202,7 @@ void ShowGamePicture(const std::shared_ptr<Fast::Fast3dWindow>& window, bool rea
         // When the picture's resolution equals its place in the window, Fast3D draws it straight to the window, which
         // cannot be read back. Drawing at twice that resolution sends it through Fast3D's own framebuffer instead,
         // whatever the window's shape.
-        window->SetResolutionMultiplier(2.0f);
+        window->SetResolutionMultiplier(kReadBackResolution);
     }
 }
 
