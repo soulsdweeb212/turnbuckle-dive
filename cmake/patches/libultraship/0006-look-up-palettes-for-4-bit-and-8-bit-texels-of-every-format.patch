@@ -1,0 +1,36 @@
+Look up palettes for 4-bit and 8-bit texels of every format
+
+On the N64, while other_mode_h's TEXTLUT field turns palettes on (gDPSetTextureLUT with G_TT_RGBA16 or G_TT_IA16), the
+RDP reads every 4-bit and 8-bit texel as an index into the palette that G_LOADTLUT copied into TMEM, whatever format
+the tile gives: a texel tagged IA or I is then an index, just like a CI one. Fast3D used the palette only for tiles in
+the CI format, and decoded the others as intensity and alpha, so such a picture came out in grey levels, with the
+wrong pixels transparent. WCW/nWo Revenge draws its 2D pictures this way: func_8009EC58 loads a picture's palette of
+16 or 256 entries and turns palettes on, then func_80096D8C and func_80096A6C load the texels as IA4 or IA8 tiles and
+draw them with texture rectangles.
+
+ImportTexture now treats a 4-bit or 8-bit tile of any format as CI while palettes are on: it is decoded
+through the palette by ImportTextureCi4 or ImportTextureCi8, in the palette type that patch 0005 reads, and its
+texture cache entry is a CI one, keyed by the palette too. Turning palettes on or off changes TEXTLUT, which patch 0005
+already makes Fast3D notice, so the next triangle or rectangle imports the texture again.
+
+Not in LibUltraShip main on 2026-11-08; drop this patch once it is there.
+
+diff --git a/src/fast/interpreter.cpp b/src/fast/interpreter.cpp
+index ce68004a..e65c56ea 100644
+--- a/src/fast/interpreter.cpp
++++ b/src/fast/interpreter.cpp
+@@ -1295,6 +1295,14 @@ void Interpreter::ImportTexture(int i, int tile, bool importReplacement) {
+                   ->second.replacementData
+             : mRdp->loaded_texture[tmemIdex].addr;
+ 
++    // While palettes are on (other_mode_h's TEXTLUT field is G_TT_RGBA16 or G_TT_IA16), the RDP reads a 4-bit or 8-bit
++    // texel of any format as an index into the palette, so a tile tagged IA or I is then a CI texture: it is decoded
++    // through the palette, and its cache entry is a CI one, keyed by the palette too.
++    if (fmt != G_IM_FMT_CI && (siz == G_IM_SIZ_4b || siz == G_IM_SIZ_8b) &&
++        (mRdp->other_mode_h & (3U << G_MDSFT_TEXTLUT)) != G_TT_NONE) {
++        fmt = G_IM_FMT_CI;
++    }
++
+     // Check if this texture address is a registered GPU framebuffer mirror.
+     // If so, bind the GPU FB directly — full resolution, no CPU readback needed.
+     if (origAddr != nullptr && !importReplacement) {

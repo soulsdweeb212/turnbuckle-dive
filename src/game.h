@@ -66,4 +66,17 @@ void releaseHeapBlock(void *block);
 extern uint32_t *D_800482E0;
 extern uint32_t *D_800482E4;
 
+/* Game data the drawing functions use (src/game_data.c): the grayscale switch, convertRgba16ToGrayscale's factors and
+ * func_80096D8C's height scale. */
+extern uint16_t D_800307A0;
+extern double D_8003B110;
+extern double D_8003B0F0;
+extern double D_8003B100;
+extern double D_8003B108;
+extern double D_800D6070;
+
+/* Copies the game data above that the game keeps in its ROM from the attached ROM (rom_attach in src/rom.h), so the
+ * game's code sees the values the N64 would. res_init (src/resources.h) calls it before any game code runs. */
+void game_data_init(void);
+
 #endif

@@ -1,0 +1,173 @@
+Read palettes in the type gDPSetTextureLUT sets
+
+On the N64, a CI4 or CI8 texel is an index into a palette (TLUT) that G_LOADTLUT copied into TMEM, and the RDP reads
+the type of the palette's entries from other_mode_h's TEXTLUT field (gDPSetTextureLUT) as it draws: G_TT_RGBA16
+entries are RGBA5551 colours, G_TT_IA16 entries an 8-bit intensity (high byte) and an 8-bit alpha (low byte). Fast3D
+never read the field and decoded every palette as RGBA5551, so an IA16 palette came out in the wrong colours, each
+pixel either opaque or invisible. WCW/nWo Revenge draws its effect sprites and its HUD quads with IA16 palettes: it
+sends G_SETOTHERMODE_H E3001001 0000C000 (IA16) before their triangles and E3001001 00008000 (RGBA16) after them.
+
+ImportTextureCi4 and ImportTextureCi8 (which also decode the CI textures of resources loaded as raw) now read the type
+and decode each entry with DecodePaletteEntry: an IA16 entry gives red, green and blue equal to its intensity, and its
+own alpha; RGBA16, and G_TT_NONE as before, give RGBA5551. The type is also part of the texture cache's key
+(TextureCacheKey::palette_ia16), because the same texels and palette, at the same addresses, make a different texture
+in each type. And because the RDP applies the type as it draws, a G_SETOTHERMODE_H or G_RDPSETOTHERMODE that changes
+it marks both textures as changed, so the next triangle imports them again for the new type instead of drawing with
+the ones decoded for the old.
+
+Not in LibUltraShip main on 2026-11-08; drop this patch once it is there.
+
+diff --git a/include/fast/interpreter.h b/include/fast/interpreter.h
+index 1ff55a8a..ed789456 100644
+--- a/include/fast/interpreter.h
++++ b/include/fast/interpreter.h
+@@ -190,6 +190,10 @@ struct TextureCacheKey {
+     uint8_t fmt, siz;
+     uint8_t palette_index;
+     uint32_t size_bytes;
++    // CI textures only: the palette was read as IA16 (G_TT_IA16) rather than RGBA16. The same texels and palette give
++    // other colours in each type, so each type needs an entry of its own. It comes last, so keys built without it (all
++    // the other formats) get false.
++    bool palette_ia16;
+ 
+     bool operator==(const TextureCacheKey&) const noexcept = default;
+ 
+diff --git a/src/fast/interpreter.cpp b/src/fast/interpreter.cpp
+index 3ef2b3fa..ce68004a 100644
+--- a/src/fast/interpreter.cpp
++++ b/src/fast/interpreter.cpp
+@@ -978,6 +978,31 @@ void Interpreter::ImportTextureI8(int tile, bool importReplacement) {
+     mRapi->UploadTexture(mTexUploadBuffer, width, height);
+ }
+ 
++// The palette type. The N64's RDP reads it from other_mode_h's TEXTLUT field (gDPSetTextureLUT) each time it samples a
++// CI4 or CI8 texel, not when the palette is loaded, so one palette can be read either way. A G_TT_IA16 entry holds an
++// intensity and an alpha, a G_TT_RGBA16 entry an RGBA5551 colour; Fast3D also reads RGBA5551 for G_TT_NONE, as before.
++static bool PaletteIsIa16(uint32_t other_mode_h) {
++    return (other_mode_h & (3U << G_MDSFT_TEXTLUT)) == G_TT_IA16;
++}
++
++// Writes one palette entry (16 bits, high byte first as on the N64) into rgba as 8-bit red, green, blue and alpha. An
++// IA16 entry has the intensity in its high byte, which becomes the red, green and blue alike, and the alpha in its low
++// byte.
++static void DecodePaletteEntry(const uint8_t* entry, bool ia16, uint8_t* rgba) {
++    if (ia16) {
++        rgba[0] = entry[0];
++        rgba[1] = entry[0];
++        rgba[2] = entry[0];
++        rgba[3] = entry[1];
++        return;
++    }
++    uint16_t col16 = (entry[0] << 8) | entry[1];
++    rgba[0] = SCALE_5_8(col16 >> 11);
++    rgba[1] = SCALE_5_8((col16 >> 6) & 0x1f);
++    rgba[2] = SCALE_5_8((col16 >> 1) & 0x1f);
++    rgba[3] = (col16 & 1) ? 255 : 0;
++}
++
+ void Interpreter::ImportTextureCi4(int tile, bool importReplacement) {
+     uint32_t fullImageLineSizeBytes =
+         mRdp->loaded_texture[mRdp->texture_tile[tile].tmem_index].full_image_line_size_bytes;
+@@ -1050,21 +1075,15 @@ void Interpreter::ImportTextureCi4(int tile, bool importReplacement) {
+         fullImageLineSizeBytes = resultLineSizeBytes;
+     }
+ 
++    // The palette type in force now, as the RDP would read it while drawing (ImportTexture keys the cache on it too).
++    bool ia16 = PaletteIsIa16(mRdp->other_mode_h);
+     uint32_t i = 0;
+     for (uint32_t y = 0; y < height; y++) {
+         for (uint32_t x = 0; x < width; x++) {
+             uint32_t srcPixelIdx = y * (fullImageLineSizeBytes * 2) + x;
+             uint8_t byte = addr[srcPixelIdx / 2];
+             uint8_t idx = (byte >> (4 - (srcPixelIdx % 2) * 4)) & 0xf;
+-            uint16_t col16 = (palette[idx * 2] << 8) | palette[idx * 2 + 1]; // Big endian load
+-            uint8_t a = col16 & 1;
+-            uint8_t r = col16 >> 11;
+-            uint8_t g = (col16 >> 6) & 0x1f;
+-            uint8_t b = (col16 >> 1) & 0x1f;
+-            mTexUploadBuffer[4 * i + 0] = SCALE_5_8(r);
+-            mTexUploadBuffer[4 * i + 1] = SCALE_5_8(g);
+-            mTexUploadBuffer[4 * i + 2] = SCALE_5_8(b);
+-            mTexUploadBuffer[4 * i + 3] = a ? 255 : 0;
++            DecodePaletteEntry(&palette[idx * 2], ia16, &mTexUploadBuffer[4 * i]);
+             i++;
+         }
+     }
+@@ -1096,19 +1115,12 @@ void Interpreter::ImportTextureCi8(int tile, bool importReplacement) {
+         return;
+     }
+ 
++    // The palette type in force now, as the RDP would read it while drawing (ImportTexture keys the cache on it too).
++    bool ia16 = PaletteIsIa16(mRdp->other_mode_h);
+     for (uint32_t i = 0, j = 0; i < sizeBytes; j += fullImageLineSizeBytes - lineSizeBytes) {
+         for (uint32_t k = 0; k < lineSizeBytes; i++, k++, j++) {
+             uint8_t idx = addr[j];
+-            uint16_t col16 = (mRdp->palettes[idx / 128][(idx % 128) * 2] << 8) |
+-                             mRdp->palettes[idx / 128][(idx % 128) * 2 + 1]; // Big endian load
+-            uint8_t a = col16 & 1;
+-            uint8_t r = col16 >> 11;
+-            uint8_t g = (col16 >> 6) & 0x1f;
+-            uint8_t b = (col16 >> 1) & 0x1f;
+-            mTexUploadBuffer[4 * i + 0] = SCALE_5_8(r);
+-            mTexUploadBuffer[4 * i + 1] = SCALE_5_8(g);
+-            mTexUploadBuffer[4 * i + 2] = SCALE_5_8(b);
+-            mTexUploadBuffer[4 * i + 3] = a ? 255 : 0;
++            DecodePaletteEntry(&mRdp->palettes[idx / 128][(idx % 128) * 2], ia16, &mTexUploadBuffer[4 * i]);
+         }
+     }
+ 
+@@ -1315,6 +1327,9 @@ void Interpreter::ImportTexture(int i, int tile, bool importReplacement) {
+     // with different palettes gets distinct cache entries.
+     TextureCacheKey key;
+     if (fmt == G_IM_FMT_CI) {
++        // The palette type is part of the key too. The RDP applies it as it draws, so the same texels and palette
++        // drawn with G_TT_IA16 and then with G_TT_RGBA16 are two different textures.
++        bool ia16 = PaletteIsIa16(mRdp->other_mode_h);
+         if (siz == G_IM_SIZ_4b) {
+             uint8_t palSlot = paletteIndex / 8;
+             key = { origAddr,
+@@ -1323,11 +1338,12 @@ void Interpreter::ImportTexture(int i, int tile, bool importReplacement) {
+                     fmt,
+                     siz,
+                     paletteIndex,
+-                    origSizeBytes };
++                    origSizeBytes,
++                    ia16 };
+         } else {
+             // CI8 uses both palette halves
+             key = { origAddr,     { mRdp->palette_dram_addr[0], mRdp->palette_dram_addr[1] }, fmt, siz, paletteIndex,
+-                    origSizeBytes };
++                    origSizeBytes, ia16 };
+         }
+     } else {
+         key = { origAddr, {}, fmt, siz, paletteIndex, origSizeBytes };
+@@ -3204,16 +3220,27 @@ void Interpreter::GfxDpSetColorImage(uint32_t format, uint32_t size, uint32_t wi
+     mRdp->color_image_address = address;
+ }
+ 
++// Stores a new other_mode_h. The RDP applies the palette type (TEXTLUT) as it draws, so when a display list changes the
++// type, the CI textures in use were decoded with the old one. Marking the textures as changed makes the next triangle
++// import them again, and ImportTexture then finds or decodes them for the new type.
++static void SetOtherModeH(RDP* rdp, uint32_t other_mode_h) {
++    if (((rdp->other_mode_h ^ other_mode_h) & (3U << G_MDSFT_TEXTLUT)) != 0) {
++        rdp->textures_changed[0] = true;
++        rdp->textures_changed[1] = true;
++    }
++    rdp->other_mode_h = other_mode_h;
++}
++
+ void Interpreter::GfxSpSetOtherMode(uint32_t shift, uint32_t num_bits, uint64_t mode) {
+     uint64_t mask = (((uint64_t)1 << num_bits) - 1) << shift;
+     uint64_t om = mRdp->other_mode_l | ((uint64_t)mRdp->other_mode_h << 32);
+     om = (om & ~mask) | mode;
+     mRdp->other_mode_l = (uint32_t)om;
+-    mRdp->other_mode_h = (uint32_t)(om >> 32);
++    SetOtherModeH(mRdp, (uint32_t)(om >> 32));
+ }
+ 
+ void Interpreter::GfxDpSetOtherMode(uint32_t h, uint32_t l) {
+-    mRdp->other_mode_h = h;
++    SetOtherModeH(mRdp, h);
+     mRdp->other_mode_l = l;
+ }
+ 

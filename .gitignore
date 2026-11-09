@@ -1,4 +1,5 @@
-# Game data: never commit ROMs or anything extracted or generated from them
+# Game data: never commit ROMs or anything extracted or generated from them, such as the viewer's check reference
+# (tools/viewer_ref.py) and its screenshots (viewer --screenshot)
 *.z64
 *.n64
 *.v64
@@ -6,6 +7,8 @@
 *.o2r
 *.otr
 generated/
+viewer_ref*.json
+*.png
 
 # Build output
 build*/

@@ -87,11 +87,13 @@ The steps below have the same names as on GitHub.
 4. *Build*: `cmake --build --preset debug`.
 5. *Run the tests*: `ctest --preset debug`. The tests are `sha1` (known SHA-1 answers) and `rom_missing` (the program
    starts with a ROM path that does not exist and must say "file not found"). No test on CI uses a ROM; CI must never
-   have one. The tests that do (`rom_loader` and `rom_loader_detects_change`) exist only in builds with the game's
-   code, so CI does not build them.
+   have one. The tests that do (`rom_loader`, `rom_loader_detects_change`, and the asset viewer's `viewer_reference`
+   and `viewer_check`) exist only in builds with the game's code, so CI does not build them, nor the viewer itself.
 6. *Check hello's picture*: in `build/debug`, `xvfb-run ./hello --check --frames 30`. hello draws 30 frames; after the
-   third it reads the picture back and checks the white markers in its corners and the shapes placed with
-   `gSPForceMatrix` and `gSPModifyVertex` (the comment at the top of `hello/main.cpp` describes the picture).
+   third it reads the picture back and checks the white markers in its corners, the shapes placed with
+   `gSPForceMatrix` and `gSPModifyVertex`, and the colours of eight squares: textures read through IA16 and RGBA16
+   palettes, and textures tagged IA4 and IA8 drawn with palettes on and off (the comment at the top of
+   `hello/main.cpp` describes the picture).
 
 **Windows (MSVC)**, on Windows Server 2022 with Visual Studio 2022:
 
@@ -125,10 +127,10 @@ cd build/debug && ./hello --check --frames 30
 ```
 
 Under WSL, hello's window opens on your desktop, so no virtual screen is needed. With the decompilation (its branch
-`port-groundwork`) in the folder next to the repository, your build also includes the game's code, and `ctest` also
-runs the two `rom_loader` tests on your ROM; CI has neither, so there they are not built. To build exactly what CI
-builds, point `TD_DECOMP_DIR` at a folder that does not exist, in a build folder of its own. From the repository
-folder:
+`port-groundwork`) in the folder next to the repository, your build also includes the game's code, and `ctest` also runs
+the two `rom_loader` tests and the asset viewer's check on your ROM; CI has neither, so there they are not built. To
+build exactly what CI builds, point `TD_DECOMP_DIR` at a folder that does not exist, in a build folder of its own. From
+the repository folder:
 
 ```
 cmake -S . -B build/no-game-code -G Ninja -DCMAKE_BUILD_TYPE=Debug -DTD_DECOMP_DIR=/nonexistent
@@ -155,9 +157,9 @@ the `build` folder deletes them too.
 
 ## Adding to CI, or setting it up from nothing
 
-**Adding a test.** `ci.yml` does not change. Tests are listed in `CMakeLists.txt`, inside the `if(BUILD_TESTING)`
-block, with `add_test`, and `ctest` runs every test listed there, on your computer and on both runners (except the
-tests that need the game's code, below). For example, the `rom_missing` test is:
+**Adding a test.** `ci.yml` does not change. Tests are listed in `CMakeLists.txt`, inside `if(BUILD_TESTING)` blocks,
+with `add_test`, and `ctest` runs every test listed there, on your computer and on both runners (except the tests that
+need the game's code, below). For example, the `rom_missing` test is:
 
 ```cmake
 add_test(NAME rom_missing COMMAND turnbuckle-dive ${CMAKE_BINARY_DIR}/no-rom-here.z64)
@@ -166,11 +168,11 @@ set_tests_properties(rom_missing PROPERTIES PASS_REGULAR_EXPRESSION "no-rom-here
 
 A test passes when its program ends with exit code 0, or, as here, when its output contains the given text. Either
 way it fails when its output holds a report of AddressSanitizer, LeakSanitizer or UndefinedBehaviorSanitizer (an
-`asan` build): the last lines of the block set that for every test listed above them, so a new test goes above them.
+`asan` build): the last lines of `CMakeLists.txt` set that for every test in the file, so a new test goes above them.
 
-The tests inside the block's `if(TD_GAME_CODE)` part, such as `rom_loader`, exist only in builds with the game's code,
-so CI never builds or runs them. A test that must run on CI goes outside that part, and must need neither the ROM nor
-the decompilation.
+The tests inside an `if(TD_GAME_CODE)` part, such as `rom_loader` and `viewer_check`, exist only in builds with the
+game's code, so CI never builds or runs them. A test that must run on CI goes outside those parts, and must need
+neither the ROM nor the decompilation.
 
 **Adding a step.** Add an entry under a job's `steps:`, indented exactly like the others:
 

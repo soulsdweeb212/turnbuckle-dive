@@ -4,8 +4,9 @@ Turnbuckle Dive runs the game's own code: the C of the WCW/nWo Revenge decompila
 explains where that C comes from, how it is compiled, what the port provides to it, how it is tested, and how to step
 through it in a debugger.
 
-So far the game code in the port is the game's ROM loader: the functions that read resources (textures, models,
-animations and the rest of the game's data) out of the ROM and unpack the compressed ones.
+So far the game code in the port is the game's ROM loader, the functions that read resources (textures, models,
+animations and the rest of the game's data) out of the ROM and unpack the compressed ones, and the functions that turn
+a model, an effect sprite or a picture into display lists, which the asset viewer draws ([VIEWER.md](VIEWER.md)).
 
 ## Where the game's C comes from
 
@@ -85,6 +86,33 @@ needs and the build does not have. Today the files are the ROM loader, from the 
 | `func_800037F4.c` | The game's LZSS decompressor, which unpacks a compressed resource. |
 | `readRomSynchronousChunks.c` | Reads bytes from ROM: a DMA transfer on the N64, a copy from the ROM in memory here. |
 
+and the functions that build display lists for a model, an effect sprite or a picture, from `src/main` and, the last
+two, from overlay 1 (`src/code_80090000`):
+
+| File | What it does |
+|---|---|
+| `func_8000486C.c` | Turns a mesh's 8-byte vertices into the 16-byte vertices (`Vtx`) the N64 draws. |
+| `buildVertexDisplayList.c` | Writes a mesh's triangle list. |
+| `buildObjectDisplayListTail.c` | Writes the material list of a mesh without a texture. |
+| `buildCiTextureDisplayList.c` | Writes the material list of a mesh with a texture, which loads its texels. |
+| `func_80004E08.c` | Loads a texture and its palette into a display record. |
+| `convertRgba16ToGrayscale.c` | Turns a palette into grey levels, when the game's grayscale switch is on. |
+| `func_8000670C.c` | Loads an effect sprite's texture and palette. |
+| `func_80007920.c` | Fills in one vertex (`Vtx`), such as the corners of the effect sprites' square. |
+| `buildCi4TextureDisplayList.c` | Writes an effect sprite's render state and the commands that load its texels. |
+| `func_80096A6C.c` | Writes the commands that load one tile of a picture. |
+| `func_80096D8C.c` | Draws a picture as tiles, each a texture rectangle. |
+
+These write 16-byte commands that hold whole pointers, and the record they fill has a 64-bit layout: the
+decompilation's `docs/port.md` explains how.
+
+Fast3D, LibUltraShip's renderer, keeps every texture it has decoded, filed under the addresses of its texels and
+palette, not under what they hold. The game loads new textures and palettes into buffers it already has
+(`func_80004E08` and `func_8000670C` keep a buffer when the new resource fits in it) and changes palettes where they
+are (`convertRgba16ToGrayscale`), so once the game's own scene code runs, the port must drop Fast3D's textures each
+time the game writes into a texture or palette that was drawn (`gfx_texture_cache_clear`). The viewer loads each
+subject once, and drops them after freeing a subject.
+
 ## What the port provides to the game
 
 The game's C calls a few functions that the port provides. The decompilation's `include/port.h` declares them for the
@@ -99,7 +127,10 @@ For parts of the game that are not compiled yet, the port has stand-ins with the
 
 - `src/game_heap.c`: the game's heap functions, `allocateHeap` and `releaseHeapBlock`, built on the C library's malloc.
   The file explains why the game's own heap cannot run on a 64-bit PC yet.
-- `src/game_data.c`: the two game variables the loader uses, `D_800482E0` and `D_800482E4`. A data generator will later
+- `src/game_data.c`: the game variables the compiled files use. The loader's two tables, `D_800482E0` and
+  `D_800482E4`, start empty and the loader fills them. The others are values the game keeps in its ROM (the grayscale
+  switch, the grayscale factors, a picture's height scale): the repository holds none of them, and `game_data_init`
+  copies them from your ROM when `res_init` (`src/resources.c`) starts the game's code. A data generator will later
   write all of the game's data as C, and then this file goes.
 
 `src/game_check.c` keeps the two headers in step: it is compiled with the game's settings and includes both

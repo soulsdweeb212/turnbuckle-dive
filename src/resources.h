@@ -7,7 +7,8 @@
 
 #include "game.h"
 
-/* Runs the game's initializeAssetSizeTable, which reads the resource table from the attached ROM (rom_attach). */
+/* Starts the game's code on the attached ROM (rom_attach): copies the game data that the ROM holds into the port's
+ * stand-ins (game_data_init), then runs the game's initializeAssetSizeTable, which reads the resource table. */
 void res_init(void);
 
 /* Loads resource id (1 to GAME_RES_COUNT) with the game's func_80003684 into a new buffer of exactly the resource's

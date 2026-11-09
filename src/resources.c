@@ -3,6 +3,7 @@
 #include <stdlib.h>
 
 void res_init(void) {
+    game_data_init();
     initializeAssetSizeTable();
 }
 

@@ -51,6 +51,23 @@
                     "ignoreFailures": true
                 }
             ]
+        },
+        {
+            "name": "Debug asset viewer",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${input:viewerPath}",
+            "args": [],
+            "cwd": "${input:viewerDirectory}",
+            "environment": [],
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ]
         }
     ],
     "inputs": [
@@ -77,6 +94,18 @@
             "type": "command",
             "command": "cmake.getLaunchTargetDirectory",
             "args": { "targetName": "hello" }
+        },
+        {
+            "id": "viewerPath",
+            "type": "command",
+            "command": "cmake.launchTargetPath",
+            "args": { "targetName": "viewer" }
+        },
+        {
+            "id": "viewerDirectory",
+            "type": "command",
+            "command": "cmake.getLaunchTargetDirectory",
+            "args": { "targetName": "viewer" }
         }
     ]
 }

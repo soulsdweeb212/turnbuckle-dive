@@ -4,15 +4,21 @@
 //   hello              run until the window is closed
 //   hello --frames N   draw N frames, print how long they took, then exit
 //   hello --check      draw at twice the window's resolution and, after the third frame, read the picture back and
-//                      check it: the corner markers, and that each shape placed with gSPForceMatrix or
-//                      gSPModifyVertex fills exactly its box (exit 2 if a check fails, or if hello stops before the
-//                      third frame)
+//                      check it: the corner markers, that each shape placed with gSPForceMatrix or gSPModifyVertex
+//                      fills exactly its box, and that the eight palette squares have the colours their texels and
+//                      palettes give (exit 2 if a check fails, or if hello stops before the third frame)
 //
 // The picture: a dark background, a shaded triangle drawn through the RSP path (viewport, matrices, vertices), three
 // ring ropes, a square that moves one pixel per frame, and one-pixel white markers at (0,0) and (479,239). Above the
 // ropes are the shapes that test LibUltraShip patches 0003 and 0004: on the left a cyan triangle placed only by a
 // force matrix; on the right a yellow sprite built the way the game builds its sprites, in front of a green wall and
-// behind a magenta one.
+// behind a magenta one. Between them, on either side of the shaded triangle's tip, eight squares test patches 0005 and
+// 0006. In the upper row, two textures made of palette indices (CI4 on the left, CI8 on the right), each drawn once
+// with its palette read as IA16 (grey levels with their own transparency, over a red backdrop that shows through the
+// left half) and once, beside it, with the same palette read as RGBA16 (colours). In the lower row, smaller, two
+// textures whose texels are tagged IA4 and IA8 (intensity and alpha), the way the game loads its 2D pictures, each
+// drawn once with palettes on, when the N64 looks their texels up in the palette like CI ones, and once with palettes
+// off, when they are grey levels.
 
 #include <algorithm>
 #include <chrono>
@@ -21,37 +27,29 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <exception>
 #include <memory>
 #include <string>
-#include <thread>
 #include <vector>
 
-#ifdef __linux__
-#include <unistd.h>
-#endif
-
+#include "context.h"
 #include "fast/Fast3dWindow.h"
-#include "fast/interpreter.h"
-#include "libultraship/bridge/UltraBridge.h"
-#include "libultraship/controller/controldeck/ControlDeck.h"
+#include "frame.h"
 #include "libultraship/libultraship.h"
-#include "ship/audio/Audio.h"
-#include "ship/config/Config.h"
-#include "ship/config/ConsoleVariable.h"
-#include "ship/core/Context.h"
-#include "ship/debug/Console.h"
-#include "ship/debug/CrashHandler.h"
-#include "ship/events/Events.h"
-#include "ship/log/Logger.h"
-#include "ship/resource/ResourceManager.h"
-#include "ship/thread/ThreadPool.h"
-#include "ship/window/FileDrop.h"
 
 namespace {
 
-constexpr uint32_t kWidth = 480;
-constexpr uint32_t kHeight = 240;
+// LibUltraShip's start-up, the matrices, the corner markers and the read-back are shared with the viewer (src/context.h
+// and src/frame.h).
+using td::CheckCorners;
+using td::Fill;
+using td::MatrixFromFloat;
+using td::MultiplyMatrices;
+using td::Picture;
+using td::ReadPicture;
+using td::Rgb5;
+
+constexpr uint32_t kWidth = td::kGameWidth;
+constexpr uint32_t kHeight = td::kGameHeight;
 
 // Distinct colour and depth image addresses. Fast3D treats a fill rectangle as a depth clear when the two are equal,
 // and both start out null.
@@ -112,34 +110,68 @@ const uint8_t sSpriteTexture[4 * 4 * 2] = {
     0x00, 0x01, 0x00, 0x01, 0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x01, 0x00, 0x01, 0xFF, 0xFF, 0xFF, 0xFF,
 };
 
+// The palette squares. A CI4 or CI8 texel is not a colour but an index into a palette, which G_LOADTLUT copies into
+// TMEM, and gDPSetTextureLUT (the TEXTLUT field of other_mode_h) tells the RDP how to read the palette's 16-bit
+// entries: G_TT_RGBA16 as RGBA5551 colours, G_TT_IA16 as an intensity (high byte) and an alpha (low byte). Both
+// textures are 16x16 texels, the left half one palette entry and the right half another, and both palettes hold the
+// same two entries:
+//   kEntryLeft   IA16: intensity 0x40 with alpha 0x81, a dark grey that lets about half of what is behind it through.
+//                RGBA16: an opaque dark brown (red 8, green 2 and blue 0, out of 31).
+//   kEntryRight  IA16: intensity 0xC0 with alpha 0xFF, an opaque light grey. RGBA16: an opaque violet (24, 3, 31).
+// They are entries 1 and 2 of the CI4 palette (16 entries), and entries 0x21 and 0xA2 of the CI8 palette (256 entries,
+// which Fast3D keeps in two halves of 128).
+//
+// The lower row's texels are values whose IA4 or IA8 meaning differs from their palette entry's colour, and every
+// entry they index holds kEntryLeft or kEntryRight too:
+//   kIa4Left  0x7   IA4: intensity 3 of 7 with its alpha bit set, an opaque dark grey; palette entry 7 of 16.
+//   kIa4Right 0xD   IA4: intensity 6 of 7, opaque, a light grey; palette entry 13.
+//   kIa8Left  0x5F  IA8: intensity 5 of 15 with alpha 15 of 15, an opaque dark grey; palette entry 0x5F of 256.
+//   kIa8Right 0xCF  IA8: intensity 12 of 15, opaque, a light grey; palette entry 0xCF.
+constexpr uint16_t kEntryLeft = 0x4081;
+constexpr uint16_t kEntryRight = 0xC0FF;
+constexpr uint8_t kCi4Left = 1;
+constexpr uint8_t kCi4Right = 2;
+constexpr uint8_t kCi8Left = 0x21;
+constexpr uint8_t kCi8Right = 0xA2;
+constexpr uint8_t kIa4Left = 0x7;
+constexpr uint8_t kIa4Right = 0xD;
+constexpr uint8_t kIa8Left = 0x5F;
+constexpr uint8_t kIa8Right = 0xCF;
+constexpr uint32_t kPaletteTexels = 16; // each texture's width and height in texels
+alignas(8) uint8_t sCi4Texels[kPaletteTexels * kPaletteTexels / 2];
+alignas(8) uint8_t sCi8Texels[kPaletteTexels * kPaletteTexels];
+alignas(8) uint8_t sIa4Texels[kPaletteTexels * kPaletteTexels / 2];
+alignas(8) uint8_t sIa8Texels[kPaletteTexels * kPaletteTexels];
+alignas(8) uint8_t sPalette16[16 * 2];
+alignas(8) uint8_t sPalette256[256 * 2];
+
+// How a square's texels are read when it is drawn: as indices into the palette, read as IA16 or as RGBA16, or, with
+// palettes off, as the IA4 or IA8 values they are.
+enum class Read { PaletteIa16, PaletteRgba16, Ia4, Ia8 };
+
+// The eight squares in the order they are drawn, with their top left corners and sizes in picture pixels. The upper
+// row's textures (CI4, CI8) are each drawn once with their palette read as IA16, over a red backdrop 4 pixels larger
+// than the square all round, and once, beside it, with the same palette at the same address read as RGBA16; they are
+// triangles, two to a square, whose four vertices are in sPaletteQuads. The lower row's (IA4, IA8) are texture
+// rectangles, one texel to a pixel, each drawn with palettes on and off.
+struct PaletteSquare {
+    const char* name;
+    uint32_t left, top, size;
+    Read read;
+};
+const PaletteSquare kPaletteSquares[8] = {
+    { "CI4 texels, IA16 palette", 132, 40, 32, Read::PaletteIa16 },
+    { "CI4 texels, RGBA16 palette", 176, 40, 32, Read::PaletteRgba16 },
+    { "IA4 texels, RGBA16 palette", 136, 88, 16, Read::PaletteRgba16 },
+    { "IA4 texels, no palette", 160, 88, 16, Read::Ia4 },
+    { "CI8 texels, RGBA16 palette", 320, 40, 32, Read::PaletteRgba16 },
+    { "CI8 texels, IA16 palette", 276, 40, 32, Read::PaletteIa16 },
+    { "IA8 texels, no palette", 304, 88, 16, Read::Ia8 },
+    { "IA8 texels, RGBA16 palette", 328, 88, 16, Read::PaletteRgba16 },
+};
+Vtx sPaletteQuads[8][4];
+
 Gfx sDisplayList[256];
-// The bitmask of connected controller ports. The control deck keeps a pointer to it, so it must outlive startup.
-uint8_t sControllerBits;
-
-// The N64's fixed-point matrix layout: 16 words of integer halves, then 16 of fractions, two elements per word.
-void MatrixFromFloat(Mtx* m, const float f[4][4]) {
-    int32_t* intWords = &m->m[0][0];
-    int32_t* fracWords = &m->m[2][0];
-
-    for (int i = 0; i < 4; i++) {
-        for (int j = 0; j < 4; j += 2) {
-            int32_t a = (int32_t)(f[i][j] * 65536.0f);
-            int32_t b = (int32_t)(f[i][j + 1] * 65536.0f);
-
-            *intWords++ = (int32_t)(((uint32_t)a & 0xFFFF0000u) | ((uint32_t)b >> 16));
-            *fracWords++ = (int32_t)(((uint32_t)a << 16) | ((uint32_t)b & 0xFFFFu));
-        }
-    }
-}
-
-// Multiplies two matrices the N64 way round: a point (a row) is transformed by a first, then by b.
-void MultiplyMatrices(const float a[4][4], const float b[4][4], float out[4][4]) {
-    for (int i = 0; i < 4; i++) {
-        for (int j = 0; j < 4; j++) {
-            out[i][j] = a[i][0] * b[0][j] + a[i][1] * b[1][j] + a[i][2] * b[2][j] + a[i][3] * b[3][j];
-        }
-    }
-}
 
 // An orthographic projection that maps pixel coordinates (0,0 top left) straight onto the screen, and the two
 // matrices given with gSPForceMatrix.
@@ -182,10 +214,62 @@ void BuildMatrices() {
     MatrixFromFloat(&sSpriteMatrix, sprite);
 }
 
-uint32_t Fill(uint32_t r, uint32_t g, uint32_t b) {
-    uint32_t c = GPACK_RGBA5551(r, g, b, 1);
+// Fills in the palette squares' texels, palettes and vertices (see kEntryLeft).
+void BuildPaletteSquares() {
+    // A CI4 texel is 4 bits, two to a byte with the first in the high bits, so a row is 8 bytes and its left half 4 of
+    // them. A CI8 texel is a byte.
+    for (uint32_t i = 0; i < sizeof(sCi4Texels); i++) {
+        uint8_t index = (i % (kPaletteTexels / 2) < kPaletteTexels / 4) ? kCi4Left : kCi4Right;
 
-    return (c << 16) | c;
+        sCi4Texels[i] = (uint8_t)((index << 4) | index);
+    }
+    for (uint32_t i = 0; i < sizeof(sCi8Texels); i++) {
+        sCi8Texels[i] = (i % kPaletteTexels < kPaletteTexels / 2) ? kCi8Left : kCi8Right;
+    }
+    for (uint32_t i = 0; i < sizeof(sIa4Texels); i++) {
+        uint8_t value = (i % (kPaletteTexels / 2) < kPaletteTexels / 4) ? kIa4Left : kIa4Right;
+
+        sIa4Texels[i] = (uint8_t)((value << 4) | value);
+    }
+    for (uint32_t i = 0; i < sizeof(sIa8Texels); i++) {
+        sIa8Texels[i] = (i % kPaletteTexels < kPaletteTexels / 2) ? kIa8Left : kIa8Right;
+    }
+
+    // Palette entries are stored in the N64's byte order (big-endian), which is how Fast3D reads them.
+    auto setEntry = [](uint8_t* palette, uint32_t index, uint16_t entry) {
+        palette[index * 2] = (uint8_t)(entry >> 8);
+        palette[index * 2 + 1] = (uint8_t)entry;
+    };
+    setEntry(sPalette16, kCi4Left, kEntryLeft);
+    setEntry(sPalette16, kCi4Right, kEntryRight);
+    setEntry(sPalette256, kCi8Left, kEntryLeft);
+    setEntry(sPalette256, kCi8Right, kEntryRight);
+    setEntry(sPalette16, kIa4Left, kEntryLeft);
+    setEntry(sPalette16, kIa4Right, kEntryRight);
+    setEntry(sPalette256, kIa8Left, kEntryLeft);
+    setEntry(sPalette256, kIa8Right, kEntryRight);
+
+    // Each square's corners in the order top left, top right, bottom left, bottom right, in picture pixels (the
+    // orthographic projection maps them straight onto the screen), with texture coordinates in texels times 32 (5
+    // fraction bits) that stretch the whole texture over the square.
+    for (int i = 0; i < 8; i++) {
+        for (uint32_t corner = 0; corner < 4; corner++) {
+            uint32_t right = corner & 1;
+            uint32_t bottom = corner >> 1;
+            Vtx_t* v = &sPaletteQuads[i][corner].v;
+
+            v->ob[0] = (short)(kPaletteSquares[i].left + right * kPaletteSquares[i].size);
+            v->ob[1] = (short)(kPaletteSquares[i].top + bottom * kPaletteSquares[i].size);
+            v->ob[2] = 0;
+            v->flag = 0;
+            v->tc[0] = (short)(right * kPaletteTexels * 32);
+            v->tc[1] = (short)(bottom * kPaletteTexels * 32);
+            v->cn[0] = 255;
+            v->cn[1] = 255;
+            v->cn[2] = 255;
+            v->cn[3] = 255;
+        }
+    }
 }
 
 // gSPModifyVertex values, built the way the game's sprite code builds them. A screen position is in pixels times 4
@@ -199,6 +283,14 @@ uint32_t TexelST(uint32_t s, uint32_t t) {
     return ((s * 32) << 16) | (t * 32);
 }
 
+// A lower-row square as a texture rectangle of the loaded texture, one texel to a picture pixel (the scale 1 << 10 that
+// func_80096D8C uses), from its top left corner to its bottom right one, which in one-cycle mode is not drawn.
+Gfx* PaletteRectangle(Gfx* g, const PaletteSquare& square) {
+    gSPTextureRectangle(g++, square.left << 2, square.top << 2, (square.left + square.size) << 2,
+                        (square.top + square.size) << 2, G_TX_RENDERTILE, 0, 0, 1 << 10, 1 << 10);
+    return g;
+}
+
 void BuildFrame(uint32_t frame) {
     Gfx* g = sDisplayList;
     uint32_t squareX = 20 + frame % 420;
@@ -208,10 +300,10 @@ void BuildFrame(uint32_t frame) {
     gDPSetDepthImage(g++, sDepthImage);
     gDPSetScissor(g++, G_SC_NON_INTERLACE, 0, 0, kWidth, kHeight);
 
-    // Fill mode: background, ropes, moving square.
+    // Fill mode: background, ropes, moving square, and the red backdrops of the IA16 palette squares.
     gDPSetCycleType(g++, G_CYC_FILL);
     gDPSetRenderMode(g++, G_RM_NOOP, G_RM_NOOP2);
-    gDPSetFillColor(g++, Fill(16, 24, 72));
+    gDPSetFillColor(g++, Fill(td::kBackgroundR, td::kBackgroundG, td::kBackgroundB));
     gDPFillRectangle(g++, 0, 0, kWidth - 1, kHeight - 1);
     gDPPipeSync(g++);
     gDPSetFillColor(g++, Fill(230, 40, 40));
@@ -225,6 +317,14 @@ void BuildFrame(uint32_t frame) {
     gDPPipeSync(g++);
     gDPSetFillColor(g++, Fill(250, 210, 40));
     gDPFillRectangle(g++, squareX, 206, squareX + 15, 221);
+    gDPPipeSync(g++);
+    gDPSetFillColor(g++, Fill(255, 0, 0));
+    for (const PaletteSquare& square : kPaletteSquares) {
+        if (square.read == Read::PaletteIa16) {
+            gDPFillRectangle(g++, square.left - 4, square.top - 4, square.left + square.size + 3,
+                             square.top + square.size + 3);
+        }
+    }
 
     // One-cycle mode through the RSP: a shaded triangle.
     gDPPipeSync(g++);
@@ -285,183 +385,81 @@ void BuildFrame(uint32_t frame) {
     gSPModifyVertex(g++, 3, G_MWO_POINT_ST, TexelST(4, 4));
     gSP1Quadrangle(g++, 0, 1, 3, 2, 0);
 
-    // The corner markers, last so nothing covers them.
+    // The upper row's palette squares, drawn the way the game draws its effect sprites (func_80011764). First the
+    // palette and the texels are loaded with the commands of the game's buildCi4TextureDisplayList (CI4) and
+    // buildCiTextureDisplayList (CI8): gDPLoadTLUT_pal16 or gDPLoadTLUT_pal256 copies the palette into TMEM 0x100
+    // through the load tile, and gDPLoadTextureBlock_4b or gDPLoadTextureBlock copies the texels into TMEM 0 with one
+    // LOADBLOCK and sets up the render tile. Then gDPSetTextureLUT sets the palette type to IA16 just before the
+    // triangles and back to RGBA16 after them, with the game's words (G_SETOTHERMODE_H E3001001 0000C000, then
+    // E3001001 00008000). The second square of each texture uses the texture that is still loaded, with the other
+    // palette type, so Fast3D must notice the type change by itself and must not take the texture decoded with the
+    // first type from its cache. The CI8 pair is drawn the other way round, RGBA16 first, and switches to IA16 with
+    // G_RDPSETOTHERMODE instead (gDPSetOtherMode, which sets all of other_mode_h and other_mode_l at once): its words
+    // hold every field as the commands above left it, but with the palette type IA16. The texels' colour and alpha are
+    // drawn as they are (G_CC_DECALRGBA) and blended over what is behind them (G_RM_XLU_SURF).
+    gSPMatrix(g++, &sIdentity, G_MTX_MODELVIEW | G_MTX_LOAD | G_MTX_NOPUSH);
     gDPPipeSync(g++);
-    gDPSetCycleType(g++, G_CYC_FILL);
-    gDPSetRenderMode(g++, G_RM_NOOP, G_RM_NOOP2);
-    gDPSetFillColor(g++, Fill(255, 255, 255));
-    gDPFillRectangle(g++, 0, 0, 0, 0);
-    gDPFillRectangle(g++, kWidth - 1, kHeight - 1, kWidth - 1, kHeight - 1);
+    gDPSetRenderMode(g++, G_RM_XLU_SURF, G_RM_XLU_SURF2);
+    gDPSetCombineMode(g++, G_CC_DECALRGBA, G_CC_DECALRGBA);
+    gDPLoadTLUT_pal16(g++, 0, sPalette16);
+    gDPLoadTextureBlock_4b(g++, sCi4Texels, G_IM_FMT_CI, kPaletteTexels, kPaletteTexels, 0, G_TX_CLAMP, G_TX_CLAMP, 4,
+                           4, G_TX_NOLOD, G_TX_NOLOD);
+    gDPSetTextureLUT(g++, G_TT_IA16);
+    __gSPVertex(g++, sPaletteQuads[0], 4, 0);
+    gSP1Quadrangle(g++, 0, 1, 3, 2, 0);
+    gDPPipeSync(g++);
+    gDPSetTextureLUT(g++, G_TT_RGBA16);
+    __gSPVertex(g++, sPaletteQuads[1], 4, 0);
+    gSP1Quadrangle(g++, 0, 1, 3, 2, 0);
+
+    // The lower row's IA4 pair, loaded the way the game's func_80096A6C loads a tile of a 4-bit picture
+    // (gDPLoadTextureTile_4b with the IA format: the texels go in as 8-bit ones, two to a byte, with one LOADTILE) and
+    // drawn the way its func_80096D8C draws one, as a texture rectangle, one texel to a pixel. First with palettes on
+    // (RGBA16, as the square before left them), so the texels are indices into the CI4 palette, still loaded; then with
+    // palettes off, so they are IA4 grey levels. The palette type's change makes Fast3D import the texels again.
+    gDPPipeSync(g++);
+    gDPLoadTextureTile_4b(g++, sIa4Texels, G_IM_FMT_IA, kPaletteTexels, kPaletteTexels, 0, 0, kPaletteTexels - 1,
+                          kPaletteTexels - 1, 0, G_TX_CLAMP, G_TX_CLAMP, G_TX_NOMASK, G_TX_NOMASK, G_TX_NOLOD,
+                          G_TX_NOLOD);
+    g = PaletteRectangle(g, kPaletteSquares[2]);
+    gDPPipeSync(g++);
+    gDPSetTextureLUT(g++, G_TT_NONE);
+    g = PaletteRectangle(g, kPaletteSquares[3]);
+
+    gDPPipeSync(g++);
+    gDPSetTextureLUT(g++, G_TT_RGBA16);
+    gDPLoadTLUT_pal256(g++, sPalette256);
+    gDPLoadTextureBlock(g++, sCi8Texels, G_IM_FMT_CI, G_IM_SIZ_8b, kPaletteTexels, kPaletteTexels, 0, G_TX_CLAMP,
+                        G_TX_CLAMP, 4, 4, G_TX_NOLOD, G_TX_NOLOD);
+    __gSPVertex(g++, sPaletteQuads[4], 4, 0);
+    gSP1Quadrangle(g++, 0, 1, 3, 2, 0);
+    gDPPipeSync(g++);
+    gDPSetOtherMode(g++, G_CYC_1CYCLE | G_TF_POINT | G_TT_IA16,
+                    G_AC_NONE | G_ZS_PIXEL | G_RM_XLU_SURF | G_RM_XLU_SURF2);
+    __gSPVertex(g++, sPaletteQuads[5], 4, 0);
+    gSP1Quadrangle(g++, 0, 1, 3, 2, 0);
+
+    // The IA8 pair, loaded the way func_80096A6C loads a tile of an 8-bit picture (gDPLoadTextureTile with the IA
+    // format), and drawn as texture rectangles: first with palettes off, so the texels are IA8 grey levels, then with
+    // palettes on (RGBA16), so they are indices into the CI8 palette, still loaded.
+    gDPPipeSync(g++);
+    gDPSetTextureLUT(g++, G_TT_NONE);
+    gDPLoadTextureTile(g++, sIa8Texels, G_IM_FMT_IA, G_IM_SIZ_8b, kPaletteTexels, kPaletteTexels, 0, 0,
+                       kPaletteTexels - 1, kPaletteTexels - 1, 0, G_TX_CLAMP, G_TX_CLAMP, G_TX_NOMASK, G_TX_NOMASK,
+                       G_TX_NOLOD, G_TX_NOLOD);
+    g = PaletteRectangle(g, kPaletteSquares[6]);
+    gDPPipeSync(g++);
+    gDPSetTextureLUT(g++, G_TT_RGBA16);
+    g = PaletteRectangle(g, kPaletteSquares[7]);
+    // hello's other textures have no palette, so the next frame starts without a palette type.
+    gDPPipeSync(g++);
+    gDPSetTextureLUT(g++, G_TT_NONE);
+
+    // The corner markers, last so nothing covers them.
+    g = td::AddCornerMarkers(g);
 
     gDPFullSync(g++);
     gSPEndDisplayList(g++);
-}
-
-#ifdef __linux__
-// Under WSL, Mesa draws on the CPU (llvmpipe) unless it is told to use the GPU through Direct3D 12. /dev/dxg only
-// exists in WSL with GPU support, and an explicit GALLIUM_DRIVER always wins.
-void PreferWslGpu() {
-    if (std::getenv("GALLIUM_DRIVER") == nullptr && access("/dev/dxg", F_OK) == 0) {
-        setenv("GALLIUM_DRIVER", "d3d12", 0);
-        std::printf("WSL: using the GPU through Direct3D 12 (set GALLIUM_DRIVER=llvmpipe to draw on the CPU)\n");
-    }
-}
-#endif
-
-// LibUltraShip's parts only hold the context weakly, so whoever starts it must keep the context alive.
-struct LibUltraShip {
-    std::shared_ptr<Ship::Context> ctx;
-    std::shared_ptr<Fast::Fast3dWindow> window;
-    std::shared_ptr<LUS::UltraBridge> bridge;
-};
-
-// Starting the log and opening f3d.o2r are the steps a bad setup breaks (a folder hello cannot write to, a missing
-// archive), and LibUltraShip reports both by throwing. They run before the window is added, because destroying a
-// context that holds a window which never started crashes.
-//
-// LibUltraShip's crash handler answers a crash with a message box and waits for someone to close it. A --check run
-// (as on CI) has nobody to do that, so there it is left out, and a crash ends hello at once with the system's exit
-// code for it.
-LibUltraShip StartLibUltraShip(bool withCrashHandler) {
-    // The logger is made before the context so that, when startup fails, it is destroyed after the context: the
-    // context's destructor shuts the log down while the config, which logs as it goes away, is still alive.
-    std::string logPath = Ship::Context::GetPathRelativeToAppDirectory("logs/hello.log");
-    auto logger = std::make_shared<Ship::Logger>("Turnbuckle Dive hello", logPath);
-    auto ctx = Ship::Context::CreateInstance("Turnbuckle Dive hello", "tdhello");
-    ctx->GetChildren().Add(logger);
-    try {
-        logger->Init();
-    } catch (const std::exception& e) {
-        std::fprintf(stderr, "hello: could not start the log %s: %s\n", logPath.c_str(), e.what());
-        return {};
-    }
-
-    auto config = std::make_shared<Ship::Config>(Ship::Context::GetPathRelativeToAppDirectory("hello.cfg.json"));
-    ctx->GetChildren().Add(config);
-    auto cvars = std::make_shared<Ship::ConsoleVariable>(config);
-    ctx->GetChildren().Add(cvars);
-    auto threads = std::make_shared<Ship::ThreadPool>(std::max(1u, std::thread::hardware_concurrency() / 2));
-    ctx->GetChildren().Add(threads);
-    auto resources = std::make_shared<Ship::ResourceManager>(threads);
-    ctx->GetChildren().Add(resources);
-    if (withCrashHandler) {
-        ctx->GetChildren().Add(std::make_shared<Ship::CrashHandler>());
-    }
-    auto console = std::make_shared<Ship::Console>();
-    ctx->GetChildren().Add(console);
-
-    std::string archivePath = Ship::Context::GetPathRelativeToAppBundle("f3d.o2r");
-    nlohmann::json resourceArgs;
-    resourceArgs["archivePaths"] = std::vector<std::string>{ archivePath };
-    resourceArgs["validHashes"] = std::vector<uint32_t>{};
-    try {
-        resources->Init(resourceArgs);
-    } catch (const std::exception& e) {
-        std::fprintf(stderr, "hello: could not open %s: %s\n", archivePath.c_str(), e.what());
-        return {};
-    }
-
-    // The window comes before the control deck, which needs it; the deck must be in the context before the window
-    // initialises, because the GUI looks it up then.
-    auto window = std::make_shared<Fast::Fast3dWindow>(config, cvars, nullptr);
-    ctx->GetChildren().Add(window);
-    auto deck = std::make_shared<LUS::ControlDeck>(window, cvars);
-    ctx->GetChildren().Add(deck);
-
-    auto audio = std::make_shared<Ship::Audio>(Ship::AudioSettings{}, config);
-    ctx->GetChildren().Add(audio);
-    ctx->GetChildren().Add(std::make_shared<Ship::Events>());
-    auto fileDrop = std::make_shared<Ship::FileDrop>(window);
-    ctx->GetChildren().Add(fileDrop);
-    // Without the bridge, the C functions (WindowIsRunning and the rest) cannot find the window.
-    auto bridge = std::make_shared<LUS::UltraBridge>();
-    ctx->GetChildren().Add(bridge);
-    // All the parts are in place. The context's own Init() only marks it ready, and the window's GUI will not start
-    // until it is.
-    ctx->Init();
-
-    console->Init();
-    window->Init();
-    fileDrop->Init();
-    audio->Init();
-    bridge->UpdateCaches(ctx);
-
-    deck->Init(&sControllerBits);
-    return { ctx, window, bridge };
-}
-
-const char* Describe(uint16_t px) {
-    uint32_t r = px >> 11, g = (px >> 6) & 0x1F, b = (px >> 1) & 0x1F;
-
-    if (r == 31 && g == 31 && b == 31) {
-        return "white";
-    }
-    return (r < 8 && g < 8 && b > 4) ? "background" : "other";
-}
-
-// The game picture read back from Fast3D's framebuffer: w x h RGBA5551 pixels for the 480x240 picture, row after row
-// in the order they were read. Fast3D's framebuffer may be stored upside down; CheckCorners finds out which way.
-struct Picture {
-    uint32_t w = 0;
-    uint32_t h = 0;
-    std::vector<uint16_t> px;
-    bool topDown = false; // the first row read is the picture's top row
-};
-
-bool ReadPicture(const std::shared_ptr<Fast::Fast3dWindow>& window, Picture* pic) {
-    auto interp = window->GetInterpreterWeak().lock();
-
-    if (interp == nullptr || !interp->mRendersToFb) {
-        std::printf("check: the picture is drawn straight to the window, so it cannot be read back\n");
-        return false;
-    }
-
-    pic->w = interp->mCurDimensions.width;
-    pic->h = interp->mCurDimensions.height;
-    pic->px.resize(pic->w * pic->h);
-    interp->mRapi->ReadFramebufferToCPU(interp->mGameFb, pic->w, pic->h, pic->px.data());
-    std::printf("check: framebuffer %ux%u for a %ux%u picture (%.2fx)\n", pic->w, pic->h, kWidth, kHeight,
-                (double)pic->h / kHeight);
-    return true;
-}
-
-// Checks that the markers are in two opposite corners and the other two corners show the background. Either diagonal
-// counts if it is consistent, and it tells which way up the rows were read.
-bool CheckCorners(Picture* pic) {
-    uint32_t w = pic->w;
-    uint32_t h = pic->h;
-    const std::vector<uint16_t>& px = pic->px;
-
-    // Sample the middle of each corner pixel of the 480x240 picture as it lands in the w x h framebuffer.
-    uint32_t dx = (uint32_t)(0.5f * w / kWidth);
-    uint32_t dy = (uint32_t)(0.5f * h / kHeight);
-    uint16_t lowLeft = px[dy * w + dx];
-    uint16_t lowRight = px[dy * w + (w - 1 - dx)];
-    uint16_t highLeft = px[(h - 1 - dy) * w + dx];
-    uint16_t highRight = px[(h - 1 - dy) * w + (w - 1 - dx)];
-
-    std::printf("check: corners, first row read: left %s, right %s; last row read: left %s, right %s\n",
-                Describe(lowLeft), Describe(lowRight), Describe(highLeft), Describe(highRight));
-
-    auto is = [](uint16_t p, const char* what) { return std::strcmp(Describe(p), what) == 0; };
-    bool upright = is(highLeft, "white") && is(lowRight, "white") && is(lowLeft, "background") &&
-                   is(highRight, "background");
-    bool flipped = is(lowLeft, "white") && is(highRight, "white") && is(highLeft, "background") &&
-                   is(lowRight, "background");
-
-    if (upright || flipped) {
-        pic->topDown = flipped;
-        std::printf("check: PASS, markers at (0,0) and (479,239) are in the picture's corners (%s rows)\n",
-                    upright ? "bottom-up" : "top-down");
-        return true;
-    }
-    std::printf("check: FAIL, the markers are not in two opposite corners\n");
-    return false;
-}
-
-// A colour as it reads back: 5 bits per channel, without the alpha bit.
-constexpr uint16_t Rgb5(uint32_t r, uint32_t g, uint32_t b) {
-    return (uint16_t)(((r >> 3) << 11) | ((g >> 3) << 6) | ((b >> 3) << 1));
 }
 
 // A shape of the test picture, found by its colour, which nothing else in the picture has: the box its pixels must
@@ -530,6 +528,147 @@ bool CheckShapes(const Picture& pic) {
     return pass;
 }
 
+// A colour with 8 bits per channel, as the N64 works it out.
+struct Colour {
+    float r, g, b;
+};
+
+// The colour a palette entry gives over the backdrop behind it. IA16: the intensity in the high byte, blended over the
+// backdrop by the alpha in the low byte (the blend G_RM_XLU_SURF sets up). RGBA16: 5 bits each of red, green and blue,
+// scaled to 8 bits, then an alpha bit: 1 is opaque and 0 lets the backdrop show instead.
+Colour EntryColour(uint16_t entry, bool ia16, Colour backdrop) {
+    if (ia16) {
+        float intensity = (float)(entry >> 8);
+        float alpha = (float)(entry & 0xFF) / 255.0f;
+
+        return { intensity * alpha + backdrop.r * (1.0f - alpha), intensity * alpha + backdrop.g * (1.0f - alpha),
+                 intensity * alpha + backdrop.b * (1.0f - alpha) };
+    }
+    if ((entry & 1) == 0) {
+        return backdrop;
+    }
+    return { (float)(entry >> 11) * 255.0f / 31.0f, (float)((entry >> 6) & 0x1F) * 255.0f / 31.0f,
+             (float)((entry >> 1) & 0x1F) * 255.0f / 31.0f };
+}
+
+// One half of a palette square as it reads back, in the 5 bits per channel of the read-back picture (an 8-bit value
+// divided by 8, rounded down): the average colour of its pixels, the colour they must have, how many pixels were read
+// and how many of them are wrong.
+struct HalfRead {
+    float r = 0, g = 0, b = 0;
+    int wantR = 0, wantG = 0, wantB = 0;
+    uint32_t off = 0;
+    uint32_t total = 0;
+};
+
+// Reads the half of a palette square that lies between left and right and between top and bottom (picture pixels).
+// Only the pixels at least 2 picture pixels inside it count, so that the way the GPU rounds edges to framebuffer pixels
+// does not matter, and a pixel is wrong only when a channel is more than 1 off, which leaves room for the way the GPU
+// rounds the blend.
+HalfRead ReadHalf(const Picture& pic, uint32_t left, uint32_t top, uint32_t right, uint32_t bottom, Colour want) {
+    // The width and height of one picture pixel in framebuffer pixels.
+    float sx = (float)pic.w / (float)kWidth;
+    float sy = (float)pic.h / (float)kHeight;
+    uint32_t x0 = (uint32_t)std::ceil((float)(left + 2) * sx);
+    uint32_t x1 = (uint32_t)std::floor((float)(right - 2) * sx);
+    uint32_t y0 = (uint32_t)std::ceil((float)(top + 2) * sy);
+    uint32_t y1 = (uint32_t)std::floor((float)(bottom - 2) * sy);
+    HalfRead read;
+    uint64_t sumR = 0, sumG = 0, sumB = 0;
+
+    read.wantR = (int)(want.r / 8.0f);
+    read.wantG = (int)(want.g / 8.0f);
+    read.wantB = (int)(want.b / 8.0f);
+    for (uint32_t y = y0; y < y1; y++) {
+        uint32_t row = pic.topDown ? y : pic.h - 1 - y; // y is counted from the picture's top
+        for (uint32_t x = x0; x < x1; x++) {
+            uint16_t px = pic.px[row * pic.w + x];
+            int r = px >> 11;
+            int g = (px >> 6) & 0x1F;
+            int b = (px >> 1) & 0x1F;
+
+            sumR += (uint64_t)r;
+            sumG += (uint64_t)g;
+            sumB += (uint64_t)b;
+            if (std::abs(r - read.wantR) > 1 || std::abs(g - read.wantG) > 1 || std::abs(b - read.wantB) > 1) {
+                read.off++;
+            }
+            read.total++;
+        }
+    }
+    if (read.total > 0) {
+        read.r = (float)sumR / (float)read.total;
+        read.g = (float)sumG / (float)read.total;
+        read.b = (float)sumB / (float)read.total;
+    }
+    return read;
+}
+
+// A half's colours for the check's report, with the number of wrong pixels when there are any.
+std::string DescribeHalf(const HalfRead& read) {
+    char text[128];
+
+    std::snprintf(text, sizeof(text), "(%.0f,%.0f,%.0f), expected (%d,%d,%d)", read.r, read.g, read.b, read.wantR,
+                  read.wantG, read.wantB);
+    std::string description = text;
+    if (read.off > 0) {
+        std::snprintf(text, sizeof(text), ", %u of %u pixels wrong", read.off, read.total);
+        description += text;
+    }
+    return description;
+}
+
+// The colour one half of a square must have. The upper row's halves show palette entries kEntryLeft and kEntryRight
+// (an IA16 one blended over the red backdrop), and so do the lower row's squares drawn with palettes on, whose texels
+// index entries that hold the same two values. With palettes off, an IA4 texel is a 3-bit intensity and an alpha bit,
+// and an IA8 texel a 4-bit intensity and a 4-bit alpha, widened to 8 bits as Fast3D widens them (times 36 and 17);
+// the lower row's texels are all opaque.
+Colour HalfColour(const PaletteSquare& square, bool right) {
+    const Colour red = { 255.0f, 0.0f, 0.0f };
+    float grey;
+
+    switch (square.read) {
+        case Read::PaletteIa16:
+        case Read::PaletteRgba16:
+            return EntryColour(right ? kEntryRight : kEntryLeft, square.read == Read::PaletteIa16, red);
+        case Read::Ia4:
+            grey = (float)(((right ? kIa4Right : kIa4Left) >> 1) * 36);
+            break;
+        default:
+            grey = (float)(((right ? kIa8Right : kIa8Left) >> 4) * 17);
+            break;
+    }
+    return { grey, grey, grey };
+}
+
+// Checks that each palette square has the colours its texels and palette type give: one colour on its left half and
+// another on its right half (HalfColour).
+bool CheckPalettes(const Picture& pic) {
+    bool pass = true;
+
+    for (const PaletteSquare& square : kPaletteSquares) {
+        uint32_t half = square.size / 2;
+        uint32_t bottom = square.top + square.size;
+        HalfRead left =
+            ReadHalf(pic, square.left, square.top, square.left + half, bottom, HalfColour(square, false));
+        HalfRead right = ReadHalf(pic, square.left + half, square.top, square.left + square.size, bottom,
+                                  HalfColour(square, true));
+
+        std::printf("check: palette square, %s: left half %s; right half %s\n", square.name,
+                    DescribeHalf(left).c_str(), DescribeHalf(right).c_str());
+        pass = pass && left.total > 0 && right.total > 0 && left.off == 0 && right.off == 0;
+    }
+    if (pass) {
+        std::printf("check: PASS, the palette squares have the colours of IA16 and RGBA16 palettes, for CI4 and CI8 "
+                    "texels, and for IA4 and IA8 texels with palettes on and off (colours as read back, 5 bits per "
+                    "channel)\n");
+    } else {
+        std::printf("check: FAIL, a palette square does not have the colours of its texels and palette type (colours "
+                    "as read back, 5 bits per channel; each may be 1 off)\n");
+    }
+    return pass;
+}
+
 // Reads the picture back and runs every check on it.
 bool CheckPicture(const std::shared_ptr<Fast::Fast3dWindow>& window) {
     Picture pic;
@@ -538,10 +677,13 @@ bool CheckPicture(const std::shared_ptr<Fast::Fast3dWindow>& window) {
         return false;
     }
     if (!CheckCorners(&pic)) {
-        std::printf("check: the shapes are not checked, because it is not known which way up the rows are\n");
+        std::printf("check: the shapes and the palette squares are not checked, because it is not known which way up "
+                    "the rows are\n");
         return false;
     }
-    return CheckShapes(pic);
+    bool shapes = CheckShapes(pic);
+    bool palettes = CheckPalettes(pic);
+    return shapes && palettes;
 }
 
 } // namespace
@@ -566,27 +708,18 @@ int main(int argc, char** argv) {
         }
     }
 
-#ifdef __linux__
-    PreferWslGpu();
-#endif
-    LibUltraShip lus = StartLibUltraShip(!check);
+    td::PreferWslGpu();
+    // A --check run (as on CI) has nobody to close the crash handler's message box, so there it is left out, and a
+    // crash ends hello at once with the system's exit code for it.
+    td::LibUltraShip lus = td::StartLibUltraShip("hello", !check);
     if (lus.window == nullptr) {
         return 1;
     }
     auto& window = lus.window;
 
-    GfxSetNativeDimensions(kWidth, kHeight);
-    CVarSetInteger("gAdvancedResolution.Enabled", 1);
-    CVarSetFloat("gAdvancedResolution.AspectRatioX", 4.0f);
-    CVarSetFloat("gAdvancedResolution.AspectRatioY", 3.0f);
-    window->SetTargetFps(60);
-    if (check) {
-        // When the picture's resolution equals its place in the window, Fast3D draws it straight to the window, which
-        // cannot be read back. Drawing at twice that resolution sends it through Fast3D's own framebuffer instead,
-        // whatever the window's shape. This is not saved in the settings.
-        window->SetResolutionMultiplier(2.0f);
-    }
+    td::ShowGamePicture(window, check);
     BuildMatrices();
+    BuildPaletteSquares();
 
     int result = 0;
     bool checked = false;
@@ -616,11 +749,6 @@ int main(int argc, char** argv) {
         std::printf("check: not run, hello stopped before the third frame\n");
         result = 2;
     }
-    if (WindowIsRunning()) {
-        window->Close();
-    }
-    // Drop the bridge's global pointers before the parts they point to go away.
-    lus.bridge->ClearCaches();
-    lus = {};
+    td::StopLibUltraShip(&lus);
     return result;
 }
