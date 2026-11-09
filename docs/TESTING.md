@@ -77,7 +77,7 @@ every push ([CI.md](CI.md)), go by it:
 |---|---|
 | 0 | every comparison passed |
 | 2 | a comparison failed, or the check could not be finished: for example, the viewer found no reference, or the window was closed before the check was done |
-| 1 | the program could not start: an option it does not know, a log or `f3d.o2r` it could not open, or, for the viewer, a ROM it cannot use, such as one that is not the supported one |
+| 1 | the program could not start: an option it does not know, a log or `f3d.o2r` it could not open, no screen to open its window on or no OpenGL 3.0 or newer to draw in it with, or, for the viewer, a ROM it cannot use, such as one that is not the supported one |
 | 77 | only the viewer's check: it found no ROM; CTest lists the test as skipped |
 
 ## The checks by hand
@@ -158,7 +158,10 @@ program. The file named in each step holds its code.
    - the `UltraBridge`, which lets plain C calls such as `WindowIsRunning()` find the window.
 
    The window appears at `window->Init()`: SDL3, the library LibUltraShip uses for windows, input and sound, creates
-   it with an OpenGL context, through which the program hands the GPU its drawing.
+   it with an OpenGL context, through which the program hands the GPU its drawing. Before it adds the window,
+   `StartLibUltraShip` has SDL start its video and, on Linux, load OpenGL; after `window->Init()` it asks SDL and
+   OpenGL whether the window, its OpenGL context and an OpenGL of version 3.0 or newer are there. When one of them is
+   missing, the program says which and ends with exit code 1.
 4. **The picture's shape.** `ShowGamePicture` (`src/context.cpp`) sets up the game's 480x240 picture, shown at 4:3, at
    60 frames a second. For a check, Fast3D draws it at twice the window's resolution into a framebuffer of its own, an
    image apart from the window, which can be read back.

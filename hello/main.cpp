@@ -283,6 +283,14 @@ uint32_t TexelST(uint32_t s, uint32_t t) {
     return ((s * 32) << 16) | (t * 32);
 }
 
+// LibUltraShip's gSPTextureRectangle declares Gfx* _g, and each of the two gImmp1 inside it declares another _g, which
+// hides the first. That does no harm, because each _g only writes its own command, but Visual Studio's compiler warns
+// about it (warning C4456), so that warning is off for this function. gsSPTextureRectangle, the form for lists written
+// out in advance, would avoid it, but GCC and Clang warn about the braces that form leaves out.
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable : 4456)
+#endif
 // A lower-row square as a texture rectangle of the loaded texture, one texel to a picture pixel (the scale 1 << 10 that
 // func_80096D8C uses), from its top left corner to its bottom right one, which in one-cycle mode is not drawn.
 Gfx* PaletteRectangle(Gfx* g, const PaletteSquare& square) {
@@ -290,6 +298,9 @@ Gfx* PaletteRectangle(Gfx* g, const PaletteSquare& square) {
                         (square.top + square.size) << 2, G_TX_RENDERTILE, 0, 0, 1 << 10, 1 << 10);
     return g;
 }
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
 
 void BuildFrame(uint32_t frame) {
     Gfx* g = sDisplayList;

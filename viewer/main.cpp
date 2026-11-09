@@ -21,8 +21,9 @@
 //
 // Ids are written in decimal or in hex with 0x. F1 shows a menu bar whose Debug menu opens LibUltraShip's Console,
 // Stats and Gfx Debugger windows.
-// Exit code: 0 done (or every check passed), 1 wrong options or a resource or ROM that cannot be used, 2 a check
-// failed, 77 --check found no ROM.
+// Exit code: 0 done (or every check passed), 1 the viewer could not start (wrong options, a resource or ROM that
+// cannot be used, or LibUltraShip could not start, for example with no screen) or could not save its screenshot, 2 a
+// check failed, 77 --check found no ROM.
 
 #include <algorithm>
 #include <array>
