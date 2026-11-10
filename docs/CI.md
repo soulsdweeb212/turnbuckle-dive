@@ -85,10 +85,12 @@ The steps below have the same names as on GitHub.
    configure prints `Game code: not built (...)` and the build leaves the game's code out
    ([GAME_CODE.md](GAME_CODE.md)); `turnbuckle-dive` then only checks the ROM.
 4. *Build*: `cmake --build --preset debug`.
-5. *Run the tests*: `ctest --preset debug`. The tests are `sha1` (known SHA-1 answers) and `rom_missing` (the program
-   starts with a ROM path that does not exist and must say "file not found"). No test on CI uses a ROM; CI must never
-   have one. The tests that do (`rom_loader`, `rom_loader_detects_change`, and the asset viewer's `viewer_reference`
-   and `viewer_check`) exist only in builds with the game's code, so CI does not build them, nor the viewer itself.
+5. *Run the tests*: `ctest --preset debug`. The tests are `sha1` (known SHA-1 answers), the handle table's `slots`,
+   `slots_never_issued`, `slots_out_of_range` and `slots_full` ([TESTING.md](TESTING.md)), and `rom_missing` (the
+   program starts with a ROM path that does not exist and must say "file not found"). No test on CI uses a ROM; CI must
+   never have one. The tests that do (`rom_loader`, `rom_loader_detects_change`, and the asset viewer's
+   `viewer_reference` and `viewer_check`) exist only in builds with the game's code, so CI does not build them, nor the
+   viewer itself.
 6. *Check hello's picture*: in `build/debug`, `xvfb-run ./hello --check --frames 30`. hello draws 30 frames; after the
    third it reads the picture back and checks the white markers in its corners, the shapes placed with
    `gSPForceMatrix` and `gSPModifyVertex`, and the colours of eight squares: textures read through IA16 and RGBA16

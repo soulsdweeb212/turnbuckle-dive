@@ -121,17 +121,25 @@ else()
 endif()
 
 # Our port code, linked into the program and the tests. Besides the ROM check, it holds what the game's C calls in the
-# port: port.h's functions (src/port.c, and port_rom_read in src/rom.c) and stand-ins for game parts that are not
-# compiled yet (src/game_heap.c, src/game_data.c). All of it is built even without game code, so CI compiles it with
-# both of its compilers; the stand-ins are only linked into a program that uses game code.
+# port: port.h's functions (src/port.c, the handle table in src/slots.c, and port_rom_read in src/rom.c) and stand-ins
+# for game parts that are not compiled yet (src/game_heap.c, src/game_data.c). All of it is built even without game
+# code, so CI compiles it with both of its compilers; the stand-ins are only linked into a program that uses game code.
 add_library(td_core STATIC
     src/rom.c
     src/sha1.c
     src/port.c
+    src/slots.c
     src/game_heap.c
     src/game_data.c)
 target_include_directories(td_core PUBLIC src)
 td_strict(td_core)
+# The handle table's lock (src/slots.c): a pthread mutex, which on Linux and macOS needs the system's thread library
+# (Threads::Threads adds it where it is separate, and nothing where it is not, as on Windows).
+find_package(Threads REQUIRED)
+target_link_libraries(td_core PUBLIC Threads::Threads)
+# Visual Studio's compiler (cl, not clang-cl): src/slots.c relies on volatile loads and stores being ordered as its
+# /volatile:ms option says, which is the default only on x86 and x64 (the file explains why).
+set_source_files_properties(src/slots.c PROPERTIES COMPILE_OPTIONS "$<$<C_COMPILER_ID:MSVC>:/volatile:ms>")
 # The decompilation's folder also holds the user's ROM, as baserom.z64, because the decompilation's own build needs it
 # there. TD_DECOMP_ROM lets the program and the tests find it there without being given a path (rom_find in src/rom.c).
 target_compile_definitions(td_core PRIVATE TD_DECOMP_ROM="${TD_DECOMP}/baserom.z64")
@@ -176,6 +184,62 @@ if(TD_GAME_CODE)
     add_library(td_resources STATIC src/resources.c)
     target_link_libraries(td_resources PUBLIC "$<LINK_LIBRARY:WHOLE_ARCHIVE,td_game>")
     td_strict(td_resources)
+
+    # Every game file of the developer program (the program that starts straight into a match), compiled with the
+    # game's settings but not linked yet: td_game_all. The decompilation's tools/port_filelist.py works out the list
+    # (its docs/port.md says how) and writes two text files: the list, and the paths of every file it read to make it;
+    # CMake configures again when one of those files changes, so the list follows the decompilation. A game file that
+    # stops compiling on the PC stops a full build (td_game_all is part of "all", but no program depends on it). The
+    # tool needs Python 3 and the data files that the decompilation's build extracts from the ROM on its first run;
+    # without them, or when the tool finds the decompilation's list incomplete, configure says why and leaves
+    # td_game_all out (docs/GAME_CODE.md).
+    find_package(Python3 COMPONENTS Interpreter)
+    if(NOT Python3_FOUND)
+        message(STATUS "Game code: td_game_all not built (no Python 3, which lists the developer program's files)")
+    else()
+        set(TD_MATCH_LIST ${CMAKE_BINARY_DIR}/game_match_files.txt)
+        set(TD_MATCH_DEPENDS ${CMAKE_BINARY_DIR}/game_match_depends.txt)
+        execute_process(
+            COMMAND ${Python3_EXECUTABLE} -B ${TD_DECOMP}/tools/port_filelist.py --set match
+                    --output ${TD_MATCH_LIST} --depends ${TD_MATCH_DEPENDS}
+            WORKING_DIRECTORY ${TD_DECOMP}
+            RESULT_VARIABLE td_match_result
+            OUTPUT_QUIET
+            ERROR_VARIABLE td_match_error)
+        if(NOT td_match_result EQUAL 0)
+            # The build goes on without td_game_all, and says so as a warning. CMake keeps watching what the tool reads,
+            # so that the next build configures again once the cause is fixed (the decompilation's build run, or the
+            # game file mended): the files the last complete list depended on, the tool and build.json, and the
+            # decompilation's folders, whose dates change when build.py creates its build/ and asm/ folders.
+            string(STRIP "${td_match_error}" td_match_error)
+            message(WARNING "Game code: td_game_all not built, because tools/port_filelist.py could not list the files "
+                            "(docs/GAME_CODE.md says what to do):\n${td_match_error}")
+            set(td_match_watch ${TD_DECOMP} ${TD_DECOMP}/build.json ${TD_DECOMP}/tools/port_filelist.py)
+            foreach(dir build asm asm/data)
+                if(IS_DIRECTORY ${TD_DECOMP}/${dir})
+                    list(APPEND td_match_watch ${TD_DECOMP}/${dir})
+                endif()
+            endforeach()
+            if(EXISTS ${TD_MATCH_DEPENDS})
+                file(STRINGS ${TD_MATCH_DEPENDS} td_match_depends ENCODING UTF-8)
+                foreach(path IN LISTS td_match_depends)
+                    if(EXISTS ${path})
+                        list(APPEND td_match_watch ${path})
+                    endif()
+                endforeach()
+            endif()
+            set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${td_match_watch})
+        else()
+            file(STRINGS ${TD_MATCH_LIST} td_match_files ENCODING UTF-8)
+            file(STRINGS ${TD_MATCH_DEPENDS} td_match_depends ENCODING UTF-8)
+            set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${td_match_depends})
+            list(TRANSFORM td_match_files PREPEND ${TD_DECOMP}/)
+            list(LENGTH td_match_files td_match_count)
+            add_library(td_game_all OBJECT ${td_match_files})
+            td_game_code(td_game_all)
+            message(STATUS "Game code: td_game_all compiles the developer program's ${td_match_count} files")
+        endif()
+    endif()
 endif()
 
 add_executable(turnbuckle-dive src/main.c)
@@ -194,6 +258,24 @@ if(BUILD_TESTING)
     target_link_libraries(test_sha1 PRIVATE td_core)
     td_strict(test_sha1)
     add_test(NAME sha1 COMMAND test_sha1)
+
+    # The handle table behind port.h's PTR_TO_SLOT and SLOT_TO_PTR (tests/test_slots.c says what it checks). The three
+    # other tests run the same program in a way that must stop it: each passes only when the output holds the table's
+    # message, which shows that a handle never given out, one beyond the table's end, and one handle too many, really
+    # stop the program.
+    add_executable(test_slots tests/test_slots.c)
+    target_link_libraries(test_slots PRIVATE td_core)
+    td_strict(test_slots)
+    add_test(NAME slots COMMAND test_slots)
+    add_test(NAME slots_never_issued COMMAND test_slots --never-issued)
+    set_tests_properties(slots_never_issued PROPERTIES
+        PASS_REGULAR_EXPRESSION "Turnbuckle Dive stopped: SLOT_TO_PTR: handle 0x3039 was never issued")
+    add_test(NAME slots_out_of_range COMMAND test_slots --out-of-range)
+    set_tests_properties(slots_out_of_range PROPERTIES
+        PASS_REGULAR_EXPRESSION "Turnbuckle Dive stopped: SLOT_TO_PTR: handle 0x80123456 was never issued")
+    add_test(NAME slots_full COMMAND test_slots --full)
+    set_tests_properties(slots_full PROPERTIES
+        PASS_REGULAR_EXPRESSION "Turnbuckle Dive stopped: PTR_TO_SLOT: the handle table is full: all 0x100000 handles")
 
     # The program itself, started with a ROM that does not exist: it must start and say so. It needs no ROM, so it
     # runs on CI too, which must never have one.

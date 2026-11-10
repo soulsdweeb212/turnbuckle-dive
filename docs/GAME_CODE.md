@@ -7,6 +7,8 @@ through it in a debugger.
 So far the game code in the port is the game's ROM loader, the functions that read resources (textures, models,
 animations and the rest of the game's data) out of the ROM and unpack the compressed ones, and the functions that turn
 a model, an effect sprite or a picture into display lists, which the asset viewer draws ([VIEWER.md](VIEWER.md)).
+Besides those, the build compiles every game file of the match, without linking them yet ("Every file of the developer
+program", below).
 
 ## Where the game's C comes from
 
@@ -122,6 +124,24 @@ game's side; this repository's `src/game.h` declares the same functions for the 
   read that does not lie wholly inside the ROM stops the program with a message.
 - `port_fatal` (`src/port.c`) prints a message and stops the program, where the N64 would hang or crash.
 - `port_res_loaded` (`src/port.c`) is called by the game's loader each time a whole resource is in memory.
+- `port_ptr_to_slot` and `port_slot_to_ptr` (`src/slots.c`), which port.h's `PTR_TO_SLOT` and `SLOT_TO_PTR` call, are
+  the handle table. Some of the game's records keep their N64 layout on the PC, because many game files reach their
+  fields at N64 offsets, so each address they hold has only 4 bytes, too few for a 64-bit pointer. Such a field holds
+  a 32-bit handle instead, a number that the table turns back into the address (the decompilation's `docs/port.md`
+  says which fields). The table's rules:
+  - The same address always gets the same handle, for the whole run, and a handle is never given back. When the game
+    frees a heap block and later gets the same address again, the old handle names the new block, as the N64's old
+    address would.
+  - `NULL` is handle 0, and handle 0 is `NULL`.
+  - `port_slot_to_ptr` of a number the table never gave out stops the program, so a handle field that holds a raw
+    value or a cut pointer stops there instead of being followed.
+  - The table holds 2^20 handles (`PORT_SLOT_CAP` in `src/game.h`), 0 included; one more stops the program. A match
+    is expected to use about 1400. `port_slot_count()` says how many it has given out, for the tests and for checks.
+  - The game's main thread and its render thread both use it. Giving out a handle takes a lock; reading one does not,
+    because the array of addresses never moves and each entry is written before its handle is given out. A handle that
+    one thread stores in a plain field of a game record and another reads there can arrive before its entry can be
+    seen (on ARM64 processors), so a reader that finds an empty entry takes the lock and looks again before it stops
+    the program.
 
 For parts of the game that are not compiled yet, the port has stand-ins with the game's names:
 
@@ -138,6 +158,42 @@ For parts of the game that are not compiled yet, the port has stand-ins with the
 descriptor differently. `td_game` depends on it, so this also holds when only one program is built.
 
 `src/resources.c` is the port's code that calls the game's loader, for the program and the tests.
+
+## Every file of the developer program: td_game_all
+
+The developer program is the PC program that will start straight into a match, without the menus. Its game files are
+the ones the match reaches, which the decompilation's tool `tools/port_filelist.py` works out by following the game's
+calls from its starting functions (the decompilation's `docs/port.md` says how). Today they are 854 files.
+
+The target `td_game_all` compiles every one of them, with the same settings as `td_game`. It does not link them yet:
+that comes when the port gives them the game's data and the parts of the N64 they use. Until then it shows that the
+whole match compiles on the PC. It is part of a full build (`cmake --build --preset debug`, or F7 in VS Code), and a
+game file that stops compiling stops that build. Building one program alone, as F5 does before it starts the debugger,
+leaves `td_game_all` out, because no program depends on it.
+
+Configure runs `port_filelist.py` and prints how many files it found:
+
+```
+-- Game code: td_game_all compiles the developer program's 854 files
+```
+
+The tool writes two text files into the build folder: the list (`game_match_files.txt`), and the paths of every file it
+read to make it (`game_match_depends.txt`). When one of those files changes, CMake configures again, so the list
+follows the decompilation.
+
+The tool needs Python 3 and the data files that the decompilation's own build extracts from your ROM on its first run
+(its `asm/data` and `assets` folders). So, once, in the decompilation's folder, run its build as its README says
+(`python3 build.py`, which needs decompdecomp). The tool also stops when the decompilation's list is not complete: a
+game file calls a name that no file defines, or the decompilation's `build/game.ld` no longer matches its `build.json`
+(after a pull, until its build runs again). In each of these cases configure prints a warning that quotes the tool's
+message (a "README" in it means the decompilation's), and the build goes on without `td_game_all`. Once the cause is
+fixed, the next build configures again by itself and `td_game_all` is back. Without Python 3, configure prints one
+line and leaves `td_game_all` out.
+
+Some of the 854 files cannot do their work on the PC yet: the records they handle still keep addresses in 4 bytes, as
+on the N64, and their PC layout is not decided. Such a file keeps its N64 code; where that code would not compile on
+the PC, the function stops the program with a message that names the record (the decompilation's `docs/port.md`,
+"Shared records on PC", lists them). Either way it compiles, so it is in `td_game_all`.
 
 ## Adding a game file
 

@@ -45,13 +45,17 @@ different after any change; a digest is such a fingerprint taken over many piece
 | Test | What it checks |
 |---|---|
 | `sha1` | The port's SHA-1 code, with which it recognises the supported ROM, gives the published SHA-1s of sample inputs. |
+| `slots` | The handle table (`src/slots.c`, [GAME_CODE.md](GAME_CODE.md) explains it), which stands in for an address where a game record has only 4 bytes for one: `NULL` is handle 0, an address gets the same handle each time and two addresses get two handles, also after the table has grown, and four threads that add handles while a fifth reads others all get the same, right answers. |
+| `slots_never_issued` | The same program reads a handle the table never gave out. This test passes when the program stops and says so. |
+| `slots_out_of_range` | The same program reads handle 0x80123456, an N64 address where a handle should be, far beyond the end of the table. This test passes when the program stops and says the handle was never given out, instead of reading outside the table. |
+| `slots_full` | The same program fills the table, all 2^20 handles, and asks for one more. This test passes when the program stops and says the table is full. |
 | `rom_missing` | `turnbuckle-dive`, given a ROM path that does not exist, starts and says "file not found". |
 | `rom_loader` | The game's own loader loads all 7657 resources of your ROM (its textures, models, animations and the rest of the game's data), and their digest is the one the test knows ([GAME_CODE.md](GAME_CODE.md) explains it). |
 | `rom_loader_detects_change` | The same with one byte of one resource changed after loading. This test passes when `rom_loader` reports that the digest does not match. |
 | `viewer_reference` | `tools/viewer_ref.py` works out from your ROM, without the game's code, what the asset viewer must build and draw, and writes it to `build/debug/viewer_ref.json`: the reference. |
 | `viewer_check` | The asset viewer builds its three subjects (a wrestler's head from its three parts, an effect sprite and a 2D picture) with the game's code and compares them with the reference: first the vertices and triangles of each of the head's parts, and the camera placed over them, then every pixel of each picture. Between the head's two sides Fast3D draws at another resolution, as when someone stretches the window. Its window opens, draws and closes by itself. |
 
-Near the end, CTest prints how many passed, `100% tests passed, 0 tests failed out of 6`, and then the time the tests
+Near the end, CTest prints how many passed, `100% tests passed, 0 tests failed out of 10`, and then the time the tests
 took. The last four tests need your ROM. When they find none, CTest marks them `***Skipped` instead of `Passed`, still
 counts them in that line, and names them at the very end, under `The following tests did not run:`.
 

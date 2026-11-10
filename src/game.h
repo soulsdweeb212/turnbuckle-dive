@@ -52,9 +52,18 @@ _Noreturn void port_fatal(const char *fmt, ...) TD_PRINTF_FORMAT;
 void port_rom_read(void *dst, uint32_t src, uint32_t size);
 /* func_80003684 calls this once a whole resource is in RAM (src/port.c). */
 void port_res_loaded(uint32_t id, void *buf, int32_t size);
+/* PTR_TO_SLOT and SLOT_TO_PTR in port.h (src/slots.c): turn an address into the 32-bit handle that a 4-byte address
+ * field of an N64-layout record holds on the PC, and back. The same address always gives the same handle, NULL gives
+ * 0, and port_slot_to_ptr stops the program on a handle that was never given out. */
+uint32_t port_ptr_to_slot(void *p);
+void *port_slot_to_ptr(uint32_t slot);
 
 /* How many times the game has called port_res_loaded since the program started (src/port.c). */
 uint32_t port_res_loaded_count(void);
+/* The most handles the handle table holds, handle 0 (NULL) included: 2^20 (src/slots.c). */
+#define PORT_SLOT_CAP 0x100000u
+/* How many handles the table has given out so far, 0 not counted (src/slots.c). */
+uint32_t port_slot_count(void);
 
 /* ---- Stand-ins for game parts that are not compiled yet ---- */
 
