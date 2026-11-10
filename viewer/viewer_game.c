@@ -78,7 +78,10 @@ void viewer_head_load(uint32_t mesh, uint32_t texture, uint32_t palette, ViewerH
     /* Load the texture and its palette into the record with func_80004E08, as func_80004F80 does for a wrestler's body
      * part, then let buildCiTextureDisplayList write the material list again, now loading the palette and the texels
      * before it branches to the triangles. Mode 1 is the one func_80007020 uses for its models; it leaves the render
-     * state to the caller (a wrestler's body part uses mode 0, which also writes the wrestlers' render state). */
+     * state to the caller, and the viewer's head frame relies on that: the depth buffer it draws the parts with is
+     * part of the render state it sets. A wrestler's body part uses mode 0, whose list starts with the wrestlers'
+     * render state: a render mode that neither tests nor keeps depths, and a colour combiner that LibUltraShip cannot
+     * draw yet, which multiplies each texel by the vertex's alpha, where the game keeps its lighting. */
     func_80004E08(record, (s16)texture, (s16)palette);
     buildCiTextureDisplayList(record, 1);
 

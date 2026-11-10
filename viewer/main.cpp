@@ -3,8 +3,10 @@
 // viewer.h), and draws them with LibUltraShip in the game's 480x240 picture, shown at 4:3 like hello. docs/VIEWER.md
 // explains it in full.
 //
-//   viewer [ROM]                  a wrestler's face: mesh 0xA69 with its texture 0xA6A and palette 0xA68, turning
-//   viewer --head MESH TEX PAL    another model: a mesh, a texture for it and the texture's palette
+//   viewer [ROM]                  a wrestler's head from its three parts (meshes 0xA66, 0xA69 and 0xA63, each with its
+//                                 texture and palette), turning
+//   viewer --head MESH TEX PAL... another model: one or more parts, each a mesh, a texture for it and the texture's
+//                                 palette, drawn together with a depth buffer
 //   viewer --angle DEG            the model at a fixed angle, in degrees, instead of turning
 //   viewer --sprite [TEX PAL]     an effect sprite, whose 16-colour palette the game reads as IA16 (texture 0x3EC with
 //                                 palette 0x3DF if none are given)
@@ -16,8 +18,9 @@
 //   viewer --check [--reference FILE]
 //                                 draw the subjects named in FILE (viewer_ref.json in the current folder if none is
 //                                 given), which tools/viewer_ref.py writes: the head from two sides, the sprite and
-//                                 the picture. Compare the vertices and triangles the game built for the head with
-//                                 FILE, then read each picture back and compare it with FILE, pixel by pixel
+//                                 the picture. Compare the vertices and triangles the game built for each part of the
+//                                 head, and the camera placed over them, with FILE, then read each picture back and
+//                                 compare it with FILE, pixel by pixel
 //
 // Ids are written in decimal or in hex with 0x. F1 shows a menu bar whose Debug menu opens LibUltraShip's Console,
 // Stats and Gfx Debugger windows.
@@ -53,16 +56,24 @@ namespace {
 constexpr uint32_t kWidth = td::kGameWidth;
 constexpr uint32_t kHeight = td::kGameHeight;
 
-// The subjects shown when no ids are given. The head's ids are those the game gives a face: the head record at
+// A part of a head, or any model: a mesh, its texture and the texture's palette.
+struct PartIds {
+    uint32_t mesh, texture, palette;
+};
+
+// The subjects shown when no ids are given. The head's parts are those the game builds a head from: the head record at
 // 0x800319C0 (docs/VIEWER.md, "Where a model's texture comes from"), which the second and fourth costumes of the
-// wrestler with id 1 wear, names mesh 0xA69 for body part 5, which func_8000BDD0 loads, and texture 0xA6A and palette
-// 0xA68 for it, which func_8000C1B8 loads.
-constexpr uint32_t kHeadMesh = 0xA69;
-constexpr uint32_t kHeadTexture = 0xA6A;
-constexpr uint32_t kHeadPalette = 0xA68;
+// wrestler with id 1 wear, names a mesh for each of body parts 4 (the lower head), 5 (the face) and 20 (the hair),
+// which func_8000BDD0 loads, and a texture and a palette for each, which func_8000C1B8 loads.
+constexpr PartIds kHeadParts[] = { { 0xA66, 0xA67, 0xA65 }, { 0xA69, 0xA6A, 0xA68 }, { 0xA63, 0xA64, 0xA62 } };
 constexpr uint32_t kSpriteTexture = 0x3EC;
 constexpr uint32_t kSpritePalette = 0x3DF;
 constexpr uint32_t kPicture = 0x3;
+
+// The most parts a head may have, as in tools/viewer_ref.py (MAX_PARTS): the game keeps 23 display records for each
+// wrestler (func_8000BDD0 fills those of body parts 1 to 20, and func_8000CD84 goes through all 23 when it lets a
+// wrestler go).
+constexpr size_t kMaxHeadParts = 23;
 
 // How far the head turns each frame when no --angle is given, in degrees: a turn every 12 seconds at 60 frames a
 // second.
@@ -82,7 +93,8 @@ Vp sViewport = { { { kWidth * 2, kHeight * 2, G_MAXZ / 2, 0 }, { kWidth * 2, kHe
 Mtx sProjection;
 Mtx sModelview;
 
-// The frame's display list, and the commands the game writes for a picture, which the frame calls.
+// The frame's display list, and the commands the game writes for a picture, which the frame calls. A head's frame takes
+// two commands for each part and about 35 more, so a head of kMaxHeadParts parts fits with room to spare.
 Gfx sFrame[256];
 std::vector<Gfx> sPictureCommands;
 
@@ -91,7 +103,7 @@ enum class Subject { Head, Sprite, Picture };
 struct Options {
     const char* rom = nullptr;
     Subject subject = Subject::Head;
-    uint32_t mesh = kHeadMesh, texture = kHeadTexture, palette = kHeadPalette;
+    std::vector<PartIds> head{ std::begin(kHeadParts), std::end(kHeadParts) };
     uint32_t spriteTexture = kSpriteTexture, spritePalette = kSpritePalette;
     uint32_t pictureId = kPicture;
     bool fixedAngle = false;
@@ -115,12 +127,52 @@ bool ParseIds(int argc, char** argv, int* at, const char* option, uint32_t* cons
         return true;
     }
     for (int i = 0; i < count; i++) {
-        if (*at + 1 + i >= argc || !viewer_parse_id(option, argv[*at + 1 + i], ids[i])) {
+        const char* text = *at + 1 + i < argc ? argv[*at + 1 + i] : nullptr;
+        // A missing id, or a word in its place, means too few ids; for a number that is not an id, viewer_parse_id
+        // says why.
+        if (!StartsWithDigit(text)) {
             std::fprintf(stderr, "%s takes no ids, or %d\n", option, count);
+            return false;
+        }
+        if (!viewer_parse_id(option, text, ids[i])) {
             return false;
         }
     }
     *at += count;
+    return true;
+}
+
+// Reads the parts that follow --head on the command line, from argv[at] on, into parts: ids in threes, a mesh, its
+// texture and its palette, for as long as the next argument starts with a digit, and at most kMaxHeadParts parts. With
+// none, parts stays as it is. Returns false after printing why if they cannot be read.
+bool ParseHeadParts(int argc, char** argv, int* at, std::vector<PartIds>* parts) {
+    std::vector<PartIds> given;
+
+    while (StartsWithDigit(*at + 1 < argc ? argv[*at + 1] : nullptr)) {
+        PartIds part = {};
+        uint32_t* const ids[] = { &part.mesh, &part.texture, &part.palette };
+
+        if (given.size() == kMaxHeadParts) {
+            std::fprintf(stderr, "--head takes at most %zu parts\n", kMaxHeadParts);
+            return false;
+        }
+        for (int i = 0; i < 3; i++) {
+            const char* text = *at + 1 + i < argc ? argv[*at + 1 + i] : nullptr;
+            // As in ParseIds: too few ids, or a number that viewer_parse_id says is not an id.
+            if (!StartsWithDigit(text)) {
+                std::fprintf(stderr, "--head takes no ids, or ids in threes: a mesh, its texture and its palette\n");
+                return false;
+            }
+            if (!viewer_parse_id("--head", text, ids[i])) {
+                return false;
+            }
+        }
+        *at += 3;
+        given.push_back(part);
+    }
+    if (!given.empty()) {
+        *parts = given;
+    }
     return true;
 }
 
@@ -131,9 +183,8 @@ bool ParseOptions(int argc, char** argv, Options* options) {
         const char* next = i + 1 < argc ? argv[i + 1] : nullptr;
 
         if (std::strcmp(arg, "--head") == 0) {
-            uint32_t* const ids[] = { &options->mesh, &options->texture, &options->palette };
             options->subject = Subject::Head;
-            if (!ParseIds(argc, argv, &i, "--head", ids, 3)) {
+            if (!ParseHeadParts(argc, argv, &i, &options->head)) {
                 return false;
             }
         } else if (std::strcmp(arg, "--sprite") == 0) {
@@ -176,7 +227,7 @@ bool ParseOptions(int argc, char** argv, Options* options) {
             options->reference = next;
             i++;
         } else if (std::strncmp(arg, "--", 2) == 0 || options->rom != nullptr) {
-            std::fprintf(stderr, "usage: viewer [--head [MESH TEX PAL]] [--sprite [TEX PAL]] [--picture [ID]] "
+            std::fprintf(stderr, "usage: viewer [--head [MESH TEX PAL]...] [--sprite [TEX PAL]] [--picture [ID]] "
                                  "[--angle DEG] [--frames N] [--dump] [--screenshot FILE] "
                                  "[--check [--reference FILE]] [ROM]\n");
             return false;
@@ -188,15 +239,37 @@ bool ParseOptions(int argc, char** argv, Options* options) {
 }
 
 // Checks that the subject's resources are of the kinds the game's functions expect, before they see them.
-bool CheckHeadIds(uint32_t mesh, uint32_t texture, uint32_t palette) {
-    uint32_t entries = 0;
+bool CheckHeadIds(const std::vector<PartIds>& parts) {
+    for (const PartIds& part : parts) {
+        uint32_t entries = 0;
 
-    return viewer_check_mesh(mesh) && viewer_check_texture(texture, &entries) &&
-           viewer_check_palette(palette, entries);
+        if (!viewer_check_mesh(part.mesh) || !viewer_check_texture(part.texture, &entries) ||
+            !viewer_check_palette(part.palette, entries)) {
+            return false;
+        }
+    }
+    return true;
 }
 
 bool CheckSpriteIds(uint32_t texture, uint32_t palette) {
     return viewer_check_sprite_texture(texture) && viewer_check_palette(palette, 16);
+}
+
+// Loads each part of a head with the game's functions; the ids must have passed CheckHeadIds. FreeHead lets them go.
+std::vector<ViewerHead> LoadHead(const std::vector<PartIds>& ids) {
+    std::vector<ViewerHead> parts(ids.size());
+
+    for (size_t p = 0; p < ids.size(); p++) {
+        viewer_head_load(ids[p].mesh, ids[p].texture, ids[p].palette, &parts[p]);
+    }
+    return parts;
+}
+
+void FreeHead(std::vector<ViewerHead>* parts) {
+    for (ViewerHead& part : *parts) {
+        viewer_head_free(&part);
+    }
+    parts->clear();
 }
 
 // ---- The frame ----
@@ -225,10 +298,11 @@ void EndFrame(Gfx* g, bool markers) {
     gSPEndDisplayList(g++);
 }
 
-// Where the camera puts a model: the middle of its box, the angle it is turned by about the vertical axis, and the
-// scale, in picture pixels per model unit, that makes the ball around the model 2 * kFitPixels high.
+// Where the camera puts a model: the middle of its box, the radius of the ball around the model from there, and the
+// scale, in picture pixels per model unit, that makes that ball 2 * kFitPixels high.
 struct Camera {
     float middle[3];
+    float radius;
     float scale;
 };
 
@@ -252,8 +326,21 @@ Camera FitCamera(const void* vertexData, uint32_t count) {
         float dz = vertices[i].v.ob[2] - camera.middle[2];
         radius = std::max(radius, std::sqrt(dx * dx + dy * dy + dz * dz));
     }
+    camera.radius = radius;
     camera.scale = kFitPixels / std::max(radius, 1.0f);
     return camera;
+}
+
+// The camera for a head: fitted over the vertices of all its parts together, which share one space, so that the parts
+// are drawn where they meet, as the head they make.
+Camera FitHead(const std::vector<ViewerHead>& parts) {
+    std::vector<Vtx> vertices;
+
+    for (const ViewerHead& part : parts) {
+        const Vtx* first = static_cast<const Vtx*>(part.vertices);
+        vertices.insert(vertices.end(), first, first + part.vertex_count);
+    }
+    return FitCamera(vertices.data(), (uint32_t)vertices.size());
 }
 
 // The matrices of the view. The modelview moves the model's middle to the origin, turns it by angle degrees about
@@ -301,23 +388,38 @@ Gfx* StartModels(Gfx* g) {
     return g;
 }
 
-// The head's frame. The game's own lists (the material list and the triangle list that the game's functions wrote) do
-// the drawing; around them, the viewer sets what the game's frame would have set.
-void BuildHeadFrame(const ViewerHead& head, bool markers) {
+// The head's frame. The game's own lists (each part's material list and triangle list, which the game's functions
+// wrote) do the drawing; around them, the viewer sets what the game's frame would have set, and a depth buffer of its
+// own.
+void BuildHeadFrame(const std::vector<ViewerHead>& parts, bool markers) {
     Gfx* g = StartModels(StartFrame(sFrame));
 
     // What the game's func_80007020 does for its models (not compiled yet: it keeps list addresses in 32-bit fields).
     // First the render state it sets: the texel's colour and alpha as they are (G_CC_DECALRGBA), no blending with what
-    // is behind, and texels whose alpha is 0 left out (CVG_X_ALPHA and ALPHA_CVG_SEL). Then, for the model, a G_VTX of
+    // is behind, and texels whose alpha is 0 left out (CVG_X_ALPHA and ALPHA_CVG_SEL). Then, for each model, a G_VTX of
     // its vertices into the vertex slots from its first slot on, and a G_DL to its material list. That list loads the
     // palette and the texels and branches to the triangle list, whose G_ENDDL returns here.
+    //
+    // The depth buffer is the viewer's own setting, so that each pixel shows the nearest of the parts drawn there,
+    // whichever is drawn first: G_ZBUFFER has the depth of each vertex worked out, Z_CMP draws a pixel only where it is
+    // nearer than what was drawn there before (a texel left out for its alpha draws nothing), and Z_UPD keeps its depth
+    // for what is drawn after it. Fast3D clears the depth buffer at the start of every frame. The game draws a
+    // wrestler without one: it paints whole body parts from the farthest to the nearest (docs/VIEWER.md), and in list
+    // order alone each of the head's three parts would cover nearer triangles of its own at some angles. The material
+    // lists leave the render state alone (viewer_game.c), so the depth buffer stays on for every part; after the parts
+    // the frame turns G_ZBUFFER off again, so that the frames of the other subjects start without it.
     gDPPipeSync(g++);
+    gSPSetGeometryMode(g++, G_ZBUFFER);
     gDPSetRenderMode(g++,
-                     AA_EN | CVG_X_ALPHA | ALPHA_CVG_SEL | FORCE_BL | GBL_c1(G_BL_CLR_IN, G_BL_0, G_BL_CLR_IN, G_BL_1),
+                     AA_EN | Z_CMP | Z_UPD | CVG_X_ALPHA | ALPHA_CVG_SEL | FORCE_BL | ZMODE_OPA |
+                         GBL_c1(G_BL_CLR_IN, G_BL_0, G_BL_CLR_IN, G_BL_1),
                      GBL_c2(G_BL_CLR_IN, G_BL_0, G_BL_CLR_IN, G_BL_1));
     gDPSetCombineMode(g++, G_CC_DECALRGBA, G_CC_DECALRGBA);
-    __gSPVertex(g++, const_cast<void*>(head.vertices), head.vertex_count, head.first_vertex);
-    __gSPDisplayList(g++, const_cast<void*>(head.material_list));
+    for (const ViewerHead& part : parts) {
+        __gSPVertex(g++, const_cast<void*>(part.vertices), part.vertex_count, part.first_vertex);
+        __gSPDisplayList(g++, const_cast<void*>(part.material_list));
+    }
+    gSPClearGeometryMode(g++, G_ZBUFFER);
     EndFrame(g, markers);
 }
 
@@ -425,17 +527,24 @@ struct PixelTable {
     std::vector<uint32_t> pixels; // kWidth x kHeight places in sets, row by row from the top
 };
 
-// The head seen from one side: the angle it is turned to, the triangles the camera sees from the front, and the frame.
+// A part of the head: its ids, and the vertices and triangles the tool decoded from its mesh.
+struct HeadPart {
+    PartIds ids = {};
+    std::vector<std::array<int, 10>> vertices;
+    std::vector<std::array<int, 3>> triangles;
+};
+
+// The head seen from one side: the angle it is turned to, for each part the triangles that face the camera, and the
+// frame.
 struct HeadView {
     float angle = 0.0f;
-    std::vector<uint32_t> front;
+    std::vector<std::vector<uint32_t>> front;
     PixelTable table;
 };
 
 struct Reference {
-    uint32_t mesh = 0, texture = 0, palette = 0;
-    std::vector<std::array<int, 10>> vertices;
-    std::vector<std::array<int, 3>> triangles;
+    std::vector<HeadPart> parts;
+    float middle[3] = {}, radius = 0.0f; // the camera the tool fitted over the vertices of all the parts
     std::vector<HeadView> views;
     uint32_t spriteTexture = 0, spritePalette = 0;
     PixelTable sprite;
@@ -481,6 +590,13 @@ int64_t Integer(const nlohmann::json& value, const char* where, int64_t low, int
     return value.get<int64_t>();
 }
 
+double Number(const nlohmann::json& value, const std::string& where) {
+    if (!value.is_number() || !std::isfinite(value.get<double>())) {
+        throw BadReference(where + " is not a number");
+    }
+    return value.get<double>();
+}
+
 uint32_t Id(const nlohmann::json& object, const char* where, const char* key) {
     std::string name = std::string(where) + "." + key;
 
@@ -516,35 +632,57 @@ Reference ReadReference(const nlohmann::json& file) {
     const nlohmann::json& sprite = Member(file, "the reference", "sprite");
     const nlohmann::json& picture = Member(file, "the reference", "picture");
 
-    ref.mesh = Id(head, "head", "mesh");
-    ref.texture = Id(head, "head", "texture");
-    ref.palette = Id(head, "head", "palette");
-    for (const nlohmann::json& vertex : List(Member(head, "head", "vertices"), "head.vertices")) {
-        std::array<int, 10> fields;
-        const nlohmann::json& values = List(vertex, "a vertex of head.vertices", fields.size());
-        for (size_t f = 0; f < fields.size(); f++) {
-            fields[f] = (int)Integer(values[f], "a vertex field", -32768, 65535);
-        }
-        ref.vertices.push_back(fields);
+    const nlohmann::json& parts = List(Member(head, "head", "parts"), "head.parts");
+    if (parts.empty() || parts.size() > kMaxHeadParts) {
+        throw BadReference("head.parts has " + std::to_string(parts.size()) + " parts; a head has 1 to " +
+                           std::to_string(kMaxHeadParts));
     }
-    for (const nlohmann::json& triangle : List(Member(head, "head", "triangles"), "head.triangles")) {
-        std::array<int, 3> corners;
-        const nlohmann::json& values = List(triangle, "a triangle of head.triangles", corners.size());
-        for (size_t c = 0; c < corners.size(); c++) {
-            corners[c] = (int)Integer(values[c], "a triangle's vertex", 0, 255);
+    for (size_t p = 0; p < parts.size(); p++) {
+        HeadPart part;
+        std::string where = "head.parts[" + std::to_string(p) + "]";
+        part.ids.mesh = Id(parts[p], where.c_str(), "mesh");
+        part.ids.texture = Id(parts[p], where.c_str(), "texture");
+        part.ids.palette = Id(parts[p], where.c_str(), "palette");
+        for (const nlohmann::json& vertex :
+             List(Member(parts[p], where.c_str(), "vertices"), (where + ".vertices").c_str())) {
+            std::array<int, 10> fields;
+            const nlohmann::json& values = List(vertex, ("a vertex of " + where).c_str(), fields.size());
+            for (size_t f = 0; f < fields.size(); f++) {
+                fields[f] = (int)Integer(values[f], "a vertex field", -32768, 65535);
+            }
+            part.vertices.push_back(fields);
         }
-        ref.triangles.push_back(corners);
+        for (const nlohmann::json& triangle :
+             List(Member(parts[p], where.c_str(), "triangles"), (where + ".triangles").c_str())) {
+            std::array<int, 3> corners;
+            const nlohmann::json& values = List(triangle, ("a triangle of " + where).c_str(), corners.size());
+            for (size_t c = 0; c < corners.size(); c++) {
+                corners[c] = (int)Integer(values[c], "a triangle's vertex", 0, 255);
+            }
+            part.triangles.push_back(corners);
+        }
+        ref.parts.push_back(part);
     }
+    const nlohmann::json& camera = Member(head, "head", "camera");
+    const nlohmann::json& middle = List(Member(camera, "head.camera", "middle"), "head.camera.middle", 3);
+    for (size_t axis = 0; axis < 3; axis++) {
+        ref.middle[axis] = (float)Number(middle[axis], "head.camera.middle[" + std::to_string(axis) + "]");
+    }
+    ref.radius = (float)Number(Member(camera, "head.camera", "radius"), "head.camera.radius");
     for (const nlohmann::json& view : List(Member(head, "head", "views"), "head.views")) {
         HeadView seen;
-        const nlohmann::json& angle = Member(view, "a head view", "angle");
-        if (!angle.is_number() || !std::isfinite(angle.get<double>())) {
-            throw BadReference("a head view's angle is not a number");
-        }
-        seen.angle = angle.get<float>();
-        for (const nlohmann::json& number : List(Member(view, "a head view", "front"), "a head view's front")) {
-            seen.front.push_back(
-                (uint32_t)Integer(number, "a head view's front", 0, (int64_t)ref.triangles.size() - 1));
+        seen.angle = (float)Number(Member(view, "a head view", "angle"), "a head view's angle");
+        // One list for each part, of the numbers of its triangles that face the camera.
+        const nlohmann::json& fronts =
+            List(Member(view, "a head view", "front"), "a head view's front", ref.parts.size());
+        for (size_t p = 0; p < ref.parts.size(); p++) {
+            std::string where = "a head view's front for head.parts[" + std::to_string(p) + "]";
+            std::vector<uint32_t> numbers;
+            for (const nlohmann::json& number : List(fronts[p], where.c_str())) {
+                numbers.push_back(
+                    (uint32_t)Integer(number, where.c_str(), 0, (int64_t)ref.parts[p].triangles.size() - 1));
+            }
+            seen.front.push_back(numbers);
         }
         seen.table = ReadTable(view, "a head view");
         ref.views.push_back(seen);
@@ -610,9 +748,9 @@ bool IsMarker(uint32_t x, uint32_t y) {
     return (x == 0 && y == 0) || (x == kWidth - 1 && y == kHeight - 1);
 }
 
-// Compares the vertices that the game's func_8000486C decoded, and the triangles in the list that the game's
-// buildVertexDisplayList wrote, with the reference's own decode of the mesh.
-bool CheckHeadData(const ViewerHead& head, const Reference& ref) {
+// Compares the vertices that the game's func_8000486C decoded for a part of the head, and the triangles in the list
+// that the game's buildVertexDisplayList wrote for it, with the reference's own decode of the part's mesh.
+bool CheckHeadData(const ViewerHead& head, const HeadPart& ref) {
     static const char* const kFields[10] = { "x", "y", "z", "flag", "s", "t", "red", "green", "blue", "alpha" };
     const Vtx* v = static_cast<const Vtx*>(head.vertices);
     bool pass = true;
@@ -675,14 +813,38 @@ bool CheckHeadData(const ViewerHead& head, const Reference& ref) {
         }
     }
     if (same) {
-        std::printf("check: PASS, the %zu triangles in the game's triangle list (buildVertexDisplayList) equal the "
-                    "reference's\n",
-                    built.size());
+        std::printf("check: PASS, the %zu triangles in the game's triangle list (buildVertexDisplayList) for mesh 0x%X "
+                    "equal the reference's\n",
+                    built.size(), head.mesh);
     } else if (built.size() != ref.triangles.size()) {
         std::printf("check: FAIL, the game's triangle list for mesh 0x%X has %zu triangles, the reference %zu\n",
                     head.mesh, built.size(), ref.triangles.size());
     }
     return pass && same;
+}
+
+// Compares the camera the viewer fitted over the head's parts (FitHead) with the one the tool fitted: with another
+// camera the head would be drawn at another place or size, and every pixel compared after would say only that. Both
+// work out the middle exactly, as half the sum of two whole numbers; the radius, a square root, may differ in its last
+// bits, which moves no vertex by a noticeable part of a pixel.
+bool CheckCamera(const Camera& camera, const Reference& ref) {
+    bool same = std::abs(camera.radius - ref.radius) <= 1e-5f * ref.radius;
+
+    for (int axis = 0; axis < 3; axis++) {
+        same = same && camera.middle[axis] == ref.middle[axis];
+    }
+    const char* parts = ref.parts.size() == 1 ? "part" : "parts";
+    if (same) {
+        std::printf("check: PASS, the camera fitted over the head's %zu %s has the reference's middle (%g, %g, %g) and "
+                    "radius %g\n",
+                    ref.parts.size(), parts, camera.middle[0], camera.middle[1], camera.middle[2], camera.radius);
+    } else {
+        std::printf("check: FAIL, the camera fitted over the head's %zu %s has its middle at (%g, %g, %g) and radius "
+                    "%g, the reference's at (%g, %g, %g) and %g\n",
+                    ref.parts.size(), parts, camera.middle[0], camera.middle[1], camera.middle[2], camera.radius,
+                    ref.middle[0], ref.middle[1], ref.middle[2], ref.radius);
+    }
+    return same;
 }
 
 // Compares every pixel of the frame read back with the reference's table: each must have one of the colours its set
@@ -783,27 +945,43 @@ int RunCheck(const std::shared_ptr<Fast::Fast3dWindow>& window, const Reference&
     char what[96];
 
     // The ids come from a file, so they are checked like ids typed on the command line.
-    for (uint32_t id : { ref.mesh, ref.texture, ref.palette, ref.spriteTexture, ref.spritePalette, ref.pictureId }) {
+    std::vector<PartIds> headIds;
+    std::vector<uint32_t> ids = { ref.spriteTexture, ref.spritePalette, ref.pictureId };
+    for (const HeadPart& part : ref.parts) {
+        headIds.push_back(part.ids);
+        ids.insert(ids.end(), { part.ids.mesh, part.ids.texture, part.ids.palette });
+    }
+    for (uint32_t id : ids) {
         if (!viewer_check_id("the reference", id)) {
             return 2;
         }
     }
-    if (!CheckHeadIds(ref.mesh, ref.texture, ref.palette) || !CheckSpriteIds(ref.spriteTexture, ref.spritePalette) ||
+    if (!CheckHeadIds(headIds) || !CheckSpriteIds(ref.spriteTexture, ref.spritePalette) ||
         !viewer_check_picture(ref.pictureId)) {
         return 2;
     }
 
-    // The head, from each side the reference shows it.
-    ViewerHead head;
-    viewer_head_load(ref.mesh, ref.texture, ref.palette, &head);
-    // Lists that do not match the reference may hold anything, which Fast3D could crash on, so they are not drawn.
-    if (!CheckHeadData(head, ref)) {
+    // The head, from each side the reference shows it. Lists that do not match the reference may hold anything, which
+    // Fast3D could crash on, so nothing is drawn unless every part's lists match.
+    std::vector<ViewerHead> head = LoadHead(headIds);
+    bool same = true;
+    for (size_t p = 0; p < head.size(); p++) {
+        same = CheckHeadData(head[p], ref.parts[p]) && same;
+    }
+    if (!same) {
         std::printf("check: FAIL, the head's lists are not drawn, because they do not match the reference\n");
-        viewer_head_free(&head);
+        FreeHead(&head);
         return 2;
     }
-    Camera camera = FitCamera(head.vertices, head.vertex_count);
-    std::vector<bool> seen(ref.triangles.size(), false);
+    Camera camera = FitHead(head);
+    if (!CheckCamera(camera, ref)) {
+        FreeHead(&head);
+        return 2;
+    }
+    std::vector<std::vector<bool>> seen;
+    for (const HeadPart& part : ref.parts) {
+        seen.emplace_back(part.triangles.size(), false);
+    }
     // Between the head's two sides Fast3D draws at another resolution, so that it sizes its framebuffer again, as when
     // someone stretches the window: LibUltraShip without cmake/patches/libultraship/0007 then loses the head's texture
     // and draws it black until the program ends. It draws at 2.5 times the window's resolution, or at 1.75 times when
@@ -819,25 +997,30 @@ int RunCheck(const std::shared_ptr<Fast::Fast3dWindow>& window, const Reference&
         SetCamera(camera, view.angle);
         BuildHeadFrame(head, true);
         if (!DrawFrames(window, 3) || !ReadFrame(window, &pic)) {
-            viewer_head_free(&head);
+            FreeHead(&head);
             return 2;
         }
         std::snprintf(what, sizeof(what), "the head at %.1f degrees", view.angle);
         pass = CheckPixels(pic, view.table, what) && pass;
-        for (uint32_t t : view.front) {
-            seen[t] = true;
+        for (size_t p = 0; p < seen.size(); p++) {
+            for (uint32_t t : view.front[p]) {
+                seen[p][t] = true;
+            }
         }
     }
-    std::printf("check: the pictures compared show %zu of the %zu triangles of mesh 0x%X from the front\n",
-                (size_t)std::count(seen.begin(), seen.end(), true), seen.size(), ref.mesh);
+    for (size_t p = 0; p < seen.size(); p++) {
+        std::printf("check: of the %zu triangles of mesh 0x%X, %zu face the camera in at least one of the pictures "
+                    "compared\n",
+                    seen[p].size(), ref.parts[p].ids.mesh, (size_t)std::count(seen[p].begin(), seen[p].end(), true));
+    }
     if (ref.views.size() > 1) {
         window->SetResolutionMultiplier(td::kReadBackResolution);
         if (!DrawFrames(window, 1)) {
-            viewer_head_free(&head);
+            FreeHead(&head);
             return 2;
         }
     }
-    viewer_head_free(&head);
+    FreeHead(&head);
     ForgetTextures(window);
 
     // The effect sprite, facing the camera.
@@ -880,7 +1063,7 @@ int RunCheck(const std::shared_ptr<Fast::Fast3dWindow>& window, const Reference&
 // closed or options.frames frames are drawn. With --dump it draws one frame and prints its display lists; with
 // --screenshot it draws three and saves the last.
 int RunViewer(const std::shared_ptr<Fast::Fast3dWindow>& window, const Options& options) {
-    ViewerHead head = {};
+    std::vector<ViewerHead> head;
     ViewerSprite sprite = {};
     ViewerPicture picture = {};
     Camera camera = {};
@@ -901,10 +1084,12 @@ int RunViewer(const std::shared_ptr<Fast::Fast3dWindow>& window, const Options& 
         BuildSpriteFrame(sprite, markers);
         std::printf("viewer: effect sprite, texture 0x%X, IA16 palette 0x%X\n", sprite.texture, sprite.palette);
     } else {
-        viewer_head_load(options.mesh, options.texture, options.palette, &head);
-        camera = FitCamera(head.vertices, head.vertex_count);
-        std::printf("viewer: mesh 0x%X (%u vertices, %u triangles), texture 0x%X, palette 0x%X\n", head.mesh,
-                    head.vertex_count, head.triangle_count, head.texture, head.palette);
+        head = LoadHead(options.head);
+        camera = FitHead(head);
+        for (const ViewerHead& part : head) {
+            std::printf("viewer: mesh 0x%X (%u vertices, %u triangles), texture 0x%X, palette 0x%X\n", part.mesh,
+                        part.vertex_count, part.triangle_count, part.texture, part.palette);
+        }
     }
 
     long limit = options.dump ? 1 : options.screenshot != nullptr ? 3 : options.frames;
@@ -939,7 +1124,7 @@ int RunViewer(const std::shared_ptr<Fast::Fast3dWindow>& window, const Options& 
 
     viewer_picture_free(&picture);
     viewer_sprite_free(&sprite);
-    viewer_head_free(&head);
+    FreeHead(&head);
     return result;
 }
 
@@ -970,7 +1155,7 @@ int main(int argc, char** argv) {
         bool idsOk = options.subject == Subject::Picture ? viewer_check_picture(options.pictureId)
                      : options.subject == Subject::Sprite
                          ? CheckSpriteIds(options.spriteTexture, options.spritePalette)
-                         : CheckHeadIds(options.mesh, options.texture, options.palette);
+                         : CheckHeadIds(options.head);
         if (!idsOk) {
             viewer_close_rom();
             return 1;

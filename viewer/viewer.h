@@ -51,8 +51,9 @@ int viewer_check_picture(uint32_t id);
 
 /* ---- viewer_game.c ---- */
 
-/* A model made ready to draw by the game's own code, the way func_8000498C (load a mesh) and func_80004F80 (give it a
- * texture) do it in the game, with the list mode of func_80007020. */
+/* A model, such as one part of a head, made ready to draw by the game's own code, the way func_8000498C (load a mesh)
+ * and func_80004F80 (give it a texture) do it in the game, with the list mode of func_80007020. The viewer loads one
+ * for each part of a head. */
 typedef struct {
     uint32_t mesh;
     uint32_t texture;

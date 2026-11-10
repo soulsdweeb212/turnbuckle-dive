@@ -8,9 +8,10 @@ command.
 
 It has three subjects:
 
-- **A wrestler's face**: the mesh 0xA69 with its texture 0xA6A (8-bit palette indices) and its palette 0xA68 (256
-  colours), turning slowly. It is one of the three parts the game builds a head from ("Where a model's texture comes
-  from", below). The viewer calls this subject the head, after its option `--head`, whichever part it shows.
+- **A wrestler's head, from its three parts**: the lower part of the head, the face and the hair, each a mesh with its
+  own texture and palette, turning slowly. They are the parts the game builds this head from ("Where a model's texture
+  comes from", below). The viewer calls this subject the head, after its option `--head`, which can also show one part
+  alone, or any other model.
 - **An effect sprite**, one frame of the short sprite animations that the game plays on the wrestlers in a match: the
   texture 0x3EC (4-bit palette indices) with the palette 0x3DF (16 entries), which the game reads as IA16, a grey level
   and a transparency for each entry.
@@ -34,9 +35,10 @@ else `baserom.z64` in the current folder, else in the decompilation's folder. It
 
 | Command | What it does |
 |---|---|
-| `./viewer` | the face, turning half a degree per frame |
-| `./viewer --angle 120` | the face at a fixed angle, in degrees, about the vertical axis |
-| `./viewer --head 0xA63 0xA64 0xA62` | a model: a mesh, its texture and the texture's palette (here the hair of the same head) |
+| `./viewer` | the head, turning half a degree per frame |
+| `./viewer --angle 120` | the head at a fixed angle, in degrees, about the vertical axis |
+| `./viewer --head 0xA69 0xA6A 0xA68` | a model: a mesh, its texture and the texture's palette (here the face alone) |
+| `./viewer --head 0xA69 0xA6A 0xA68 0xA63 0xA64 0xA62` | a model of several parts, three ids for each (here the face and the hair) |
 | `./viewer --sprite` | the effect sprite 0x3EC with its palette 0x3DF |
 | `./viewer --sprite 0x3E8 0x3DB` | another effect sprite: a texture and its palette |
 | `./viewer --picture` | the TEX picture 0x3 |
@@ -46,19 +48,19 @@ else `baserom.z64` in the current folder, else in the decompilation's folder. It
 | `./viewer --dump` | draws one frame and prints its display lists (below), then exits |
 | `./viewer --check` | the check (below) |
 
-Ids are written in hex with `0x` or in decimal. The viewer checks each id before the game's code sees it: an id that
-is not one of the game's (1 to 0x1DE9), or a resource of another kind than the option needs (a picture given as a mesh,
-a palette too short for its texture, and so on), ends it with a message that says what is wrong. A screenshot shows
-the game's data from your ROM: save it in the build folder, as above, or anywhere outside the repository (git ignores
-PNG files).
+Ids are written in hex with `0x` or in decimal. `--head` takes up to 23 parts, as the game keeps 23 display records
+for each wrestler. The viewer checks each id before the game's code sees it: an id that is not one of the game's (1 to
+0x1DE9), or a resource of another kind than the option needs (a picture given as a mesh, a palette too short for its
+texture, and so on), ends it with a message that says what is wrong. A screenshot shows the game's data from your ROM:
+save it in the build folder, as above, or anywhere outside the repository (git ignores PNG files).
 
 ## How it draws the head
 
 The game keeps a mesh in a display record, which `func_8000498C` fills from the mesh resource, and then gives the record
 a texture: `func_80004F80` does that for a wrestler's body part, and `func_80007020` for the meshes of a scene. The
 viewer cannot call `func_8000498C` and `func_80007020` yet, because on the PC they would keep the record's pointers in
-32-bit numbers. So `viewer/viewer_game.c` does their steps itself, in the same order, and calls the game's functions
-that do the work:
+32-bit numbers. So `viewer/viewer_game.c` does their steps itself, in the same order, for each part of the head in a
+record of its own, and calls the game's functions that do the work:
 
 1. It loads the mesh with the game's loader and copies its header into the record: the number of vertices and of
    triangles.
@@ -71,16 +73,29 @@ that do the work:
    `func_80004E08` load only the palette). Then `buildCiTextureDisplayList` writes the material list again, in the
    mode `func_80007020` uses, 1, which leaves the render state to the viewer's frame: it loads the palette and the
    texels, then branches to the triangle list. For a wrestler's body part the game uses mode 0, which also writes the
-   wrestlers' render state at the start of the list.
+   wrestlers' render state at the start of the list: a render mode that neither tests nor keeps depths, so it would
+   turn off the viewer's depth buffer (below), and a colour combiner that multiplies each texel by the vertex's alpha,
+   where the game keeps its lighting, and that LibUltraShip cannot draw yet.
 
 The viewer's frame then sets the render state that the game's frame would have set (one cycle, textures on, palettes
-read as RGBA16, and the state `func_80007020` sets before its models), places the camera with two matrices, loads the
-vertices with `G_VTX`, and calls the material list with `G_DL`. The game's lists do the rest. One setting is the
-viewer's own: the game filters its textures, and the viewer does not, so every texel shows as a block of one colour,
-which the check can compare pixel by pixel.
+read as RGBA16, and the state `func_80007020` sets before its models), places the camera with two matrices, and for
+each part loads its vertices with `G_VTX` and calls its material list with `G_DL`. The game's lists do the rest.
+
+Two settings are the viewer's own. The game filters its textures, and the viewer does not, so every texel shows as a
+block of one colour, which the check can compare pixel by pixel. And the viewer draws the head with a depth buffer:
+for each pixel the GPU keeps the depth of what it has drawn there, and draws a later triangle there only where that
+triangle is nearer, so each pixel shows the nearest part, whatever order the parts are drawn in (Fast3D clears the
+depth buffer at the start of every frame). The game draws a wrestler without one: it paints whole body parts from the
+farthest to the nearest (`func_80001EA8` sorts them by how far away they are, `func_80002110` lists them in that
+order, and `func_80002454` writes their commands from that list), each part's triangles in the order of its list, with
+those that face away left out. Painted that way, each of the three parts would cover nearer triangles of its own at
+some angles (the face only when it is seen from behind); with the depth buffer the viewer shows the head as it is
+modelled.
 
 The camera puts the middle of the model at the middle of the picture, turns the model about the vertical axis, and
-scales it so that it fits the picture at every angle. Its projection has no perspective.
+scales it so that it fits the picture at every angle. Its projection has no perspective. The parts of a head share one
+space, so the camera is fitted over the vertices of all the parts together, and the parts meet where the head's model
+has them meet.
 
 When the window's size changed, LibUltraShip went on drawing the model without its texture, in black, until the fix
 `cmake/patches/libultraship/0007-keep-the-bound-texture-cache-right.patch`.
@@ -103,10 +118,10 @@ record at 0x800319C0, which that wrestler's second and fourth costumes wear. It 
 | Body part | Mesh | Texture | Palette | What it shows |
 |---|---|---|---|---|
 | 4 | 0xA66 | 0xA67 | 0xA65 | the lower part of the head: skin at the front, hair at the back |
-| 5 | 0xA69 | 0xA6A | 0xA68 | the face, with its paint: what `./viewer` draws |
+| 5 | 0xA69 | 0xA6A | 0xA68 | the face, with its paint |
 | 20 | 0xA63 | 0xA64 | 0xA62 | the hair over the top, the sides and the back of the head |
 
-`./viewer --head` followed by the three ids of a row draws that part. The viewer draws one part at a time.
+`./viewer` draws all three together. `./viewer --head` followed by the three ids of one or more rows draws those parts.
 
 ## How it draws an effect sprite
 
@@ -148,19 +163,25 @@ the fix `cmake/patches/libultraship/0006-look-up-palettes-for-4-bit-and-8-bit-te
 reference that `tools/viewer_ref.py` computes from your ROM. That tool is a second, separate reader of the same data,
 written in Python from the formats: it shares no code with the game's C. From the data it works out the colour each
 pixel must have, following the way the N64 draws: where the camera puts each vertex, which triangle covers each pixel
-in the order the list draws them, the texel each pixel shows, and how the texel's colour is blended. The check
-compares:
+(for the head the nearest one, which the viewer's depth buffer keeps; for the sprite the last one the list draws
+there), the texel each pixel shows, and how the texel's colour is blended. The check compares:
 
-1. The vertices that the game's `func_8000486C` decoded with the tool's decode of the mesh, field by field.
-2. The triangles in the game's triangle list with the tool's, in order.
-3. Every pixel of the head at -60 degrees, and again at 120 degrees, the other side, so that every triangle the
-   camera sees from behind in one picture faces it in the other. For the second picture Fast3D draws at 2.5 times the
+1. For each part of the head, the vertices that the game's `func_8000486C` decoded with the tool's decode of the
+   part's mesh, field by field.
+2. For each part, the triangles in the game's triangle list with the tool's, in order. Unless every part's vertices
+   and triangles match, nothing is drawn.
+3. The camera the viewer fits over the vertices of all the parts with the tool's: its middle exactly, and its radius
+   to within a hundred-thousandth of it (the two programs may round its square root differently). Unless it matches,
+   nothing is drawn either.
+4. Every pixel of the head at -60 degrees, and again at 120 degrees, the other side, so that every triangle the
+   camera sees from behind in one picture faces it in the other; a line for each part then says how many of its
+   triangles face the camera in at least one of the two. For the second picture Fast3D draws at 2.5 times the
    window's resolution instead of twice (or at 1.75 times, near its limit of 4320 rows), so that it sizes its
    framebuffer again, as when someone stretches the window (the case patch 0007 fixes); after the head it draws at
    twice again, so that the sprite and the picture are drawn after a resize too. The window keeps its size and place;
    the framebuffer lines of the output give each size.
-4. Every pixel of the effect sprite.
-5. Every pixel of the picture, which the tool works out tile by tile as the N64 draws it (its comments say how).
+5. Every pixel of the effect sprite.
+6. Every pixel of the picture, which the tool works out tile by tile as the N64 draws it (its comments say how).
 
 Each pixel must have the colour the tool works out, and pixels where the tool says the background shows must not be
 drawn. Where a triangle's edge or a texel's edge passes close to a pixel's middle, the tool allows the colour on each
@@ -168,12 +189,13 @@ side, because the framebuffer pixel that is read back for a picture pixel does n
 check needs a framebuffer of at least 960x480 pixels; it draws at twice the window's resolution, in the picture's 4:3
 shape, so a window at least 480 pixels wide and 360 high gives one, and as Fast3D gives its framebuffer at most 4320
 rows, the window must be at most 2160 high, or 2880 wide when it is taller than 4:3; the tool's comments give the
-distances). A colour may be 1 off in each of its red, green
-and blue (5 bits each as they read back), because LibUltraShip scales 5-bit colours to 8 bits for the GPU. Each line of
-the check's output says what was compared and whether it passed; the viewer ends with exit code 0 when all passed, and 2
-when one failed. All subjects need the ROM, and the check exits with code 77 when it finds none. A reference that is not
-what the check expects (written by an older or newer tool, or changed by hand) ends the check with a message naming the
-part that is wrong.
+distances). In the same way, where two surfaces of the head are so near each other in depth at a pixel that either
+could be in front where the GPU looks, as where the face and the lower part of the head cross, the tool allows the
+colour of each. A colour may be 1 off in each of its red, green and blue (5 bits each as they read back), because
+LibUltraShip scales 5-bit colours to 8 bits for the GPU. Each line of the check's output says what was compared and
+whether it passed; the viewer ends with exit code 0 when all passed, and 2 when one failed. All subjects need the ROM,
+and the check exits with code 77 when it finds none. A reference that is not what the check expects (written by an
+older or newer tool, or changed by hand) ends the check with a message naming the part that is wrong.
 
 The test `viewer_check` runs the check, after the test `viewer_reference` has run the tool. From this repository's
 folder:
@@ -190,9 +212,10 @@ cd build/debug
 ./viewer --check --reference viewer_ref.json
 ```
 
-The tool's options choose other subjects: `--head MESH TEX PAL`, `--angle DEG` (the first of the head's two angles,
--60 when not given), `--sprite TEX PAL` and `--picture ID`. The reference holds data decoded from your ROM, so `--out`
-must name a file in the build folder, which git ignores.
+The tool's options choose other subjects: `--head MESH TEX PAL [MESH TEX PAL ...]` (the parts of a head, three ids
+for each; the ROM goes before this option, which takes every id after it), `--angle DEG` (the first of the head's two
+angles, -60 when not given), `--sprite TEX PAL` and `--picture ID`. The reference holds data decoded from your ROM, so
+`--out` must name a file in the build folder, which git ignores.
 
 In the `asan` preset, `viewer_check` runs without LeakSanitizer, because the GPU driver and SDL's sound thread keep a
 few blocks to the end that the program cannot free (hello shows the same ones). To see LeakSanitizer's report, run the
@@ -212,8 +235,8 @@ itself; they are marked so. From `build/debug`:
 ./viewer --dump --picture
 ```
 
-For the head, the frame's `G_DL` to the game's material list and the list's first command, which names the palette's
-address, look like this (the addresses differ from run to run):
+For the head, the frame has a `G_VTX` and a `G_DL` to the game's material list for each part. A `G_DL` and the list's
+first command, which names the palette's address, look like this (the addresses differ from run to run):
 
 ```
 0x...  DE000000 0000...  G_DL  (call)
@@ -244,9 +267,9 @@ In VS Code (the README says how to set it up), with a Debug build:
    `src/main/buildCiTextureDisplayList.c`.
 2. Click left of the line `obj->width = (u16)(1 << maskS);` to set a breakpoint.
 3. In the Run and Debug view, choose "Debug asset viewer" and press F5. The viewer stops there while it builds the
-   head's material list. The Variables view shows `obj`, the display record, and the texture's header bytes
-   (`clampS`, `maskS` and the others); F10 runs one line, and the Call Stack view shows that `viewer_head_load`
-   called the function.
+   material list of the head's first part (and, each time F5 is pressed again, of the next part). The Variables view
+   shows `obj`, the display record, and the texture's header bytes (`clampS`, `maskS` and the others); F10 runs one
+   line, and the Call Stack view shows that `viewer_head_load` called the function.
 
 The same from a terminal, with gdb, from `build/debug` (where the viewer then writes its log and settings). This stops
 where the function starts, prints the texture's header, runs on by seven lines and prints the size the function has
@@ -257,7 +280,7 @@ gdb -ex 'break buildCiTextureDisplayList' -ex run -ex 'print *obj->tex' -ex 'nex
     -ex 'print obj->height' -ex backtrace --args ./viewer --frames 100
 ```
 
-gdb then waits at its `(gdb)` prompt: `continue` runs on, and `quit` ends.
+gdb then waits at its `(gdb)` prompt: `continue` runs on, to the next part's material list, and `quit` ends.
 
 ## Where the viewer's code is
 

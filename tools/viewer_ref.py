@@ -6,18 +6,20 @@ It is a second, separate reader of the same data, written in Python from the for
 resource reader it uses: the mesh format (vertices and triangles), the textures and palettes of models and effect
 sprites (CI4 and CI8 texels, RGBA16 and IA16 palettes), and the TEX picture format. It shares no code with the game's
 C. For each of the check's subjects it works out the colour every pixel of the viewer's frame must have, the way the
-N64 draws it: the head, seen from two opposite sides, and the effect sprite, from where the viewer's camera puts their
-vertices and the texel each pixel shows; the picture from the tiles the game draws it in. For the head it also writes
-the vertices and triangles the mesh holds, which the check compares with the ones the game's functions build.
+N64 draws it: the head, from all its parts and seen from two opposite sides, and the effect sprite, from where the
+viewer's camera puts their vertices and the texel each pixel shows; the picture from the tiles the game draws it in.
+For each part of the head it also writes the vertices and triangles its mesh holds, which the check compares with the
+ones the game's functions build, and for the head the camera it placed, which the check compares with the viewer's.
 
 Usage, from the repository folder, with the build folder of the preset you use:
-    python3 tools/viewer_ref.py [ROM] --out build/debug/viewer_ref.json [--head MESH TEX PAL] [--angle DEG]
-                                [--sprite TEX PAL] [--picture ID]
+    python3 tools/viewer_ref.py [ROM] --out build/debug/viewer_ref.json [--head MESH TEX PAL [MESH TEX PAL ...]]
+                                [--angle DEG] [--sprite TEX PAL] [--picture ID]
 
-ROM is your ROM in any byte order. Without it, the tool uses $TD_ROM, else baserom.z64 in the current folder, else the
-file given with --or-rom (CMake gives the decompilation's baserom.z64), and exits with code 77 when there is none,
-which CTest reports as skipped. The file it writes holds data decoded from the game, so --out must name a file in the
-build folder, which git ignores; never commit it.
+ROM is your ROM in any byte order; it goes before --head, which takes every id that follows it, three for each part.
+Without it, the tool uses $TD_ROM, else baserom.z64 in the current folder, else the file given with --or-rom (CMake
+gives the decompilation's baserom.z64), and exits with code 77 when there is none, which CTest reports as skipped. The
+file it writes holds data decoded from the game, so --out must name a file in the build folder, which git ignores;
+never commit it.
 """
 import argparse
 import hashlib
@@ -40,15 +42,19 @@ WIDTH, HEIGHT = 480, 240
 # reference, -1 stands for a pixel where the background shows.
 BACKGROUND = (16, 24, 72)
 
-# The subjects the viewer's --check draws unless told otherwise: a wrestler's face, with the mesh, texture and palette
-# that the head record at 0x800319C0 gives its body part 5 (docs/VIEWER.md), turned -60 degrees, which shows it from the
-# front and one side, and then the other way (120 degrees), so that every triangle the camera saw from behind faces it
-# once; an effect sprite with an IA16 palette (one frame of the sprite animations the game plays on the wrestlers in a
-# match); and the TEX picture 0x3.
-HEAD = (0xA69, 0xA6A, 0xA68)
+# The subjects the viewer's --check draws unless told otherwise: a wrestler's head, from the three parts that the head
+# record at 0x800319C0 gives it (docs/VIEWER.md), each a mesh, its texture and its palette: body parts 4 (the lower
+# head), 5 (the face) and 20 (the hair), in that order; turned -60 degrees, which shows the face from the front and one
+# side, and then the other way (120 degrees), so that every triangle the camera saw from behind faces it once; an effect
+# sprite with an IA16 palette (one frame of the sprite animations the game plays on the wrestlers in a match); and the
+# TEX picture 0x3.
+HEAD = ((0xA66, 0xA67, 0xA65), (0xA69, 0xA6A, 0xA68), (0xA63, 0xA64, 0xA62))
 ANGLE = -60.0
 SPRITE = (0x3EC, 0x3DF)
 PICTURE = 0x3
+# The most parts a head may have, as in the viewer (kMaxHeadParts): the game keeps 23 display records for each wrestler
+# (func_8000BDD0 fills those of body parts 1 to 20, and func_8000CD84 goes through all 23 when it lets a wrestler go).
+MAX_PARTS = 23
 
 # The viewer's camera (viewer/main.cpp, FitCamera): the ball around the model is 2 * FIT picture pixels high.
 FIT = 100.0
@@ -61,11 +67,14 @@ SPRITE_TRIANGLES = ((0, 1, 2), (2, 1, 3))
 
 # How exact the reference is. The check reads each picture pixel back from the framebuffer pixel that holds its
 # middle (td::Picture::At); with a framebuffer of at least 960x480 pixels, which the check requires, that pixel's own
-# middle is at most 0.25 picture pixels away. SAMPLE adds a margin for the GPU's rounding of positions, and
-# TEXEL_SLACK one for its rounding of texture coordinates. A pixel may have every colour that a point within SAMPLE
-# of its middle could get, and one with more than MAX_CHOICES possible colours is not compared.
+# middle is at most 0.25 picture pixels away. SAMPLE adds a margin for the GPU's rounding of positions, TEXEL_SLACK
+# one for its rounding of texture coordinates, and DEPTH_SLACK one for its rounding of depths, in picture pixels like
+# the depths themselves (place_vertices): the GPU keeps a depth in 24 bits, in steps of about 0.00003 picture pixels,
+# so 0.01 leaves room for hundreds of steps. A pixel may have every colour that a point within SAMPLE of its middle
+# could get, and one with more than MAX_CHOICES possible colours is not compared.
 SAMPLE = 0.3
 TEXEL_SLACK = 0.01
+DEPTH_SLACK = 0.01
 MAX_CHOICES = 6
 
 
@@ -217,15 +226,9 @@ def fixed_point(m):
     return [[f32(int(f32(v * 65536.0)) / 65536.0) for v in row] for row in m]
 
 
-def place_vertices(vertices, angle):
-    """Where the viewer's camera puts each vertex (x, y, z first): its x and y in picture pixels from the picture's top
-    left corner.
-
-    The camera (viewer/main.cpp, FitCamera and SetCamera) moves the middle of the vertices' box to the origin, turns
-    the model by angle degrees about the vertical axis, and scales it so that the ball around the vertices is 2 * FIT
-    pixels high. Its projection divides x by 160 and y by 120: the picture is 480x240 shown at 4:3, so a horizontal
-    distance takes 1.5 times as many pixels as a vertical one, and the model keeps its shape on screen. There is no
-    perspective, so every vertex keeps w = 1, and the viewport maps -1 to 1 onto the picture's width and height."""
+def fit_camera(vertices):
+    """The viewer's camera for the vertices (x, y, z first; viewer/main.cpp, FitCamera): the middle of their box, and
+    the radius of the ball around them from there. A head's camera is fitted over the vertices of all its parts."""
     low = [min(v[axis] for v in vertices) for axis in range(3)]
     high = [max(v[axis] for v in vertices) for axis in range(3)]
     middle = [f32((low[axis] + high[axis]) / 2.0) for axis in range(3)]
@@ -233,6 +236,21 @@ def place_vertices(vertices, angle):
     for v in vertices:
         d = [f32(v[axis] - middle[axis]) for axis in range(3)]
         radius = max(radius, f32(math.sqrt(f32(f32(f32(d[0] * d[0]) + f32(d[1] * d[1])) + f32(d[2] * d[2])))))
+    return middle, radius
+
+
+def place_vertices(vertices, camera, angle):
+    """Where the camera (fit_camera's middle and radius) puts each vertex (x, y, z first): its x and y in picture pixels
+    from the picture's top left corner, and its depth, how far behind the model's middle it is, also in picture pixels,
+    so that a nearer vertex has a smaller depth.
+
+    The camera (viewer/main.cpp, SetCamera) moves the middle to the origin, turns the model by angle degrees about the
+    vertical axis, and scales it so that the ball is 2 * FIT pixels high. Its projection divides x by 160 and y by 120:
+    the picture is 480x240 shown at 4:3, so a horizontal distance takes 1.5 times as many pixels as a vertical one, and
+    the model keeps its shape on screen. It divides z by -256, and the GPU keeps half of the result plus 0.5 as the
+    depth, which is 0.5 + depth / 512: it compares depths in the same order. There is no perspective, so every vertex
+    keeps w = 1, and the viewport maps -1 to 1 onto the picture's width and height."""
+    middle, radius = camera
     scale = f32(FIT / max(radius, 1.0))
     radians = f32(f32(f32(angle) * f32(3.14159265358979)) / 180.0)
     c, s = f32(math.cos(radians)), f32(math.sin(radians))
@@ -243,9 +261,9 @@ def place_vertices(vertices, angle):
     both = matrix_product(fixed_point(matrix_product(matrix_product(move, turn), size)), fixed_point(projection))
     placed = []
     for v in vertices:
-        x, y, w = (f32(f32(f32(f32(v[0] * both[0][k]) + f32(v[1] * both[1][k])) + f32(v[2] * both[2][k]))
-                       + both[3][k]) for k in (0, 1, 3))
-        placed.append(((x / w + 1) * WIDTH / 2, (1 - y / w) * HEIGHT / 2))
+        x, y, z, w = (f32(f32(f32(f32(v[0] * both[0][k]) + f32(v[1] * both[1][k])) + f32(v[2] * both[2][k]))
+                          + both[3][k]) for k in range(4))
+        placed.append(((x / w + 1) * WIDTH / 2, (1 - y / w) * HEIGHT / 2, 256 * z / w))
     return placed
 
 
@@ -257,26 +275,20 @@ def texel_coordinates(s, t):
 
 # ---- The colours of a frame of textured triangles ----
 
-def draw_triangles(placed, texcoords, triangles, texture, colours, blend, cull_back):
-    """Works out the colours each pixel of the frame may have when the triangles are drawn in list order over the
-    background, without a depth buffer, as in the viewer's frames: a later triangle covers an earlier one.
+def rasterise(placed, texcoords, triangles, cull_back):
+    """Goes through the triangles in list order, as the GPU draws them, and works out the pixels each may reach and what
+    it may give them. A pixel shows a triangle when its middle is inside it, and then the texel its texture coordinates
+    fall in there: they vary linearly across a triangle, because the camera has no perspective, and the viewer samples
+    textures without filtering. The depth varies linearly too. With cull_back, a triangle whose vertices go clockwise
+    on screen is not drawn (the N64's G_CULL_BACK, which the game's triangle list for a model turns on).
 
-    A pixel shows a triangle when its middle is inside it, and then the texel its texture coordinates fall in there:
-    they vary linearly across a triangle, because the camera has no perspective, and the viewer samples textures
-    without filtering. With cull_back, a triangle whose vertices go clockwise on screen is not drawn (the N64's
-    G_CULL_BACK, which the game's triangle list for a model turns on). A texel's colour comes from colours, the
-    palette. blend False (the head): a texel whose alpha is 0 is left out, so what was drawn there before shows, and
-    any other texel is drawn as it is (the render state the viewer gives models). blend True (the effect sprite): each
-    texel is mixed with what is there by its alpha, colour x alpha + behind x (1 - alpha), in 8 bits per channel as
-    the GPU's framebuffer keeps them.
-
-    Each pixel gets the set of colours it may have: where a triangle's edge or a texel's edge passes within SAMPLE of
-    the pixel's middle, each side's colour (see SAMPLE). Returns a dictionary from (x, y) to that set, for the pixels
-    the triangles may reach (None where there are more than MAX_CHOICES), and the numbers of the triangles drawn."""
-    state = {}
-    drawn = []
+    Yields, for each triangle drawn, its number and its pixels, each as (x, y, inside, texels, near, far): inside is
+    True when the triangle surely covers the point the GPU samples for the pixel; texels are the texels (s, t) that may
+    show there, None when there are more than MAX_CHOICES; near and far are the smallest and the largest depth the
+    triangle may have there. Where a triangle's edge or a texel's edge passes within SAMPLE of the pixel's middle, the
+    pixel may get either side (see SAMPLE)."""
     for number, (a, b, c) in enumerate(triangles):
-        (x1, y1), (x2, y2), (x3, y3) = placed[a], placed[b], placed[c]
+        (x1, y1, d1), (x2, y2, d2), (x3, y3, d3) = placed[a], placed[b], placed[c]
         # Twice the triangle's area, positive when its vertices go clockwise on screen, where y grows downwards.
         area2 = (x2 - x1) * (y3 - y1) - (y2 - y1) * (x3 - x1)
         if abs(area2) < 1e-9:
@@ -287,27 +299,30 @@ def draw_triangles(placed, texcoords, triangles, texture, colours, blend, cull_b
                 continue
             # A sliver whose turn the GPU's rounding could decide either way: it may or may not be drawn.
             maybe = area2 > -1e-3
-        drawn.append(number)
         sign = -1.0 if area2 > 0 else 1.0
         # Each edge as a line: (point, direction, length); a point is outside when the edge's function is positive.
         edges = []
         for (ax, ay), (bx, by) in (((x1, y1), (x2, y2)), ((x2, y2), (x3, y3)), ((x3, y3), (x1, y1))):
             length = math.hypot(bx - ax, by - ay)
             edges.append((ax, ay, bx - ax, by - ay, length, SAMPLE * (abs(bx - ax) + abs(by - ay)) / length))
-        # The texture coordinates as linear functions of the picture position.
+        # The texture coordinates and the depth as linear functions of the picture position.
         (u1, v1), (u2, v2), (u3, v3) = texcoords[a], texcoords[b], texcoords[c]
         den = (x2 - x1) * (y3 - y1) - (x3 - x1) * (y2 - y1)
         dudx = ((u2 - u1) * (y3 - y1) - (u3 - u1) * (y2 - y1)) / den
         dudy = ((u3 - u1) * (x2 - x1) - (u2 - u1) * (x3 - x1)) / den
         dvdx = ((v2 - v1) * (y3 - y1) - (v3 - v1) * (y2 - y1)) / den
         dvdy = ((v3 - v1) * (x2 - x1) - (v2 - v1) * (x3 - x1)) / den
+        dddx = ((d2 - d1) * (y3 - y1) - (d3 - d1) * (y2 - y1)) / den
+        dddy = ((d3 - d1) * (x2 - x1) - (d2 - d1) * (x3 - x1)) / den
         reach_u = SAMPLE * (abs(dudx) + abs(dudy)) + TEXEL_SLACK
         reach_v = SAMPLE * (abs(dvdx) + abs(dvdy)) + TEXEL_SLACK
+        reach_d = SAMPLE * (abs(dddx) + abs(dddy)) + DEPTH_SLACK
 
         left = max(0, int(math.floor(min(x1, x2, x3) - SAMPLE)))
         right = min(WIDTH - 1, int(math.floor(max(x1, x2, x3) + SAMPLE)))
         top = max(0, int(math.floor(min(y1, y2, y3) - SAMPLE)))
         bottom = min(HEIGHT - 1, int(math.floor(max(y1, y2, y3) + SAMPLE)))
+        pixels = []
         for py in range(top, bottom + 1):
             cy = py + 0.5
             for px in range(left, right + 1):
@@ -325,28 +340,89 @@ def draw_triangles(placed, texcoords, triangles, texture, colours, blend, cull_b
                         inside = False
                 if outside:
                     continue
-                before = state.get((px, py), {BACKGROUND})
-                if before is None:
-                    continue
                 u = u1 + dudx * (cx - x1) + dudy * (cy - y1)
                 v = v1 + dvdx * (cx - x1) + dvdy * (cy - y1)
+                depth = d1 + dddx * (cx - x1) + dddy * (cy - y1)
                 texels = [(s, t) for t in range(math.floor(v - reach_v), math.floor(v + reach_v) + 1)
                           for s in range(math.floor(u - reach_u), math.floor(u + reach_u) + 1)]
-                if len(texels) > MAX_CHOICES:
-                    state[(px, py)] = None
-                    continue
-                after = set() if inside else set(before)
-                for s, t in texels:
-                    red, green, blue, alpha = colours[texture.index(s, t)]
-                    if blend:
-                        after |= {tuple(round(colour * alpha / 255 + behind * (1 - alpha / 255))
-                                        for colour, behind in zip((red, green, blue), old)) for old in before}
-                    elif alpha == 0:
-                        after |= before
-                    else:
-                        after.add((red, green, blue))
-                state[(px, py)] = after if len(after) <= MAX_CHOICES else None
-    return state, drawn
+                pixels.append((px, py, inside, texels if len(texels) <= MAX_CHOICES else None, depth - reach_d,
+                               depth + reach_d))
+        yield number, pixels
+
+
+def draw_blended(placed, texcoords, triangles, texture, colours):
+    """Works out the colours each pixel of the frame may have when the triangles are drawn in list order over the
+    background, without a depth buffer and without culling, as in the effect sprite's frame: a later triangle covers an
+    earlier one, and each texel is mixed with what is there by its alpha, colour x alpha + behind x (1 - alpha), in 8
+    bits per channel as the GPU's framebuffer keeps them. A texel's colour and alpha come from colours, the palette.
+
+    Returns a dictionary from (x, y) to the set of colours the pixel may have, for the pixels the triangles may reach
+    (None where there are more than MAX_CHOICES)."""
+    state = {}
+    for _, pixels in rasterise(placed, texcoords, triangles, cull_back=False):
+        for px, py, inside, texels, _, _ in pixels:
+            before = state.get((px, py), {BACKGROUND})
+            if before is None:
+                continue
+            if texels is None:
+                state[(px, py)] = None
+                continue
+            after = set() if inside else set(before)
+            for s, t in texels:
+                red, green, blue, alpha = colours[texture.index(s, t)]
+                after |= {tuple(round(colour * alpha / 255 + behind * (1 - alpha / 255))
+                                for colour, behind in zip((red, green, blue), old)) for old in before}
+            state[(px, py)] = after if len(after) <= MAX_CHOICES else None
+    return state
+
+
+def draw_head(parts, camera, angle):
+    """Works out the colours each pixel of the head's frame may have. The viewer draws the parts one after another, each
+    with its triangles in list order and its back faces culled, and with a depth buffer of its own: a triangle colours a
+    pixel only where it is nearer than what was drawn there before (on a tie the one drawn first stays), and its depth
+    is kept there for the triangles drawn after it. So each pixel shows the nearest surface drawn there, whatever the
+    order. A texel whose alpha is 0 is left out, and keeps no depth, so it hides nothing; any other texel is drawn as it
+    is (the render state the viewer gives models).
+
+    Every triangle that may reach a pixel gives it a fragment (rasterise): the colours the triangle may show there and
+    the depths it may have there. A fragment is sure when the triangle surely covers the point the GPU samples and none
+    of its texels there has alpha 0: it is drawn, whatever the GPU's rounding. A fragment whose nearest depth is farther
+    than the farthest depth of a sure fragment is hidden; every other one may show, so where two surfaces come nearer
+    each other in depth than these margins, as where the face and the lower head cross, both colours are allowed. The
+    background may show only where no fragment is sure.
+
+    Returns a dictionary from (x, y) to the set of colours the pixel may have, as draw_blended does, and for each part
+    the numbers of its triangles that face the camera."""
+    fragments = {}
+    fronts = []
+    for part in parts:
+        front = []
+        for number, pixels in rasterise(place_vertices(part.vertices, camera, angle), part.texcoords, part.triangles,
+                                        cull_back=True):
+            front.append(number)
+            for px, py, inside, texels, near, far in pixels:
+                if texels is None:
+                    fragment = (near, far, False, None)
+                else:
+                    shown = [part.colours[part.texture.index(s, t)] for s, t in texels]
+                    fragment = (near, far, inside and all(alpha != 0 for *_, alpha in shown),
+                                {(red, green, blue) for red, green, blue, alpha in shown if alpha != 0})
+                fragments.setdefault((px, py), []).append(fragment)
+        fronts.append(front)
+
+    state = {}
+    for where, found in fragments.items():
+        cut = min((far for _, far, sure, _ in found if sure), default=math.inf)
+        allowed = {BACKGROUND} if cut == math.inf else set()
+        for near, _, _, colours in found:
+            if near > cut:
+                continue
+            if colours is None:
+                allowed = None
+                break
+            allowed |= colours
+        state[where] = allowed if allowed is not None and len(allowed) <= MAX_CHOICES else None
+    return state, fronts
 
 
 def pixel_table(state):
@@ -375,21 +451,34 @@ def pixel_table(state):
 
 # ---- The subjects ----
 
-def head_reference(rom, mesh, tex, pal, angle):
-    """The head: the mesh's vertices and triangles, and the frame seen at angle and at angle + 180 degrees. The game's
+class Part:
+    """A part of the head: a mesh, its texture and the texture's palette, by their ids. It holds the mesh's vertices
+    and triangles, each vertex's texture coordinates in texels, the texture and its palette's colours. The game's
     buildCiTextureDisplayList loads the texture as CI8 or CI4 by its byte 2, and the viewer reads the palette as
     RGBA16, as the game does for its models."""
-    vertices, triangles = checked(mesh, decode_mesh, resource(rom, mesh))
-    data = resource(rom, tex)
-    texture = checked(tex, Texture, data, 8 if len(data) > 2 and data[2] == 1 else 4)
-    colours = checked(pal, palette, resource(rom, pal), 256 if texture.bits == 8 else 16, False)
-    texcoords = [texel_coordinates(v[4], v[5]) for v in vertices]
+
+    def __init__(self, rom, mesh, tex, pal):
+        self.ids = (mesh, tex, pal)
+        self.vertices, self.triangles = checked(mesh, decode_mesh, resource(rom, mesh))
+        data = resource(rom, tex)
+        self.texture = checked(tex, Texture, data, 8 if len(data) > 2 and data[2] == 1 else 4)
+        self.colours = checked(pal, palette, resource(rom, pal), 256 if self.texture.bits == 8 else 16, False)
+        self.texcoords = [texel_coordinates(v[4], v[5]) for v in self.vertices]
+
+
+def head_reference(rom, ids, angle):
+    """The head, from its parts (ids holds a mesh, a texture and a palette for each): each part's ids, vertices and
+    triangles, the camera fitted over the vertices of all the parts, which share one space, and the frame seen at angle
+    and at angle + 180 degrees, with the numbers of each part's triangles that face the camera there."""
+    parts = [Part(rom, *part) for part in ids]
+    camera = fit_camera([v for part in parts for v in part.vertices])
     views = []
     for turn in (angle, angle + 180.0):
-        state, drawn = draw_triangles(place_vertices(vertices, turn), texcoords, triangles, texture, colours,
-                                      blend=False, cull_back=True)
-        views.append(dict(angle=turn, front=drawn, **pixel_table(state)))
-    return {'mesh': mesh, 'texture': tex, 'palette': pal, 'vertices': vertices, 'triangles': triangles,
+        state, fronts = draw_head(parts, camera, turn)
+        views.append(dict(angle=turn, front=fronts, **pixel_table(state)))
+    return {'parts': [dict(zip(('mesh', 'texture', 'palette'), part.ids), vertices=part.vertices,
+                           triangles=part.triangles) for part in parts],
+            'camera': {'middle': camera[0], 'radius': camera[1]},
             'views': views}
 
 
@@ -402,8 +491,8 @@ def sprite_reference(rom, tex, pal):
     colours = checked(pal, palette, resource(rom, pal), 16, True)
     vertices = [(x, y, 0) for x, y, _, _ in SPRITE_VERTICES]
     texcoords = [texel_coordinates(s, t) for _, _, s, t in SPRITE_VERTICES]
-    state, _ = draw_triangles(place_vertices(vertices, 0.0), texcoords, SPRITE_TRIANGLES, texture, colours,
-                              blend=True, cull_back=False)
+    state = draw_blended(place_vertices(vertices, fit_camera(vertices), 0.0), texcoords, SPRITE_TRIANGLES, texture,
+                         colours)
     return dict(texture=tex, palette=pal, **pixel_table(state))
 
 
@@ -488,14 +577,21 @@ def main():
     parser.add_argument('--out', metavar='FILE', required=True,
                         help='where to write the reference: a file in the build folder, such as '
                              'build/debug/viewer_ref.json')
-    parser.add_argument('--head', metavar='ID', nargs=3, type=resource_id, default=list(HEAD),
-                        help='the mesh, its texture and its palette')
+    parser.add_argument('--head', metavar='ID', nargs='+', type=resource_id,
+                        help='the head\'s parts, each a mesh, its texture and its palette: ids in threes, for 1 to %d '
+                             'parts (the ROM goes before this option)' % MAX_PARTS)
     parser.add_argument('--angle', type=float, default=ANGLE,
                         help='the head\'s first angle in degrees; the second is 180 degrees on')
     parser.add_argument('--sprite', metavar='ID', nargs=2, type=resource_id, default=list(SPRITE),
                         help='the effect sprite\'s texture and its IA16 palette')
     parser.add_argument('--picture', metavar='ID', type=resource_id, default=PICTURE, help='the TEX picture')
     args = parser.parse_args()
+    if args.head is None:
+        head = HEAD
+    elif len(args.head) % 3 != 0 or len(args.head) > 3 * MAX_PARTS:
+        parser.error('--head takes ids in threes, a mesh, its texture and its palette, for 1 to %d parts' % MAX_PARTS)
+    else:
+        head = [args.head[i:i + 3] for i in range(0, len(args.head), 3)]
 
     path = find_rom(args.rom, args.or_rom)
     if path is None:
@@ -514,19 +610,20 @@ def main():
     try:
         reference = {
             'tool': 'tools/viewer_ref.py',
-            'head': head_reference(rom, *args.head, args.angle),
+            'head': head_reference(rom, head, args.angle),
             'sprite': sprite_reference(rom, *args.sprite),
             'picture': picture_reference(rom, args.picture),
         }
     except (ValueError, IndexError, struct.error) as error:
         sys.exit('%s: %s' % (path, error))
     pathlib.Path(args.out).write_text(json.dumps(reference, separators=(',', ':')))
-    head = reference['head']
-    print('reference for mesh 0x%X (%d vertices, %d triangles), texture 0x%X, palette 0x%X at %g and %g degrees, '
-          'sprite 0x%X with palette 0x%X, and picture 0x%X, from %s, written to %s'
-          % (head['mesh'], len(head['vertices']), len(head['triangles']), head['texture'], head['palette'],
-             head['views'][0]['angle'], head['views'][1]['angle'], args.sprite[0], args.sprite[1], args.picture, path,
-             args.out))
+    parts = ', '.join('mesh 0x%X (%d vertices, %d triangles) with texture 0x%X and palette 0x%X'
+                      % (part['mesh'], len(part['vertices']), len(part['triangles']), part['texture'], part['palette'])
+                      for part in reference['head']['parts'])
+    views = reference['head']['views']
+    print('reference for the head of %s at %g and %g degrees, sprite 0x%X with palette 0x%X, and picture 0x%X, '
+          'from %s, written to %s' % (parts, views[0]['angle'], views[1]['angle'], args.sprite[0], args.sprite[1],
+                                      args.picture, path, args.out))
 
 
 if __name__ == '__main__':

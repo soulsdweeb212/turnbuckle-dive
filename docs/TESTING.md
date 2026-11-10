@@ -49,7 +49,7 @@ different after any change; a digest is such a fingerprint taken over many piece
 | `rom_loader` | The game's own loader loads all 7657 resources of your ROM (its textures, models, animations and the rest of the game's data), and their digest is the one the test knows ([GAME_CODE.md](GAME_CODE.md) explains it). |
 | `rom_loader_detects_change` | The same with one byte of one resource changed after loading. This test passes when `rom_loader` reports that the digest does not match. |
 | `viewer_reference` | `tools/viewer_ref.py` works out from your ROM, without the game's code, what the asset viewer must build and draw, and writes it to `build/debug/viewer_ref.json`: the reference. |
-| `viewer_check` | The asset viewer builds its three subjects (a wrestler's face, which the viewer calls the head, an effect sprite and a 2D picture) with the game's code and compares them with the reference: first the head's vertices and triangles, then every pixel of each picture. Between the head's two sides Fast3D draws at a higher resolution, as when someone stretches the window. Its window opens, draws and closes by itself. |
+| `viewer_check` | The asset viewer builds its three subjects (a wrestler's head from its three parts, an effect sprite and a 2D picture) with the game's code and compares them with the reference: first the vertices and triangles of each of the head's parts, and the camera placed over them, then every pixel of each picture. Between the head's two sides Fast3D draws at another resolution, as when someone stretches the window. Its window opens, draws and closes by itself. |
 
 Near the end, CTest prints how many passed, `100% tests passed, 0 tests failed out of 6`, and then the time the tests
 took. The last four tests need your ROM. When they find none, CTest marks them `***Skipped` instead of `Passed`, still
@@ -63,7 +63,8 @@ hello and the viewer each have a check, `--check`, in which the program judges i
 at the window. The program draws its picture, reads the finished picture back from the framebuffer, the image the
 picture is drawn into, and compares it with what it must be. hello compares it with the shapes and colours of its own
 test picture. The viewer compares it, pixel by pixel, with the reference; before it draws the head, it also compares
-the vertices and the triangles that the game's functions built for it with the reference's.
+the vertices and the triangles that the game's functions built for each of its parts, and the camera it placed over
+them, with the reference's.
 
 A program prints its text in the terminal it was started from; its window shows only the picture. LibUltraShip prints
 its log lines there too, each starting with the date and time in brackets, and keeps them in `logs/`. The check's own
@@ -96,9 +97,8 @@ echo $?
 `echo $?` prints the exit code of the command before it. A frame is one whole picture, and the programs draw 60 a
 second. hello makes its check after its third frame and goes on drawing until its window is closed; `--frames 30` ends
 it after 30 frames, as CI runs it. The viewer's check closes its window by itself once it has compared all its
-subjects. Meanwhile the window shows each picture it compares for a moment: the face from in front of one side, then
-from behind the other side, where most of its triangles face away and only a thin strip of it shows, then the sprite
-and the picture.
+subjects. Meanwhile the window shows each picture it compares for a moment: the head from in front of one side, then
+from behind the other side, then the sprite and the picture.
 
 ## Looking at it yourself
 
@@ -120,9 +120,9 @@ Closing the window ends the program, and the terminal then takes the next comman
 - `./hello`: its test picture. On a dark background are a shaded triangle, three ring ropes and a square that moves
   across, and above them the shapes and the eight palette squares that its check measures (the comment at the top of
   `hello/main.cpp` describes them all).
-- `./viewer`: a wrestler's face, with white and black face paint and brown hair, turning half a degree each frame. It
-  is only the front of the head, one of the three parts the game builds the head from ([VIEWER.md](VIEWER.md) lists
-  them), so from behind little of it shows.
+- `./viewer`: a wrestler's head, turning half a degree each frame: the face, with white and black face paint, at the
+  front, brown hair over the top, the sides and the back, and below them the jaw and the neck. These are the three
+  parts the game builds the head from ([VIEWER.md](VIEWER.md) lists them).
 - `./viewer --sprite`: an effect sprite, a white puff with soft see-through edges.
 - `./viewer --picture`: the game's legal screen, with sharp text.
 
@@ -149,8 +149,9 @@ program. The file named in each step holds its code.
 1. **The ROM.** `viewer_open_rom` (`viewer/viewer_rom.c`) finds your ROM, reads it into memory and checks its SHA-1.
    Then `res_init` (`src/resources.c`) starts the game's code on it: the game's loader reads the ROM's table of
    resources.
-2. **The reference.** `LoadReference` (`viewer/main.cpp`) reads `viewer_ref.json`: the subjects to draw, the head's
-   vertices and triangles as the tool decoded them, and the colours each pixel may have.
+2. **The reference.** `LoadReference` (`viewer/main.cpp`) reads `viewer_ref.json`: the subjects to draw, the vertices
+   and triangles of each of the head's parts as the tool decoded them, the camera the tool placed over them, and the
+   colours each pixel may have.
 3. **LibUltraShip's parts.** Under WSL, unless you have set `GALLIUM_DRIVER` yourself, the program first sets it to
    `d3d12` when WSL can reach the GPU, so that the GPU draws through Direct3D 12, and prints a line that starts `WSL:`.
    Then `StartLibUltraShip` (`src/context.cpp`) creates a `Ship::Context` and adds LibUltraShip's parts to it in a
@@ -168,10 +169,10 @@ program. The file named in each step holds its code.
 4. **The picture's shape.** `ShowGamePicture` (`src/context.cpp`) sets up the game's 480x240 picture, shown at 4:3, at
    60 frames a second. For a check, Fast3D draws it at twice the window's resolution into a framebuffer of its own, an
    image apart from the window, which can be read back.
-5. **The game's data and drawing commands.** `viewer_head_load` (`viewer/viewer_game.c`) takes memory from
-   `allocateHeap`, the port's stand-in for the game's heap (`src/game_heap.c`), has the game's loader put the head's
-   mesh in it (the head's shape: its corner points, called vertices, and the triangles between them), and fills in the
-   game's display record for it (`Nw2TextureDisplayObj`). Then the game's own functions do the work:
+5. **The game's data and drawing commands.** For each of the head's parts, `viewer_head_load` (`viewer/viewer_game.c`)
+   takes memory from `allocateHeap`, the port's stand-in for the game's heap (`src/game_heap.c`), has the game's loader
+   put the part's mesh in it (the part's shape: its corner points, called vertices, and the triangles between them),
+   and fills in the game's display record for it (`Nw2TextureDisplayObj`). Then the game's own functions do the work:
    - `func_8000486C` writes the vertices;
    - `buildVertexDisplayList` writes the triangle list, and `buildObjectDisplayListTail` a first material list, for a
      mesh without a texture;
@@ -181,13 +182,15 @@ program. The file named in each step holds its code.
      the triangle list.
 
    The lists are arrays of `Gfx`, the C type of one drawing command: 8 bytes on the N64, and 16 in this build, so that
-   a command can hold a whole 64-bit address. Then `CheckHeadData` (`viewer/main.cpp`) compares the vertices and the
-   triangles with the reference's, before anything is drawn. Lists that do not match are not drawn, and the check ends
-   with exit code 2.
+   a command can hold a whole 64-bit address. Then `CheckHeadData` (`viewer/main.cpp`) compares each part's vertices
+   and triangles with the reference's, before anything is drawn, and `CheckCamera` compares the camera that `FitHead`
+   places over the vertices of all the parts with the reference's. When they do not match, nothing is drawn, and the
+   check ends with exit code 2.
 6. **The frame.** `BuildHeadFrame` (`viewer/main.cpp`) writes the viewer's own list, `sFrame`. It clears the picture
-   to dark blue, sets the render state and the camera's two matrices, and loads the vertices. Then it calls the game's
-   material list, which loads the texture and goes on into the triangle list, which draws the head and returns. Last,
-   it draws two white one-pixel markers in opposite corners, at (0,0) and (479,239), and ends the list.
+   to dark blue, sets the render state, with a depth buffer so that the nearest part shows at each pixel, and sets the
+   camera's two matrices. Then, for each part, it loads the part's vertices and calls the game's material list, which
+   loads the texture and goes on into the triangle list, which draws the part and returns. Last, it turns the depth
+   buffer off again, draws two white one-pixel markers in opposite corners, at (0,0) and (479,239), and ends the list.
 7. **Each frame.** `DrawFrames` (`viewer/main.cpp`) checks with `WindowIsRunning()` that the window is still open, and
    calls `window->HandleEvents()`, which takes key presses, the mouse and the close button from SDL. Then it calls
    `window->DrawAndRunGraphicsCommands(sFrame, {})`: Fast3D's interpreter (`Interpreter::Run`) steps through the
@@ -195,7 +198,7 @@ program. The file named in each step holds its code.
 8. **The read-back.** After the third frame, `ReadPicture` (`src/frame.cpp`) copies the framebuffer into the program's
    memory. `CheckCorners` (`src/frame.cpp`) finds the two markers, which show whether the rows were read top-down or
    bottom-up, and `CheckPixels` (`viewer/main.cpp`) compares every pixel with the reference. The head is loaded once and
-   drawn from two sides, steps 6 to 8 for each side, with Fast3D drawing at a higher resolution for the second, as when
+   drawn from two sides, steps 6 to 8 for each side, with Fast3D drawing at another resolution for the second, as when
    someone stretches the window, and at its own again after them. Then the sprite and the picture are each loaded, drawn
    and read back the same way, with their own functions: `viewer_sprite_load` and `BuildSpriteFrame` for the sprite, and
    `viewer_picture_load`, `BuildPictureCommands` and `BuildPictureFrame` for the picture ([VIEWER.md](VIEWER.md) names
