@@ -37,8 +37,12 @@ jobs:
       - name: Install the tools and libraries
         # The first line is the same list as in README.md; keep the two the same. xvfb (a virtual screen) and
         # libgl1-mesa-dri (Mesa's software renderer) let hello open its window on a machine without a screen.
+        # --error-on=any: apt-get update stops the step with an error when it cannot download a package list (by
+        # default it only warns, and the installs after it then try every package and wait for each). The step's
+        # time limit stops it after 10 minutes; it normally takes about one.
+        timeout-minutes: 10
         run: |
-          sudo apt-get update
+          sudo apt-get update --error-on=any
           sudo apt-get install -y build-essential gdb cmake ninja-build pkg-config libpng-dev libglew-dev libgl-dev libegl-dev libgles-dev libzip-dev zipcmp zipmerge ziptool nlohmann-json3-dev libtinyxml2-dev libspdlog-dev libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxfixes-dev libxi-dev libxss-dev libxtst-dev libxkbcommon-dev libwayland-dev libdecor-0-dev libpulse-dev libasound2-dev libudev-dev libdbus-1-dev
           sudo apt-get install -y xvfb libgl1-mesa-dri
 

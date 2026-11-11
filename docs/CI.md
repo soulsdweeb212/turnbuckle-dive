@@ -80,6 +80,9 @@ The steps below have the same names as on GitHub.
 1. *Get the code, with the LibUltraShip submodule*: the same as `git clone --recursive`.
 2. *Install the tools and libraries*: the `apt` list from the README, plus `xvfb` (a virtual screen) and
    `libgl1-mesa-dri` (Mesa's software renderer), so hello can open a window on a machine without a screen.
+   `apt-get update --error-on=any` makes the step stop with an error when a package list cannot be downloaded (plain
+   `apt-get update` only warns, and the installs after it would then try each package in turn), and the step has a
+   time limit of 10 minutes.
 3. *Configure (preset "debug")*: `cmake --preset debug`. This downloads SDL3, ImGui and LibUltraShip's small libraries,
    and applies the fixes in `cmake/patches/libultraship` to LibUltraShip. CI has no copy of the decompilation, so
    configure prints `Game code: not built (...)` and the build leaves the game's code out
