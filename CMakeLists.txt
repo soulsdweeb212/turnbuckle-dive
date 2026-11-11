@@ -102,6 +102,8 @@ endfunction()
 # which case it is.
 # TD_DECOMP is TD_DECOMP_DIR written without "..", which is how debuggers and editors show the game's files.
 cmake_path(SET TD_DECOMP NORMALIZE "${TD_DECOMP_DIR}")
+# Python 3 writes the C of the game's variables (tools/game_vars.py) and lists the developer program's files.
+find_package(Python3 COMPONENTS Interpreter)
 set(TD_GAME_CODE OFF)
 if(MSVC)
     message(STATUS "Game code: not built (the game's C needs GCC or Clang, and this compiler takes MSVC's options)")
@@ -115,22 +117,26 @@ elseif(NOT EXISTS ${TD_DECOMP}/include/port.h)
     # without it has none of that code, and its game files would stop the build here with errors.
     message(STATUS "Game code: not built (${TD_DECOMP} has no include/port.h, the start of the game's PC code: "
                    "check out the decompilation's port-groundwork branch)")
+elseif(NOT EXISTS ${TD_DECOMP}/port/game_vars.tsv)
+    # port/game_vars.tsv says where each game variable goes on PC (docs/GAME_CODE.md, "The game's variables").
+    message(STATUS "Game code: not built (${TD_DECOMP} has no port/game_vars.tsv, the map of the game's variables: "
+                   "update the decompilation's port-groundwork branch)")
+elseif(NOT Python3_FOUND)
+    message(STATUS "Game code: not built (no Python 3, which writes the C of the game's variables)")
 else()
     set(TD_GAME_CODE ON)
     message(STATUS "Game code: compiled from ${TD_DECOMP}")
 endif()
 
 # Our port code, linked into the program and the tests. Besides the ROM check, it holds what the game's C calls in the
-# port: port.h's functions (src/port.c, the handle table in src/slots.c, and port_rom_read in src/rom.c) and stand-ins
-# for game parts that are not compiled yet (src/game_heap.c, src/game_data.c). All of it is built even without game
-# code, so CI compiles it with both of its compilers; the stand-ins are only linked into a program that uses game code.
+# port: port.h's functions (src/port.c, the handle table in src/slots.c, port_rom_read in src/rom.c, and the game's heap
+# on PC in src/game_heap.c). All of it is built even without game code, so CI compiles it with both of its compilers.
 add_library(td_core STATIC
     src/rom.c
     src/sha1.c
     src/port.c
     src/slots.c
-    src/game_heap.c
-    src/game_data.c)
+    src/game_heap.c)
 target_include_directories(td_core PUBLIC src)
 td_strict(td_core)
 # The handle table's lock (src/slots.c): a pthread mutex, which on Linux and macOS needs the system's thread library
@@ -145,10 +151,34 @@ set_source_files_properties(src/slots.c PROPERTIES COMPILE_OPTIONS "$<$<C_COMPIL
 target_compile_definitions(td_core PRIVATE TD_DECOMP_ROM="${TD_DECOMP}/baserom.z64")
 
 if(TD_GAME_CODE)
+    # The game's variables (docs/GAME_CODE.md, "The game's variables"). tools/game_vars.py turns the decompilation's map
+    # of them, port/game_vars.tsv, into C in the build folder: game_vars.c defines every variable the game files use,
+    # and game_vars_link.txt holds the linker options that give some functions their old names as well. CMake runs it
+    # now, while it configures, and again whenever the map or the tool changes. td_game_vars: that C and
+    # src/game_vars.c, which fills the variables from the ROM.
+    set(TD_VARS_C ${CMAKE_BINARY_DIR}/game_vars.c)
+    set(TD_VARS_LINK ${CMAKE_BINARY_DIR}/game_vars_link.txt)
+    execute_process(
+        COMMAND ${Python3_EXECUTABLE} -B ${PROJECT_SOURCE_DIR}/tools/game_vars.py ${TD_DECOMP}/port/game_vars.tsv
+                ${TD_VARS_C} ${TD_VARS_LINK}
+        RESULT_VARIABLE td_vars_result
+        ERROR_VARIABLE td_vars_error)
+    if(NOT td_vars_result EQUAL 0)
+        message(FATAL_ERROR "tools/game_vars.py could not write the game's variables:\n${td_vars_error}")
+    endif()
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+        ${TD_DECOMP}/port/game_vars.tsv ${PROJECT_SOURCE_DIR}/tools/game_vars.py)
+    file(STRINGS ${TD_VARS_LINK} TD_VARS_LINK_OPTIONS ENCODING UTF-8)
+    add_library(td_game_vars STATIC ${TD_VARS_C} src/game_vars.c)
+    target_include_directories(td_game_vars PUBLIC src)
+    target_link_libraries(td_game_vars PUBLIC td_core)
+    td_strict(td_game_vars)
+
     # The game files this build uses so far, compiled in place from the decompilation (docs/GAME_CODE.md says what each
     # one does): the game's ROM loader, then the functions that turn a model, an effect sprite or a picture into display
-    # lists, which the viewer draws. INTERFACE: whatever links td_game also links td_core, which has the port functions
-    # these files call, but the game files themselves do not see our headers: port.h declares those functions for them.
+    # lists, which the viewer draws, and the game's two heap functions. INTERFACE: whatever links td_game also links
+    # td_game_vars and td_core, which have the variables and the port functions these files use, but the game files
+    # themselves do not see our headers: port.h declares those functions for them.
     add_library(td_game STATIC
         ${TD_DECOMP}/src/main/initializeAssetSizeTable.c
         ${TD_DECOMP}/src/main/lookupResourceDescriptor.c
@@ -165,9 +195,11 @@ if(TD_GAME_CODE)
         ${TD_DECOMP}/src/main/func_80007920.c
         ${TD_DECOMP}/src/main/buildCi4TextureDisplayList.c
         ${TD_DECOMP}/src/code_80090000/func_80096A6C.c
-        ${TD_DECOMP}/src/code_80090000/func_80096D8C.c)
+        ${TD_DECOMP}/src/code_80090000/func_80096D8C.c
+        ${TD_DECOMP}/src/main/allocateHeap.c
+        ${TD_DECOMP}/src/main/releaseHeapBlock.c)
     td_game_code(td_game)
-    target_link_libraries(td_game INTERFACE td_core)
+    target_link_libraries(td_game INTERFACE td_game_vars)
 
     # Compiled with the game's settings but never linked: it stops the build if src/game.h and the decompilation's
     # port.h ever declare what they share differently (src/game_check.c explains how). td_game depends on it, so the
@@ -189,56 +221,55 @@ if(TD_GAME_CODE)
     # game's settings but not linked yet: td_game_all. The decompilation's tools/port_filelist.py works out the list
     # (its docs/port.md says how) and writes two text files: the list, and the paths of every file it read to make it;
     # CMake configures again when one of those files changes, so the list follows the decompilation. A game file that
-    # stops compiling on the PC stops a full build (td_game_all is part of "all", but no program depends on it). The
-    # tool needs Python 3 and the data files that the decompilation's build extracts from the ROM on its first run;
-    # without them, or when the tool finds the decompilation's list incomplete, configure says why and leaves
-    # td_game_all out (docs/GAME_CODE.md).
-    find_package(Python3 COMPONENTS Interpreter)
-    if(NOT Python3_FOUND)
-        message(STATUS "Game code: td_game_all not built (no Python 3, which lists the developer program's files)")
-    else()
-        set(TD_MATCH_LIST ${CMAKE_BINARY_DIR}/game_match_files.txt)
-        set(TD_MATCH_DEPENDS ${CMAKE_BINARY_DIR}/game_match_depends.txt)
-        execute_process(
-            COMMAND ${Python3_EXECUTABLE} -B ${TD_DECOMP}/tools/port_filelist.py --set match
-                    --output ${TD_MATCH_LIST} --depends ${TD_MATCH_DEPENDS}
-            WORKING_DIRECTORY ${TD_DECOMP}
-            RESULT_VARIABLE td_match_result
-            OUTPUT_QUIET
-            ERROR_VARIABLE td_match_error)
-        if(NOT td_match_result EQUAL 0)
-            # The build goes on without td_game_all, and says so as a warning. CMake keeps watching what the tool reads,
-            # so that the next build configures again once the cause is fixed (the decompilation's build run, or the
-            # game file mended): the files the last complete list depended on, the tool and build.json, and the
-            # decompilation's folders, whose dates change when build.py creates its build/ and asm/ folders.
-            string(STRIP "${td_match_error}" td_match_error)
-            message(WARNING "Game code: td_game_all not built, because tools/port_filelist.py could not list the files "
-                            "(docs/GAME_CODE.md says what to do):\n${td_match_error}")
-            set(td_match_watch ${TD_DECOMP} ${TD_DECOMP}/build.json ${TD_DECOMP}/tools/port_filelist.py)
-            foreach(dir build asm asm/data)
-                if(IS_DIRECTORY ${TD_DECOMP}/${dir})
-                    list(APPEND td_match_watch ${TD_DECOMP}/${dir})
+    # stops compiling on the PC stops a full build. The tool needs the data files that the decompilation's build
+    # extracts from the ROM on its first run; without them, or when the tool finds the decompilation's list incomplete,
+    # configure says why and leaves td_game_all out (docs/GAME_CODE.md).
+    set(TD_MATCH_LIST ${CMAKE_BINARY_DIR}/game_match_files.txt)
+    set(TD_MATCH_DEPENDS ${CMAKE_BINARY_DIR}/game_match_depends.txt)
+    execute_process(
+        COMMAND ${Python3_EXECUTABLE} -B ${TD_DECOMP}/tools/port_filelist.py --set match
+                --output ${TD_MATCH_LIST} --depends ${TD_MATCH_DEPENDS}
+        WORKING_DIRECTORY ${TD_DECOMP}
+        RESULT_VARIABLE td_match_result
+        OUTPUT_QUIET
+        ERROR_VARIABLE td_match_error)
+    if(NOT td_match_result EQUAL 0)
+        # The build goes on without td_game_all, and says so as a warning. CMake keeps watching what the tool reads,
+        # so that the next build configures again once the cause is fixed (the decompilation's build run, or the
+        # game file mended): the files the last complete list depended on, the tool and build.json, and the
+        # decompilation's folders, whose dates change when build.py creates its build/ and asm/ folders.
+        string(STRIP "${td_match_error}" td_match_error)
+        message(WARNING "Game code: td_game_all not built, because tools/port_filelist.py could not list the files "
+                        "(docs/GAME_CODE.md says what to do):\n${td_match_error}")
+        set(td_match_watch ${TD_DECOMP} ${TD_DECOMP}/build.json ${TD_DECOMP}/tools/port_filelist.py)
+        foreach(dir build asm asm/data)
+            if(IS_DIRECTORY ${TD_DECOMP}/${dir})
+                list(APPEND td_match_watch ${TD_DECOMP}/${dir})
+            endif()
+        endforeach()
+        if(EXISTS ${TD_MATCH_DEPENDS})
+            file(STRINGS ${TD_MATCH_DEPENDS} td_match_depends ENCODING UTF-8)
+            foreach(path IN LISTS td_match_depends)
+                if(EXISTS ${path})
+                    list(APPEND td_match_watch ${path})
                 endif()
             endforeach()
-            if(EXISTS ${TD_MATCH_DEPENDS})
-                file(STRINGS ${TD_MATCH_DEPENDS} td_match_depends ENCODING UTF-8)
-                foreach(path IN LISTS td_match_depends)
-                    if(EXISTS ${path})
-                        list(APPEND td_match_watch ${path})
-                    endif()
-                endforeach()
-            endif()
-            set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${td_match_watch})
-        else()
-            file(STRINGS ${TD_MATCH_LIST} td_match_files ENCODING UTF-8)
-            file(STRINGS ${TD_MATCH_DEPENDS} td_match_depends ENCODING UTF-8)
-            set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${td_match_depends})
-            list(TRANSFORM td_match_files PREPEND ${TD_DECOMP}/)
-            list(LENGTH td_match_files td_match_count)
-            add_library(td_game_all OBJECT ${td_match_files})
-            td_game_code(td_game_all)
-            message(STATUS "Game code: td_game_all compiles the developer program's ${td_match_count} files")
         endif()
+        set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${td_match_watch})
+    else()
+        file(STRINGS ${TD_MATCH_LIST} td_match_files ENCODING UTF-8)
+        file(STRINGS ${TD_MATCH_DEPENDS} td_match_depends ENCODING UTF-8)
+        set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${td_match_depends})
+        list(TRANSFORM td_match_files PREPEND ${TD_DECOMP}/)
+        list(LENGTH td_match_files td_match_count)
+        add_library(td_game_all OBJECT ${td_match_files})
+        td_game_code(td_game_all)
+        message(STATUS "Game code: td_game_all compiles the developer program's ${td_match_count} files")
+
+        # The SDK functions the developer program's files call and the port does not provide yet (src/game_sdk.c).
+        add_library(td_game_sdk STATIC src/game_sdk.c)
+        target_link_libraries(td_game_sdk PUBLIC td_core)
+        td_strict(td_game_sdk)
     endif()
 endif()
 
@@ -296,6 +327,27 @@ if(BUILD_TESTING)
         set_tests_properties(rom_loader_detects_change PROPERTIES
             SKIP_RETURN_CODE 77
             PASS_REGULAR_EXPRESSION "FAIL: the digest of the 7657 resources of .* is [0-9a-f]+, expected")
+
+        if(TARGET td_game_all)
+            # Every game file of the developer program linked with the game's variables and the SDK stand-ins, and a
+            # check that the variables start as on the N64 (tests/game_vars/main.c says what it checks). The link
+            # itself is the first check: it fails on any name a game file uses and the port lacks. Linux keeps the
+            # C library's math functions (sqrtf, which nw2Sqrtf calls) in a library of their own, libm. The linker
+            # options give some functions their old names as well (game_vars_link.txt). Like rom_loader, it needs the
+            # ROM and is skipped without one.
+            add_executable(game_vars_check tests/game_vars/main.c $<TARGET_OBJECTS:td_game_all>)
+            target_link_libraries(game_vars_check PRIVATE td_game_vars td_game_sdk $<$<PLATFORM_ID:Linux>:m>)
+            target_link_options(game_vars_check PRIVATE ${TD_VARS_LINK_OPTIONS})
+            td_strict(game_vars_check)
+            add_test(NAME game_vars COMMAND game_vars_check)
+            set_tests_properties(game_vars PROPERTIES SKIP_RETURN_CODE 77)
+            # The same check with one value left in the N64's byte order: it must fail, which shows that the
+            # comparison really looks at the values.
+            add_test(NAME game_vars_detects_change COMMAND game_vars_check --unswap)
+            set_tests_properties(game_vars_detects_change PROPERTIES
+                SKIP_RETURN_CODE 77
+                PASS_REGULAR_EXPRESSION "FAIL: main\\.data: .* is 0x[0-9A-F]+ on PC, 0x[0-9A-F]+ in the ROM")
+        endif()
     endif()
 endif()
 

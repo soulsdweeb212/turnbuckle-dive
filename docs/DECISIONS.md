@@ -8,7 +8,7 @@ it. Dates are when the decision was made. Several recommendations draw on the ex
 |---|---|---|---|
 | D1 | Pointer size | open | native 64-bit from the start (no 32-bit bring-up build) |
 | D2 | Assets for the first playable build | open | the user's ROM read at run time, each resource type converted exactly once at load time; a Torch archive later (P7) through the same loader |
-| D3 | How game data becomes C without committing ROM bytes | **decided 2026-11-09** | (c) typed zero-initialised definitions filled from the checked ROM at start-up, as `src/game_data.c` already does; no build ever contains ROM bytes. Never commit generated game data |
+| D3 | How game data becomes C without committing ROM bytes | **decided 2026-11-09** | (c) typed zero-initialised definitions filled from the checked ROM at start-up, as `game_vars.c` and `src/game_vars.c` do (docs/GAME_CODE.md, "The game's variables"); no build ever contains ROM bytes. Never commit generated game data |
 | D4 | Repo layout | **decided 2026-11-06** | a separate repo (this one); the decompilation stays its own repo, and all game C stays there |
 | D5 | LibUltraShip version | open | current upstream head (SDL3), pinned as a submodule and upgraded only on purpose, with a short listed set of local patches |
 | D6 | Licence for the port code | **decided 2026-11-06** | MIT |

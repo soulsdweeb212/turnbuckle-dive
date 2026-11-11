@@ -2,8 +2,13 @@
 
 #include <stdlib.h>
 
+#include "game_vars.h"
+
 void res_init(void) {
-    game_data_init();
+    /* The game's variables of main, as the N64 starts them, and those of overlay 1's data: the viewer draws pictures
+     * with two of overlay 1's functions, and func_80096D8C reads its height scale there. */
+    game_vars_load(0);
+    game_vars_load(1);
     initializeAssetSizeTable();
 }
 

@@ -43,6 +43,11 @@ void lookupResourceDescriptor(void *out, uint32_t id);
  * lookupResourceDescriptor, it only uses the low 16 bits of id. */
 void *func_80003684(void *out, int32_t id, void *buf);
 
+/* The game's heap functions (the decompilation's src/main/allocateHeap.c and releaseHeapBlock.c). On PC they hand the
+ * work to port_heap_alloc and port_heap_free. */
+void *allocateHeap(uint32_t bytes);
+void releaseHeapBlock(void *block);
+
 /* ---- Functions the port provides to the game (port.h declares them for the game's side) ---- */
 
 /* Prints the message and stops the program; the game's PC code calls it where the N64 would hang or crash
@@ -65,27 +70,15 @@ uint32_t port_res_loaded_count(void);
 /* How many handles the table has given out so far, 0 not counted (src/slots.c). */
 uint32_t port_slot_count(void);
 
-/* ---- Stand-ins for game parts that are not compiled yet ---- */
+/* The game's heap on PC (src/game_heap.c; port.h says why the game's own cannot run on a 64-bit PC). port_heap_alloc
+ * returns a block of at least `bytes` bytes, filled with zeros, and stops the program when there is no memory left;
+ * port_heap_free frees one. */
+void *port_heap_alloc(uint32_t bytes);
+void port_heap_free(void *block);
 
-/* The game's heap (src/game_heap.c explains why these are stand-ins for now). */
-void *allocateHeap(uint32_t bytes);
-void releaseHeapBlock(void *block);
-
-/* Game data the loader uses (src/game_data.c). */
+/* Game variables the port reads: the loader's two tables. Like every game variable, they are defined in the C file that
+ * tools/game_vars.py writes into the build folder (src/game_vars.h). */
 extern uint32_t *D_800482E0;
 extern uint32_t *D_800482E4;
-
-/* Game data the drawing functions use (src/game_data.c): the grayscale switch, convertRgba16ToGrayscale's factors and
- * func_80096D8C's height scale. */
-extern uint16_t D_800307A0;
-extern double D_8003B110;
-extern double D_8003B0F0;
-extern double D_8003B100;
-extern double D_8003B108;
-extern double D_800D6070;
-
-/* Copies the game data above that the game keeps in its ROM from the attached ROM (rom_attach in src/rom.h), so the
- * game's code sees the values the N64 would. res_init (src/resources.h) calls it before any game code runs. */
-void game_data_init(void);
 
 #endif

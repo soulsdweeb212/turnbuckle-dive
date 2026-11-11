@@ -67,10 +67,11 @@ git clone --branch port-groundwork https://github.com/soulsdweeb212/wcw-nwo-reve
 Put your ROM in it as `source/baserom.z64`: the decompilation's own build reads it there, and `turnbuckle-dive` and
 the tests look for it there when they are given no ROM. For a decompilation in another folder, add
 `-DTD_DECOMP_DIR=/path/to/it` to the first `cmake --preset` command. Configure prints whether the build includes the
-game's code; without the decompilation, as on CI, it leaves it out. With it, a full build also compiles every game file
-of the match (854 files, not linked yet). That part needs Python 3, and the decompilation's own build run once in
-`source` (`python3 build.py`, as its README says), which extracts the data files the list is made from; without them
-the build leaves only that part out and says why.
+game's code; without the decompilation, as on CI, it leaves it out. The game's code needs Python 3, which writes the C
+of the game's variables. With it, a full build also compiles every game file of the match (857 files) and links them
+in a test program. That part needs the decompilation's own build run once in `source` (`python3 build.py`, as its
+README says), which extracts the data files the list is made from; without them the build leaves only that part out
+and says why.
 [docs/GAME_CODE.md](docs/GAME_CODE.md) explains how the game's code is compiled, tested and stepped through.
 
 Configuring applies the fixes in `cmake/patches/libultraship` to the submodule's files, and `git status` does not list
