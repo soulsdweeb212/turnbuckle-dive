@@ -8,6 +8,9 @@
 #ifdef TD_GAME_CODE
 #include "resources.h"
 #endif
+#ifdef TD_DEV_MATCH
+#include "dev/dev_match.h"
+#endif
 
 #ifndef TD_VERSION
 #define TD_VERSION "dev"
@@ -85,6 +88,7 @@ int main(int argc, char **argv) {
     const char *rom_arg = NULL;
     const char *path;
     uint32_t res_id = 0;
+    int dev_match = 0;
     RomStatus status;
     Rom rom;
     int i;
@@ -101,8 +105,15 @@ int main(int argc, char **argv) {
             fprintf(stderr, "--res: this build has no game code (README.md, Building, says how to build it)\n");
             return 1;
 #endif
+        } else if (strcmp(argv[i], "--dev-match") == 0) {
+            dev_match = 1;
+#ifndef TD_DEV_MATCH
+            fprintf(stderr, "--dev-match: this build does not link the developer program's game files "
+                            "(docs/GAME_CODE.md, \"Every file of the developer program\")\n");
+            return 1;
+#endif
         } else if (strncmp(argv[i], "--", 2) == 0 || rom_arg != NULL) {
-            fprintf(stderr, "Usage: turnbuckle-dive [--res ID] [ROM]\n");
+            fprintf(stderr, "Usage: turnbuckle-dive [--res ID | --dev-match] [ROM]\n");
             return 1;
         } else {
             rom_arg = argv[i];
@@ -131,6 +142,15 @@ int main(int argc, char **argv) {
         return 2;
     }
     printf("Status: supported ROM\n");
+#ifdef TD_DEV_MATCH
+    if (dev_match) {
+        int result = dev_match_run(&rom);
+
+        rom_free(&rom);
+        return result;
+    }
+#endif
+    (void)dev_match;
 #ifdef TD_GAME_CODE
     run_game_loader(&rom, res_id);
 #endif

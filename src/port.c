@@ -24,8 +24,8 @@ _Noreturn void port_fatal(const char *fmt, ...) {
 }
 
 /* func_80003684 (the game's resource loader) calls this once a whole resource is in RAM: the one place every loaded
- * resource passes. Converting resources to the PC's byte order will happen here, in a later step; until then it checks
- * what the loader passes and counts the call. */
+ * resource passes. It checks what the loader passes, turns the resource into the PC's byte order where the game reads
+ * it as integers (res_convert, src/res_convert.c), and counts the call. */
 void port_res_loaded(uint32_t id, void *buf, int32_t size) {
     if (id < 1 || id > GAME_RES_COUNT) {
         port_fatal("port_res_loaded: resource id 0x%X is outside 1..0x%X", id, GAME_RES_COUNT);
@@ -33,6 +33,7 @@ void port_res_loaded(uint32_t id, void *buf, int32_t size) {
     if (size < 0 || (size > 0 && buf == NULL)) {
         port_fatal("port_res_loaded: resource 0x%X has size %d at %p", id, (int)size, buf);
     }
+    res_convert(id, buf, size);
     g_res_loaded++;
 }
 

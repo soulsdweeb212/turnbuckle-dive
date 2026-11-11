@@ -39,3 +39,6 @@ CMakeUserPresets.json
 .idea/
 .claude/settings.local.json
 .DS_Store
+
+# Python's compiled modules
+__pycache__/

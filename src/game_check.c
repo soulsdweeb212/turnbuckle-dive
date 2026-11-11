@@ -28,3 +28,6 @@ _Static_assert(TD_SAME_MEMBER(start), "GameResDesc.start and ResDesc.start diffe
 _Static_assert(TD_SAME_MEMBER(end), "GameResDesc.end and ResDesc.end differ in offset or type");
 _Static_assert(TD_SAME_MEMBER(size), "GameResDesc.size and ResDesc.size differ in offset or type");
 _Static_assert(TD_SAME_MEMBER(packed), "GameResDesc.packed and ResDesc.packed differ in offset or type");
+_Static_assert(GAME_PRESENT_FRAME == PORT_PRESENT_FRAME && GAME_PRESENT_IDLE == PORT_PRESENT_IDLE &&
+                   GAME_PRESENT_SYNC == PORT_PRESENT_SYNC,
+               "src/game.h and port.h number the kinds of port_present differently");

@@ -63,6 +63,10 @@ void port_res_loaded(uint32_t id, void *buf, int32_t size);
 uint32_t port_ptr_to_slot(void *p);
 void *port_slot_to_ptr(uint32_t slot);
 
+/* Turns resource id, just loaded into buf, into the PC's byte order where the game reads it as integers
+ * (src/res_convert.c); port_res_loaded calls it. */
+void res_convert(uint32_t id, uint8_t *buf, int32_t size);
+
 /* How many times the game has called port_res_loaded since the program started (src/port.c). */
 uint32_t port_res_loaded_count(void);
 /* The most handles the handle table holds, handle 0 (NULL) included: 2^20 (src/slots.c). */
@@ -75,6 +79,13 @@ uint32_t port_slot_count(void);
  * port_heap_free frees one. */
 void *port_heap_alloc(uint32_t bytes);
 void port_heap_free(void *block);
+
+/* The game's frame hand-offs (func_80002BC0, func_80002C0C, func_80002C74) call this on PC with what they ask for
+ * (src/game_sdk.c; port.h's PORT_PRESENT_FRAME, _IDLE and _SYNC are the same numbers). */
+#define GAME_PRESENT_FRAME 0
+#define GAME_PRESENT_IDLE 1
+#define GAME_PRESENT_SYNC 2
+void port_present(int32_t kind);
 
 /* Game variables the port reads: the loader's two tables. Like every game variable, they are defined in the C file that
  * tools/game_vars.py writes into the build folder (src/game_vars.h). */

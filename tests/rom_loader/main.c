@@ -38,7 +38,7 @@
  * stay the same. tools/res_digest.py computes the same digest from the ROM with a decoder written in Python, which
  * shares no code with the game's loader, and the two agree. Like TD_ROM_SHA1 (src/rom.h) it is a fingerprint, not
  * game data. */
-#define RES_DIGEST "4e8a5b8145e4f7bc0260f3e0bb5c2d963964dab1"
+#define RES_DIGEST "a022bb7194608224d8089755995cb27d30c79daf"
 
 #define EXIT_SKIP 77
 

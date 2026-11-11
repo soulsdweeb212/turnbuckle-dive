@@ -154,9 +154,16 @@ game's side; this repository's `src/game.h` declares the same functions for the 
   the size asked for, so it starts as zeros, as the N64's heap does, and AddressSanitizer catches a write one byte
   past it.
 
-The SDK functions that the developer program's files call and the port does not provide yet (message queues,
-controllers, video, threads, music) are stand-ins in `src/game_sdk.c`: each stops the program with its name. Each gets
-its PC version when the developer program first runs the code that calls it.
+The N64 SDK functions that the developer program's files call are in `src/game_sdk.c` (its comment explains each
+group). The game runs on one thread, its own: the N64's render thread, audio thread and scheduler do not run. The
+game's three frame hand-offs (`func_80002BC0`, `func_80002C0C`, `func_80002C74`), which on the N64 send a message to
+the render thread and wait for its answer, call `port_present` instead (the decompilation's `port.h`). The "hardware"
+finishes at once: a cartridge read (`osEPiStartDma`) copies the bytes from the ROM and posts its message before it
+returns, and a controller read does the same, so a game function that waits for such a message always finds it.
+Message queues keep the N64's 0x18 bytes and 4-byte messages; a wait on an empty queue that nothing could fill stops
+the program with a message instead of hanging. Controllers read what the program running the game gives through
+`game_sdk_set` (`src/game_sdk.h`). Sound is not ported yet: the music library's functions do nothing and report that
+nothing plays.
 
 `src/game_check.c` keeps the two headers in step: it is compiled with the game's settings and includes both
 `include/port.h` and `src/game.h`, so the build stops with an error if they ever declare a function or the resource
@@ -220,6 +227,37 @@ each must hold what its N64 word names, found by a plain search of its own, so e
 function the N64 calls there. It also checks that loading overlay 2 again starts it afresh.
 `game_vars_detects_change` runs it with one value left in the N64's byte order, and passes only if the check fails,
 which shows that the comparison really looks at the values. Both need the ROM and are skipped without it.
+
+## Resources in the PC's byte order
+
+Resources come from the ROM in the N64's byte order, most significant byte first; a PC puts the least significant
+byte first. Where the game's code reads a resource's 16-, 32- or 64-bit values as plain integers, they must be in the
+PC's order, so `port_res_loaded` (`src/port.c`), which the game's loader calls once for each resource it loads, turns
+them around (`res_convert`, `src/res_convert.c`): each value of the kinds of resource that need it, once, as the
+resource arrives. Meshes, textures and palettes stay in the N64's order, because the game's display-list code and
+LibUltraShip's renderer read them so.
+
+So far that is the three resources of each character, which sit in the resource table as triples from id 0x13F to
+0x20E: its profile (64 bytes: bytes, then five 16-bit animation ids, five 16-bit character ids and a 64-bit set of
+ability bits), its move table (32-bit words) and its animation list (16-bit ids). `src/res_convert.c` says where each
+layout was read from. `tools/res_digest.py` makes the same conversion, so the `rom_loader` test checks it.
+
+## The developer match
+
+`turnbuckle-dive --dev-match` starts the game straight into a match, without the menus, and runs it with no picture yet
+(`src/dev/dev_match.c`). It does what the N64 does before a match, in the same order: the game's variables of main
+start from the ROM and overlay 2's are loaded; the four calls that open the boot loop (graphics, audio, controllers,
+the table of resource sizes); `func_8002B750`, which builds the wrestlers' name table; the settings the menus write for
+an exhibition match (Sting against Hollywood Hogan, both played by the CPU, arena 0, a 5-minute limit, run-ins off);
+then overlay 2's entry, `func_80090000_ovl2`, which runs the match and returns when it ends. It prints a line every 300
+frames, and when the results screen waits for a button it presses A on controller 1.
+
+```
+./build/debug/turnbuckle-dive --dev-match
+```
+
+It needs the build with every game file of the developer program (`td_game_all`, next section); without it the option
+says so.
 
 ## Every file of the developer program: td_game_all
 

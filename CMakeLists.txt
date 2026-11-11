@@ -136,6 +136,7 @@ add_library(td_core STATIC
     src/sha1.c
     src/port.c
     src/slots.c
+    src/res_convert.c
     src/game_heap.c)
 target_include_directories(td_core PUBLIC src)
 td_strict(td_core)
@@ -285,7 +286,16 @@ add_executable(turnbuckle-dive src/main.c)
 target_link_libraries(turnbuckle-dive PRIVATE td_core)
 td_strict(turnbuckle-dive)
 target_compile_definitions(turnbuckle-dive PRIVATE TD_VERSION="${PROJECT_VERSION}")
-if(TD_GAME_CODE)
+if(TARGET td_game_all)
+    # With every game file of the developer program, the program runs the game's ROM loader after the ROM check, and
+    # with --dev-match runs a match (src/dev/dev_match.c). It links those files themselves rather than td_resources,
+    # whose td_game holds some of the same files, so src/resources.c is compiled into it directly. The linker options
+    # give some functions their old names (game_vars_link.txt); Linux keeps sqrtf in libm.
+    target_sources(turnbuckle-dive PRIVATE src/resources.c src/dev/dev_match.c $<TARGET_OBJECTS:td_game_all>)
+    target_link_libraries(turnbuckle-dive PRIVATE td_game_functions td_game_sdk $<$<PLATFORM_ID:Linux>:m>)
+    target_link_options(turnbuckle-dive PRIVATE ${TD_VARS_LINK_OPTIONS})
+    target_compile_definitions(turnbuckle-dive PRIVATE TD_GAME_CODE TD_DEV_MATCH)
+elseif(TD_GAME_CODE)
     # With game code, the program runs the game's ROM loader after the ROM check (see src/main.c).
     target_link_libraries(turnbuckle-dive PRIVATE td_resources)
     target_compile_definitions(turnbuckle-dive PRIVATE TD_GAME_CODE)

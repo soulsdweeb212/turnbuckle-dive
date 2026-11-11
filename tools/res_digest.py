@@ -96,9 +96,32 @@ def unpack(stream, size):
     return bytes(out)
 
 
+# The characters' resources, which the port turns into the PC's byte order as they load (src/res_convert.c explains
+# the layout; this is the same conversion, written separately): triples of animation list, profile and move table from
+# id 0x13F to 0x20E.
+CHAR_FIRST, CHAR_LAST = 0x13F, 0x20E
+
+
+def swapped(data, width):
+    """data with the bytes of each width-byte value reversed."""
+    return b''.join(data[i:i + width][::-1] for i in range(0, len(data), width))
+
+
+def convert(rid, data):
+    """A resource's bytes as the port leaves them after port_res_loaded."""
+    if not CHAR_FIRST <= rid <= CHAR_LAST:
+        return data
+    kind = (rid - CHAR_FIRST) % 3
+    if kind == 0:  # animation list: 16-bit ids
+        return swapped(data, 2)
+    if kind == 1:  # profile: bytes, then 16-bit values from +0x24 to +0x37, then a 64-bit value at +0x38
+        return data[:0x24] + swapped(data[0x24:0x38], 2) + data[0x38:0x40][::-1]
+    return swapped(data, 4)  # move table: 32-bit words
+
+
 def resources(rom):
     """Yields (id, start, end, size, packed, data) for every resource: the descriptor the game's loader writes for it
-    (lookupResourceDescriptor) and the bytes it loads (func_80003684)."""
+    (lookupResourceDescriptor) and the bytes it loads (func_80003684), after the port's conversion (convert)."""
     table = struct.unpack_from('>%dI' % (RES_COUNT + 1), rom, RES_TABLE)
     for rid in range(1, RES_COUNT + 1):
         # A resource ends where the next one starts. Bit 0 of a resource's own word says that it is compressed; it is
@@ -122,7 +145,7 @@ def resources(rom):
             packed = 0
             size = end - start
             data = rom[start:end]
-        yield rid, start, end, size, packed, data
+        yield rid, start, end, size, packed, convert(rid, data)
 
 
 def main():
