@@ -153,14 +153,16 @@ target_compile_definitions(td_core PRIVATE TD_DECOMP_ROM="${TD_DECOMP}/baserom.z
 if(TD_GAME_CODE)
     # The game's variables (docs/GAME_CODE.md, "The game's variables"). tools/game_vars.py turns the decompilation's map
     # of them, port/game_vars.tsv, into C in the build folder: game_vars.c defines every variable the game files use,
-    # and game_vars_link.txt holds the linker options that give some functions their old names as well. CMake runs it
+    # game_vars_link.txt holds the linker options that give some functions their old names as well, and
+    # game_functions.c lists the functions that the game's address tables hold (td_game_functions, below). CMake runs it
     # now, while it configures, and again whenever the map or the tool changes. td_game_vars: that C and
     # src/game_vars.c, which fills the variables from the ROM.
     set(TD_VARS_C ${CMAKE_BINARY_DIR}/game_vars.c)
     set(TD_VARS_LINK ${CMAKE_BINARY_DIR}/game_vars_link.txt)
+    set(TD_FUNCTIONS_C ${CMAKE_BINARY_DIR}/game_functions.c)
     execute_process(
         COMMAND ${Python3_EXECUTABLE} -B ${PROJECT_SOURCE_DIR}/tools/game_vars.py ${TD_DECOMP}/port/game_vars.tsv
-                ${TD_VARS_C} ${TD_VARS_LINK}
+                ${TD_VARS_C} ${TD_VARS_LINK} ${TD_FUNCTIONS_C}
         RESULT_VARIABLE td_vars_result
         ERROR_VARIABLE td_vars_error)
     if(NOT td_vars_result EQUAL 0)
@@ -266,6 +268,12 @@ if(TD_GAME_CODE)
         td_game_code(td_game_all)
         message(STATUS "Game code: td_game_all compiles the developer program's ${td_match_count} files")
 
+        # The functions that the game's address tables hold, by N64 address (game_functions.c, from tools/game_vars.py).
+        # It names game functions, so only programs that link every game file use it.
+        add_library(td_game_functions STATIC ${TD_FUNCTIONS_C})
+        target_link_libraries(td_game_functions PUBLIC td_game_vars)
+        td_strict(td_game_functions)
+
         # The SDK functions the developer program's files call and the port does not provide yet (src/game_sdk.c).
         add_library(td_game_sdk STATIC src/game_sdk.c)
         target_link_libraries(td_game_sdk PUBLIC td_core)
@@ -336,7 +344,7 @@ if(BUILD_TESTING)
             # options give some functions their old names as well (game_vars_link.txt). Like rom_loader, it needs the
             # ROM and is skipped without one.
             add_executable(game_vars_check tests/game_vars/main.c $<TARGET_OBJECTS:td_game_all>)
-            target_link_libraries(game_vars_check PRIVATE td_game_vars td_game_sdk $<$<PLATFORM_ID:Linux>:m>)
+            target_link_libraries(game_vars_check PRIVATE td_game_functions td_game_sdk $<$<PLATFORM_ID:Linux>:m>)
             target_link_options(game_vars_check PRIVATE ${TD_VARS_LINK_OPTIONS})
             td_strict(game_vars_check)
             add_test(NAME game_vars COMMAND game_vars_check)

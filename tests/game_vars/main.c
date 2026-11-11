@@ -9,7 +9,11 @@
  *    ROM's byte.
  * 3. Loading overlay 2 again starts its variables afresh: a changed data byte comes back, and its BSS and own storage
  *    go back to zeros.
- * 4. A function's old name (set by the linker from the map) is the same function: func_800E2400 is
+ * 4. The address tables: every address field of every table (and of every array or record they reach) holds what its
+ *    N64 word names, found here by a plain search instead of game_vars_address's: NULL for 0, the object at that N64
+ *    address, or the place in its section's block; every function field holds the function at that N64 address, so
+ *    each entry of the handler tables D_800E2FF0 and D_800E3660 is the function the N64 calls there.
+ * 5. A function's old name (set by the linker from the map) is the same function: func_800E2400 is
  *    tryBeginBlockReaction.
  *
  * It needs the ROM, so CI never runs it; with no ROM it exits with code 77, which CTest reports as "skipped". It finds
@@ -119,6 +123,103 @@ static long check_section(const GameVarSection *sec) {
     return values;
 }
 
+static uint32_t rom_word(uint32_t rom) {
+    uint8_t b[4];
+
+    port_rom_read(b, rom, 4);
+    return ((uint32_t)b[0] << 24) | ((uint32_t)b[1] << 16) | ((uint32_t)b[2] << 8) | b[3];
+}
+
+/* An address no field can hold: what expected_address gives for a word that names nothing. */
+static char g_names_nothing;
+
+/* What an N64 address must become, by a plain search of the targets and sections. */
+static void *expected_address(uint32_t n64) {
+    uint32_t i;
+    int s;
+
+    if (n64 == 0) {
+        return NULL;
+    }
+    for (i = 0; i < game_var_target_count; i++) {
+        if (game_var_targets[i].n64 == n64) {
+            return game_var_targets[i].pc;
+        }
+    }
+    for (s = 0; s < GAME_VAR_SECTIONS; s++) {
+        const GameVarSection *sec = &game_var_sections[s];
+
+        if (n64 >= sec->vram && n64 - sec->vram < sec->size) {
+            return sec->block + (n64 - sec->vram);
+        }
+    }
+    return &g_names_nothing; /* never equal to a filled field */
+}
+
+static void (*expected_function(uint32_t n64))(void) {
+    uint32_t i;
+
+    for (i = 0; i < game_var_function_count; i++) {
+        if (game_var_functions[i].n64 == n64) {
+            return game_var_functions[i].pc;
+        }
+    }
+    return NULL;
+}
+
+/* Checks every address and function field of every table; counts them in *addresses and *functions. */
+static int check_tables(unsigned *tables, unsigned *addresses, unsigned *functions) {
+    int s;
+
+    for (s = 0; s < GAME_VAR_SECTIONS; s++) {
+        const GameVarSection *sec = &game_var_sections[s];
+        uint32_t t;
+
+        for (t = 0; t < sec->fill_count; t++) {
+            const GameVarFill *f = &sec->fills[t];
+            uint32_t k;
+            uint32_t i;
+
+            (*tables)++;
+            for (k = 0; k < f->count; k++) {
+                for (i = 0; i < f->field_count; i++) {
+                    const GameVarField *fd = &game_var_fields[f->first_field + i];
+                    uint32_t at = f->n64 + k * f->n64_size + fd->n64_offset;
+                    const uint8_t *pc = f->data + (size_t)k * f->pc_size + fd->pc_offset;
+                    uint32_t word;
+
+                    if (fd->kind != 'p' && fd->kind != 'f' && fd->kind != 'z') {
+                        continue;
+                    }
+                    word = rom_word(sec->rom + (at - sec->vram));
+                    if (fd->kind == 'f') {
+                        void (*fn)(void);
+
+                        memcpy(&fn, pc, sizeof(fn));
+                        if (fn != (word != 0 ? expected_function(word) : NULL) || (word != 0 && fn == NULL)) {
+                            printf("FAIL: %s[%u]: the function of 0x%08X is not the one the N64 calls\n", f->name,
+                                   (unsigned)k, word);
+                            return 0;
+                        }
+                        (*functions)++;
+                    } else {
+                        void *p;
+
+                        memcpy(&p, pc, sizeof(p));
+                        if (p != (fd->kind == 'z' ? NULL : expected_address(word))) {
+                            printf("FAIL: %s[%u]+0x%X: the address 0x%08X became %p\n", f->name, (unsigned)k,
+                                   (unsigned)fd->n64_offset, word, p);
+                            return 0;
+                        }
+                        (*addresses)++;
+                    }
+                }
+            }
+        }
+    }
+    return 1;
+}
+
 /* Changes overlay 2's variables, loads it again and checks that they start afresh. */
 static int check_reload(void) {
     const GameVarSection *data = NULL;
@@ -158,7 +259,9 @@ int main(int argc, char **argv) {
     int i;
     int ok = 1;
     long values = 0;
-    unsigned rom_tables = 0;
+    unsigned tables = 0;
+    unsigned addresses = 0;
+    unsigned functions = 0;
 
     if (argc == 2 && strcmp(argv[1], "--unswap") == 0) {
         unswap = 1;
@@ -167,9 +270,16 @@ int main(int argc, char **argv) {
         return 2;
     }
 
-    if ((void (*)(void))func_800E2400 != tryBeginBlockReaction) {
-        printf("FAIL: func_800E2400 is not tryBeginBlockReaction\n");
-        return EXIT_FAILURE;
+    {
+        /* Through volatile copies: C says two differently named functions have different addresses, so a compiler may
+         * answer this comparison without making it (clang does). */
+        void (*volatile old_name)(void) = func_800E2400;
+        void (*volatile name)(void) = tryBeginBlockReaction;
+
+        if (old_name != name) {
+            printf("FAIL: func_800E2400 is not tryBeginBlockReaction\n");
+            return EXIT_FAILURE;
+        }
     }
 
     path = rom_find(NULL);
@@ -187,6 +297,7 @@ int main(int argc, char **argv) {
     printf("ROM: %s\n", path);
     rom_attach(&rom);
 
+    game_vars_use_functions(game_var_functions, game_var_function_count);
     game_vars_load(0);
     game_vars_load(1);
     game_vars_load(2);
@@ -215,11 +326,7 @@ int main(int argc, char **argv) {
 
     for (i = 0; i < GAME_VAR_SECTIONS && ok; i++) {
         const GameVarSection *sec = &game_var_sections[i];
-        uint32_t j;
 
-        for (j = 0; j < sec->own_count; j++) {
-            rom_tables += (unsigned)sec->own[j].rom;
-        }
         if (sec->rom != GAME_VAR_NO_ROM) {
             long n = check_section(sec);
 
@@ -231,12 +338,16 @@ int main(int argc, char **argv) {
         }
     }
     if (ok) {
+        ok = check_tables(&tables, &addresses, &functions);
+    }
+    if (ok) {
         ok = check_reload();
     }
     if (ok) {
         printf("The game's variables start as on the N64: %ld values in their PC byte order, every other byte as in the "
-               "ROM; overlay 2 starts afresh when loaded again. Not filled yet: %u address tables.\n",
-               values, rom_tables);
+               "ROM; %u address tables built, with %u addresses and %u functions in place; overlay 2 starts afresh "
+               "when loaded again.\n",
+               values, tables, addresses, functions);
     }
     rom_attach(NULL);
     rom_free(&rom);

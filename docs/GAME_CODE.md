@@ -199,13 +199,25 @@ N64 does when it loads that code: it copies each of its data sections from the R
 value into the PC's byte order by reversing its bytes, as the map's swap patterns say; its BSS and own storage go back
 to zeros. Loading an overlay again starts its variables afresh, as on the N64.
 
-Not filled yet: the 24 variables that hold addresses and that the N64 starts from the ROM (the map's "rom" in its last
-column), such as the tables of handlers `D_800E2FF0` and `D_800E3660` and the name tables. They start as zeros.
+**Address tables.** 24 variables that hold addresses are started by the N64 from the ROM: the tables of handlers
+`D_800E2FF0` and `D_800E3660`, the wrestler name tables, the tables of animation data and others. Many of them hold
+addresses of further tables, down to three levels. The map describes each of them, and each array or record their
+addresses reach (357 in all), as a list of fields: where each field is in the N64 element and in the PC element, and
+whether it is a value, an address or a function. After the sections, `game_vars_load` builds each table in its PC
+layout from its N64 bytes in the ROM: a value is turned into the PC's byte order, and an address into the PC address
+of what it names (`game_vars_address`): another table, a variable the port provides (the framebuffers), or the place
+in a section's block. The data that the addresses point at is turned into the PC's byte order like the variables
+(the map's "data" lines). A function address becomes the PC function (`game_vars_function`). The functions the tables
+hold are listed in `game_functions.c`, which `tools/game_vars.py` also writes; it names game functions, so it is the
+library `td_game_functions`, which only programs that link every game file use, and such a program hands the list
+over with `game_vars_use_functions` before it loads overlay 2. The viewer and `rom_loader` never load overlay 2.
 
 **The check.** The test `game_vars` (`tests/game_vars/main.c`) is linked from every game file of the developer program,
 the variables and the SDK stand-ins, so it builds only when no game file uses a name the port lacks. It then fills the
 variables and compares each section with the ROM: each value read as a PC integer must equal the ROM's bytes read
-big-endian, and every other byte must equal the ROM's. It also checks that loading overlay 2 again starts it afresh.
+big-endian, and every other byte must equal the ROM's. Then every address and function field of every address table:
+each must hold what its N64 word names, found by a plain search of its own, so each entry of the handler tables is the
+function the N64 calls there. It also checks that loading overlay 2 again starts it afresh.
 `game_vars_detects_change` runs it with one value left in the N64's byte order, and passes only if the check fails,
 which shows that the comparison really looks at the values. Both need the ROM and are skipped without it.
 
