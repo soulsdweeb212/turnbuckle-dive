@@ -43,6 +43,11 @@ PORT = {
     "D_801B7800": (0x38400, None),
 }
 
+# Variables with storage of their own that get zeroed bytes before them. The game uses -1 for "no wrestler" and reads
+# fields of D_800F9D10[-1] where it does not use them (func_800BBA00 reads the flags of the partner -1); on the N64
+# those bytes belong to other variables, on PC they are this guard, one record of zeros (0x3B8, sizeof(Wrestler)).
+GUARD_BEFORE = {"D_800F9D10": 0x3B8}
+
 SECTION_ORDER = ["main.data", "main.bss", "ovl1.data", "ovl2.data", "ovl2.bss"]
 # Each section's N64 address range, its ROM offset (None: zeros) and which overlay it belongs to (0: main). The same
 # values as SECTIONS in the decompilation's tools/port_data.py, which says where they come from.
@@ -132,7 +137,13 @@ def main() -> int:
         elif storage == "own":
             n = int(size, 16)
             static = "static " if name.startswith("td_anon_") else ""
-            c.append(f"{static}_Alignas(16) uint8_t {name}[{max(n, 1):#x}];")
+            if name in GUARD_BEFORE:
+                g = GUARD_BEFORE[name]
+                c.append(f"_Alignas(16) uint8_t td_guard_{name}[{g + max(n, 1):#x}];")
+                c.append(f"TD_AT({name}, td_guard_{name}, {g:#x}, {max(n, 1):#x});")
+                c.append(f"extern uint8_t {name}[];")
+            else:
+                c.append(f"{static}_Alignas(16) uint8_t {name}[{max(n, 1):#x}];")
             owns[sec].append((name, max(n, 1), swap != "-"))
             targets.append((addr, name))
             if swap != "-":

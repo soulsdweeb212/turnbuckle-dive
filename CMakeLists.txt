@@ -94,6 +94,17 @@ function(td_game_code target)
         # A pointer cast to a smaller integer, or such an integer cast to a pointer: on the N64 both are 32 bits, on a
         # 64-bit PC the pointer would lose its upper half.
         -Werror=pointer-to-int-cast -Werror=int-to-pointer-cast)
+    if(TD_SANITIZE)
+        # The game reaches many variables through a label and an offset past it (a joint array that starts at a
+        # one-float label, a record's field label plus a stride), and on PC those labels sit at their N64 offsets
+        # inside one block per N64 section (docs/GAME_CODE.md, "The game's variables"), so the bytes are there.
+        # UndefinedBehaviorSanitizer's object-size check knows only the label's declared type and would stop each such
+        # read. Its array-bounds check is left out for the same kind of reason: the N64 code reads one past a row into
+        # the next row (func_8000C1B8's s4[v][2] of an s16[2] row) and takes &D_800F9D10[-1] for "no wrestler" (id -1),
+        # where the bytes are there or are never read. AddressSanitizer still stops a read or write past the end of a
+        # block or of a variable stored apart, which is what would go wrong if they were not.
+        target_compile_options(${target} PRIVATE -fno-sanitize=object-size,bounds)
+    endif()
 endfunction()
 
 # Game code is built when the decompilation is there, with the game's PC code, and the compiler is GCC or Clang, whose

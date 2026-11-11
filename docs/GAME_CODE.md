@@ -195,6 +195,10 @@ variables. Storage on PC is of two kinds:
 - *Own.* A variable whose type holds an address is bigger on PC, so it gets its own array, as many bytes as its PC type.
   Code reaches it only by its own name (the decompilation's `docs/port.md`, "Shared records on PC").
 
+One variable with storage of its own gets zeroed bytes before it (`tools/game_vars.py`, `GUARD_BEFORE`): the
+wrestlers, `D_800F9D10`. The game uses -1 for "no wrestler" and reads fields of `D_800F9D10[-1]` where it then does
+not use them; on PC those reads find one record of zeros.
+
 A few names the port provides itself (`tools/game_vars.py`, `PORT`): `osTvType` (1, NTSC), the three framebuffers, and
 the address of the RSP's boot code. Some game files still call functions by an old name, which the N64 link keeps as
 a second name of the function (`func_800E2400` is `tryBeginBlockReaction`). Only the linker can give a function a second
@@ -257,7 +261,11 @@ frames, and when the results screen waits for a button it presses A on controlle
 ```
 
 It needs the build with every game file of the developer program (`td_game_all`, next section); without it the option
-says so.
+says so. In the asan preset (`./build/asan/turnbuckle-dive --dev-match`) the whole match runs under AddressSanitizer
+and UndefinedBehaviorSanitizer. Two of UndefinedBehaviorSanitizer's checks are off for game files there
+(`td_game_code` in `CMakeLists.txt` says why): the object-size and array-bounds checks, because the game reads through
+labels at offsets past their declared type and indexes rows and the wrestlers past their ends where the bytes exist.
+AddressSanitizer still stops any read or write outside real memory.
 
 ## Every file of the developer program: td_game_all
 
