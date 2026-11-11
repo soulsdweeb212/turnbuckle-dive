@@ -100,6 +100,8 @@ def unpack(stream, size):
 # the layout; this is the same conversion, written separately): triples of animation list, profile and move table from
 # id 0x13F to 0x20E.
 CHAR_FIRST, CHAR_LAST = 0x13F, 0x20E
+# The move table every wrestler shares, read as 32-bit words like the characters' move tables.
+SHARED_MOVES = 0x126
 
 
 def swapped(data, width):
@@ -109,6 +111,8 @@ def swapped(data, width):
 
 def convert(rid, data):
     """A resource's bytes as the port leaves them after port_res_loaded."""
+    if rid == SHARED_MOVES:
+        return swapped(data, 4)
     if not CHAR_FIRST <= rid <= CHAR_LAST:
         return data
     kind = (rid - CHAR_FIRST) % 3

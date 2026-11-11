@@ -39,7 +39,9 @@ There are three programs so far:
 - `turnbuckle-dive` loads your ROM, checks that it is the supported one, and prints what it found. When the build
   includes the game's code (below), it then loads all 7657 resources of the ROM with the game's own loader and prints
   how many it loaded. `turnbuckle-dive --res 0x3` loads only resource 3 and prints its size and first 16 bytes (the id
-  can also be written in decimal).
+  can also be written in decimal). `turnbuckle-dive --dev-match` plays a CPU-against-CPU match with the game's own code,
+  straight from the boot without the menus, and shows it in the Match Inspector's window: a table of the wrestlers and
+  a map of the ring, live; there is no 3D picture yet ([docs/GAME_CODE.md](docs/GAME_CODE.md), "The developer match").
 - `hello` opens a LibUltraShip window and draws a test picture made of N64 display-list commands, at the game's
   480x240 resolution shown at 4:3.
 - `viewer`, the asset viewer, built with the game's code: it draws a wrestler's head, an effect sprite and a 2D
@@ -127,7 +129,8 @@ and starts it under the debugger (the first time, CMake Tools asks for a configu
 To step through the game's own code, open one of its files with File, Open File, for example the decompilation's
 `src/main/func_800037F4.c` (the game's decompressor), click left of a line number to set a breakpoint, and start "Debug
 Turnbuckle Dive": it stops there with the game's variables in the Variables view. "Debug Turnbuckle Dive: one resource"
-asks for a resource id and loads only that one.
+asks for a resource id and loads only that one. "Debug Turnbuckle Dive: dev match" plays the developer match under the
+debugger.
 
 **Visual Studio 2022**: install the "Linux and embedded development with C++" workload, run
 `sudo apt install rsync zip` in WSL as well (Visual Studio copies files with them), open the folder, and pick the WSL

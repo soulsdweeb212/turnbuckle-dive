@@ -33,9 +33,10 @@ void PreferWslGpu();
 // Starts LibUltraShip for the program named program ("hello", "viewer"). The name goes into the log's file name,
 // logs/<program>.log, the settings file, <program>.cfg.json, both in the folder the program starts from, and the
 // window's title. withCrashHandler adds LUS's crash handler, which answers a crash with a message box that waits for
-// someone to close it: leave it out in checks that run with nobody watching, as on CI. If a step fails, for example
-// when there is no screen to open the window on, it prints why and returns a LibUltraShip whose window is null.
-LibUltraShip StartLibUltraShip(const char* program, bool withCrashHandler);
+// someone to close it: leave it out in checks that run with nobody watching, as on CI. width and height: the window's
+// size until the settings file holds one (0: LibUltraShip's 640x480). If a step fails, for example when there is no
+// screen to open the window on, it prints why and returns a LibUltraShip whose window is null.
+LibUltraShip StartLibUltraShip(const char* program, bool withCrashHandler, int width = 0, int height = 0);
 
 // The resolution a picture that is read back is drawn at, in multiples of the window's.
 constexpr float kReadBackResolution = 2.0f;

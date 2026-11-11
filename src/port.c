@@ -7,6 +7,11 @@
 #include "game.h"
 
 static uint32_t g_res_loaded;
+static void (*g_res_hook)(uint32_t id);
+
+void port_res_hook(void (*hook)(uint32_t id)) {
+    g_res_hook = hook;
+}
 
 /* stdout is flushed first so that everything the program printed before stays in order with the message. abort()
  * rather than exit(): under a debugger the program stops right here, and the call stack shows which game function
@@ -35,6 +40,9 @@ void port_res_loaded(uint32_t id, void *buf, int32_t size) {
     }
     res_convert(id, buf, size);
     g_res_loaded++;
+    if (g_res_hook != NULL) {
+        g_res_hook(id);
+    }
 }
 
 uint32_t port_res_loaded_count(void) {

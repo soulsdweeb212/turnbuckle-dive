@@ -14,11 +14,15 @@
  *   (requestAttachmentAction reads two of them); five 16-bit character ids at +0x2E, the wrestlers that can run in
  *   (func_800BFCF0); a 64-bit set of ability bits at +0x38.
  * - Move table: entries of six 32-bit words, read only as 32-bit words (unpackAnimationParameters).
- * - Animation list: 16-bit animation ids (D_8007C5B8, one row per player). */
+ * - Animation list: 16-bit animation ids (D_8007C5B8, one row per player).
+ * And one more move table: resource 0x126, the moves that every wrestler shares, which resetMatchState loads to
+ * D_8007BD64 + 0x14 and func_800A7D1C reads (32-bit words). Resources 0x127 to 0x12A, loaded next to it, are read as
+ * bytes (func_800A8D14) and stay as they are. */
 #include <stdint.h>
 
 #include "game.h"
 
+#define SHARED_MOVES 0x126u
 #define CHAR_FIRST 0x13Fu /* the first animation list */
 #define CHAR_LAST 0x20Eu  /* the last animation list */
 
@@ -47,6 +51,10 @@ static void swap_all(uint8_t *buf, int32_t size, unsigned width, uint32_t id, co
 void res_convert(uint32_t id, uint8_t *buf, int32_t size) {
     unsigned i;
 
+    if (id == SHARED_MOVES) {
+        swap_all(buf, size, 4, id, "move table");
+        return;
+    }
     if (id < CHAR_FIRST || id > CHAR_LAST) {
         return;
     }

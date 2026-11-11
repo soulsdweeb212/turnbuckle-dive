@@ -93,7 +93,7 @@ void PreferWslGpu() {
 // problem by throwing, and the program checks the screen itself. These steps run before the window is added, because
 // destroying a context that holds a window which never started crashes; only whether the window really opened has to
 // wait until it has started (WindowOpened).
-LibUltraShip StartLibUltraShip(const char* program, bool withCrashHandler) {
+LibUltraShip StartLibUltraShip(const char* program, bool withCrashHandler, int width, int height) {
     std::string name = std::string("Turnbuckle Dive ") + program;
 
     // The logger is made before the context so that, when startup fails, it is destroyed after the context: the
@@ -159,6 +159,14 @@ LibUltraShip StartLibUltraShip(const char* program, bool withCrashHandler) {
 
     // The window comes before the control deck, which needs it; the deck must be in the context before the window
     // initialises, because the GUI looks it up then.
+    // The window's size, until the settings file remembers one: LibUltraShip saves the size the window had when the
+    // program ended, and opens it at that size next time. (Config::Contains cannot tell: for a dotted key whose parts
+    // are missing it answers true, so the value is read with a default instead.) It is set here, just before the window is
+    // made, because the console variables reload the settings file when they are made, which would undo it.
+    if (width > 0 && height > 0 && config->GetInt("Window.Width", 0) <= 0) {
+        config->SetInt("Window.Width", width);
+        config->SetInt("Window.Height", height);
+    }
     auto window = std::make_shared<Fast::Fast3dWindow>(config, cvars, nullptr);
     ctx->GetChildren().Add(window);
     auto deck = std::make_shared<LUS::ControlDeck>(window, cvars);

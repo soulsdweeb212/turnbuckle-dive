@@ -70,6 +70,10 @@ bool CheckCorners(Picture* pic);
 // the build folder or elsewhere outside the repository, never in it.
 bool SavePicturePng(const Picture& pic, const char* path);
 
+// Writes w x h RGB pixels (3 bytes each, row after row, top row first) to a PNG file at path, uncompressed. Returns false
+// after printing why if the file cannot be written.
+bool SaveRgbPng(const std::vector<uint8_t>& rgb, uint32_t w, uint32_t h, const char* path);
+
 // One command met on a walk through a frame's display lists (WalkDisplayList).
 struct DisplayListStep {
     const Gfx* cmd;     // the command

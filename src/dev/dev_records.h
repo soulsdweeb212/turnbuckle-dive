@@ -1,0 +1,65 @@
+/* What the developer match reads of the game's match state (src/dev/dev_records.c), as plain values that port code
+ * (C and C++) can use without the game's headers. C and C++. */
+#ifndef TD_DEV_RECORDS_H
+#define TD_DEV_RECORDS_H
+
+#include <stddef.h>
+#include <stdint.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#define DEV_WRESTLERS 4
+
+/* One wrestler record (the game's Wrestler, include/wrestler.h), the fields the Match Inspector shows. */
+typedef struct {
+    int16_t character;  /* characterId: 0xBNN (bank, index + 1); -1 for an empty slot */
+    int16_t state;      /* action state, an index into the handler table D_800E2FF0 */
+    int16_t step;       /* step inside the state */
+    int16_t anim;       /* animation id */
+    int16_t frame;      /* animation frame */
+    int16_t health;     /* hidden health 0..255 */
+    int16_t health_max; /* recoverable ceiling */
+    int16_t spirit;     /* spirit meter 0..100 */
+    float x, y, z;      /* root position; the ring's inside is -200..200 in x and z */
+    int32_t heading;    /* facing: 0x1000 is a full turn, 0 faces +z */
+    int8_t held_by;     /* who holds or attacks this wrestler, -1 for nobody */
+    int8_t opponent;    /* who it faces and attacks */
+    uint64_t flags;     /* WR_FLAG_* */
+} DevWrestler;
+
+/* The match around the wrestlers. */
+typedef struct {
+    uint32_t match_frame; /* D_800E2FAC, the match loop's frame count */
+    int8_t phase;         /* D_800EB465: 0..4, 4 when the match has ended */
+    uint32_t seed;        /* xseed, guRandom's seed */
+} DevMatch;
+
+/* Reads the four wrestlers and the match. Call it while the game waits in a hand-off (port_present). */
+void dev_records_read(DevWrestler out[DEV_WRESTLERS], DevMatch *match);
+
+/* The bytes of one snapshot for the wrestler log: the four records as the PC holds them, with the address of each
+ * one's profile set to 0, because addresses differ from run to run. dev_records_snapshot writes
+ * dev_records_snapshot_size() bytes to out. */
+size_t dev_records_snapshot_size(void);
+void dev_records_snapshot(uint8_t *out);
+
+/* The fields of one record in the snapshot, in order: name, offset and size; the log's header lists them, so that
+ * tools/wr_log.py can name the field where two logs differ. */
+typedef struct {
+    const char *name;
+    uint32_t offset;
+    uint32_t size;
+} DevField;
+const DevField *dev_records_fields(size_t *count, size_t *record_size);
+
+/* A wrestler state's short name ("" for one docs/wrestler.md does not identify), and a match phase's name. */
+const char *dev_state_name(int state);
+const char *dev_phase_name(int phase);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif

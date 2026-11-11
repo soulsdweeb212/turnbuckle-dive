@@ -5,6 +5,8 @@
 #define TD_DEBUG_H
 
 #include <memory>
+#include <string>
+#include <vector>
 
 #include "libultraship/libultraship.h"
 
@@ -15,8 +17,9 @@ class Fast3dWindow;
 namespace td {
 
 // Gives the window the menu bar. Call it once, after StartLibUltraShip (src/context.h). The bar starts hidden; F1 shows
-// it, and LibUltraShip remembers in the program's settings file whether it was showing.
-void AddDebugMenu(const std::shared_ptr<Fast::Fast3dWindow>& window);
+// it, and LibUltraShip remembers in the program's settings file whether it was showing. extraWindows: the names of the
+// program's own GUI windows to list first in the Debug menu (the developer match's "Match Inspector").
+void AddDebugMenu(const std::shared_ptr<Fast::Fast3dWindow>& window, std::vector<std::string> extraWindows = {});
 
 // Call it after each frame is drawn, with the frame's display list. When the Gfx Debugger's Debug button was pressed,
 // it hands the list to the Gfx Debugger and then keeps drawing that same frame, without returning, until the

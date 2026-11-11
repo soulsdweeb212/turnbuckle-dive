@@ -69,6 +69,9 @@ void res_convert(uint32_t id, uint8_t *buf, int32_t size);
 
 /* How many times the game has called port_res_loaded since the program started (src/port.c). */
 uint32_t port_res_loaded_count(void);
+/* Sets a function that port_res_loaded calls with the id of each resource the game loads, after converting it; NULL
+ * for none (src/port.c). The developer match logs loads with it. */
+void port_res_hook(void (*hook)(uint32_t id));
 /* The most handles the handle table holds, handle 0 (NULL) included: 2^20 (src/slots.c). */
 #define PORT_SLOT_CAP 0x100000u
 /* How many handles the table has given out so far, 0 not counted (src/slots.c). */

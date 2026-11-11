@@ -11,6 +11,9 @@
 #ifdef TD_DEV_MATCH
 #include "dev/dev_match.h"
 #endif
+#ifdef TD_INSPECTOR
+#include "dev/inspector.h"
+#endif
 
 #ifndef TD_VERSION
 #define TD_VERSION "dev"
@@ -89,6 +92,12 @@ int main(int argc, char **argv) {
     const char *path;
     uint32_t res_id = 0;
     int dev_match = 0;
+    int headless = 0;
+    const char *screenshot = NULL;
+    unsigned screenshot_frame = 300;
+#ifdef TD_DEV_MATCH
+    DevMatchOptions match_options = { NULL, NULL, 0, 0, 0, NULL, NULL };
+#endif
     RomStatus status;
     Rom rom;
     int i;
@@ -112,8 +121,27 @@ int main(int argc, char **argv) {
                             "(docs/GAME_CODE.md, \"Every file of the developer program\")\n");
             return 1;
 #endif
+#ifdef TD_DEV_MATCH
+        } else if (strcmp(argv[i], "--wr-log") == 0 && i + 1 < argc) {
+            match_options.wr_log = argv[++i];
+        } else if (strcmp(argv[i], "--res-log") == 0 && i + 1 < argc) {
+            match_options.res_log = argv[++i];
+        } else if (strcmp(argv[i], "--headless") == 0) {
+            headless = 1;
+        } else if (strcmp(argv[i], "--screenshot") == 0 && i + 1 < argc) {
+            screenshot = argv[++i];
+        } else if (strcmp(argv[i], "--screenshot-frame") == 0 && i + 1 < argc) {
+            screenshot_frame = (unsigned)strtoul(argv[++i], NULL, 0);
+        } else if (strcmp(argv[i], "--no-watchdog") == 0) {
+            match_options.no_watchdog = 1;
+        } else if (strcmp(argv[i], "--seed") == 0 && i + 1 < argc) {
+            match_options.has_seed = 1;
+            match_options.seed = (uint32_t)strtoul(argv[++i], NULL, 0);
+#endif
         } else if (strncmp(argv[i], "--", 2) == 0 || rom_arg != NULL) {
-            fprintf(stderr, "Usage: turnbuckle-dive [--res ID | --dev-match] [ROM]\n");
+            fprintf(stderr, "Usage: turnbuckle-dive [--res ID | --dev-match [--headless] [--wr-log FILE] [--res-log FILE] [--seed N] "
+                            "[--no-watchdog] "
+                            "[--screenshot FILE [--screenshot-frame N]]] [ROM]\n");
             return 1;
         } else {
             rom_arg = argv[i];
@@ -128,7 +156,8 @@ int main(int argc, char **argv) {
         fflush(stdout);
         fprintf(stderr, "ROM %s: %s\n", path, rom_status_text(status));
         fprintf(stderr, "Pass the path to your ROM as the first argument, or set TD_ROM.\n");
-        return 1;
+        /* 77: CTest reports the developer match's tests as skipped on a machine with no ROM, such as CI. */
+        return dev_match && status == ROM_NOT_FOUND ? 77 : 1;
     }
     printf("ROM:    %s\n", path);
     printf("Size:   %zu bytes (%zu MiB)\n", rom.size, rom.size >> 20);
@@ -144,13 +173,33 @@ int main(int argc, char **argv) {
     printf("Status: supported ROM\n");
 #ifdef TD_DEV_MATCH
     if (dev_match) {
-        int result = dev_match_run(&rom);
+        int result;
 
+#ifdef TD_INSPECTOR
+        /* The Match Inspector's window, unless --headless; with no screen to open it on, the match runs without it. */
+        if (!headless) {
+            if (dev_inspector_start() == 0) {
+                match_options.on_frame = dev_inspector_frame;
+                if (screenshot != NULL) {
+                    dev_inspector_screenshot(screenshot, screenshot_frame);
+                }
+            } else {
+                printf("dev-match: no window; the match runs without the Match Inspector\n");
+            }
+        }
+#endif
+        result = dev_match_run(&rom, &match_options);
+#ifdef TD_INSPECTOR
+        dev_inspector_stop();
+#endif
         rom_free(&rom);
         return result;
     }
 #endif
     (void)dev_match;
+    (void)headless;
+    (void)screenshot;
+    (void)screenshot_frame;
 #ifdef TD_GAME_CODE
     run_game_loader(&rom, res_id);
 #endif

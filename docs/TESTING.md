@@ -52,11 +52,21 @@ different after any change; a digest is such a fingerprint taken over many piece
 | `rom_missing` | `turnbuckle-dive`, given a ROM path that does not exist, starts and says "file not found". |
 | `rom_loader` | The game's own loader loads all 7657 resources of your ROM (its textures, models, animations and the rest of the game's data), and their digest is the one the test knows ([GAME_CODE.md](GAME_CODE.md) explains it). |
 | `rom_loader_detects_change` | The same with one byte of one resource changed after loading. This test passes when `rom_loader` reports that the digest does not match. |
+| `dev_match` | The developer match ([GAME_CODE.md](GAME_CODE.md), "The developer match") plays a whole CPU-against-CPU match without a window, writing the wrestler log, and checks the G6 gate: the match ends (phase 4) and never goes past its end, within 20000 frames, its first loads are resources 0x126 to 0x12A in order, and no frame takes 3 seconds. |
+| `dev_match_again` | The same match again, into a second log. |
+| `dev_match_other_seed` | The same with the random seed started elsewhere, a different match, into a third log. |
+| `dev_match_repeatable` | `tools/wr_log.py` compares the first two logs, every wrestler at every frame: they must be the same. |
+| `dev_match_detects_change` | The same comparison of the first log with the other seed's. This test passes when the tool reports where they differ, which shows that the comparison sees a different match. |
+| `game_vars` | Every game file of the developer program links with the game's variables, and the variables start as on the N64: each value in the PC's byte order equals the ROM's, each address table holds what its N64 addresses name, and each handler table entry is the function the N64 calls. |
+| `game_vars_detects_change` | The same with one value left in the N64's byte order. This test passes when the check reports it. |
+| `gdb_knows_game_macros` | gdb, reading `turnbuckle-dive`, prints the game's macro `WR_FLAG_LEGAL`: the debug information holds the game's macros. Only in a Debug build, with gdb installed. |
+| `gdb_prints_wrestlers` | gdb, with `tools/gdb/wrestler.py`, prints a wrestler record as one readable line, and a state by its name. Same conditions. |
+| `sanitizer_catches_overflow` | Only in the asan preset: a program reads one byte past the wrestler records, and passes when AddressSanitizer reports it with the program's file and line. |
 | `viewer_reference` | `tools/viewer_ref.py` works out from your ROM, without the game's code, what the asset viewer must build and draw, and writes it to `build/debug/viewer_ref.json`: the reference. |
 | `viewer_check` | The asset viewer builds its three subjects (a wrestler's head from its three parts, an effect sprite and a 2D picture) with the game's code and compares them with the reference: first the vertices and triangles of each of the head's parts, and the camera placed over them, then every pixel of each picture. Between the head's two sides Fast3D draws at another resolution, as when someone stretches the window. Its window opens, draws and closes by itself. |
 
-Near the end, CTest prints how many passed, `100% tests passed, 0 tests failed out of 10`, and then the time the tests
-took. The last four tests need your ROM. When they find none, CTest marks them `***Skipped` instead of `Passed`, still
+Near the end, CTest prints how many passed, `100% tests passed, 0 tests failed out of 19` (20 in the asan preset), and
+then the time the tests took. The tests from `rom_loader` on, but for the two gdb tests, need your ROM. When they find none, CTest marks them `***Skipped` instead of `Passed`, still
 counts them in that line, and names them at the very end, under `The following tests did not run:`.
 
 hello's check is not one of these tests: it is run by hand, below.
@@ -117,8 +127,9 @@ cd build/debug
 ./viewer --picture
 ```
 
-`turnbuckle-dive` has no window yet: it prints what it found in your ROM, whether it is the supported one, and how many
-resources the game's loader loaded. Each of the other commands opens a window that stays open until you close it.
+`turnbuckle-dive` prints what it found in your ROM, whether it is the supported one, and how many resources the game's
+loader loaded. `./turnbuckle-dive --dev-match` plays a match in the Match Inspector's window: a table of the wrestlers
+and a map of the ring, moving live ([GAME_CODE.md](GAME_CODE.md), "The developer match"). Each of the other commands opens a window that stays open until you close it.
 Closing the window ends the program, and the terminal then takes the next command. You should see:
 
 - `./hello`: its test picture. On a dark background are a shaded triangle, three ring ropes and a square that moves

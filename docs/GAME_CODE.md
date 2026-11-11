@@ -72,6 +72,11 @@ gives every game file the same settings, each with a comment that says why. In s
 - `-std=gnu17`, `-fno-strict-aliasing`, `-fwrapv`, `-fsigned-char` and `-ffp-contract=off` make GCC and Clang treat the
   code the way the N64's compiler did, so that it computes the same results.
 - The `-Werror=...` options stop the build on code that would cut a 64-bit pointer down to the N64's 32 bits.
+- `-ftrivial-auto-var-init=zero` starts every local variable as zero, so a function that reads one before it sets it
+  gives the same result on every run ("The same match every time", below).
+- In a Debug build, `-g3` puts the game's macros into the debug information, so a debugger knows names such as
+  `WR_FLAG_LEGAL`. In the asan preset, two of UndefinedBehaviorSanitizer's checks are off for game files
+  ("The developer match", below, and `td_game_code` say why).
 
 Game files do not get the warnings of `td_strict`, which the port's own code is compiled with: they are the
 decompilation's code, written to match the N64 ROM, and the `-Werror=...` options pick out the problems that matter on
@@ -243,29 +248,102 @@ LibUltraShip's renderer read them so.
 
 So far that is the three resources of each character, which sit in the resource table as triples from id 0x13F to
 0x20E: its profile (64 bytes: bytes, then five 16-bit animation ids, five 16-bit character ids and a 64-bit set of
-ability bits), its move table (32-bit words) and its animation list (16-bit ids). `src/res_convert.c` says where each
-layout was read from. `tools/res_digest.py` makes the same conversion, so the `rom_loader` test checks it.
+ability bits), its move table (32-bit words) and its animation list (16-bit ids); and resource 0x126, the move table
+every wrestler shares (32-bit words). `src/res_convert.c` says where each layout was read from. `tools/res_digest.py` makes the same conversion, so the `rom_loader` test checks it.
 
 ## The developer match
 
-`turnbuckle-dive --dev-match` starts the game straight into a match, without the menus, and runs it with no picture yet
-(`src/dev/dev_match.c`). It does what the N64 does before a match, in the same order: the game's variables of main
-start from the ROM and overlay 2's are loaded; the four calls that open the boot loop (graphics, audio, controllers,
-the table of resource sizes); `func_8002B750`, which builds the wrestlers' name table; the settings the menus write for
-an exhibition match (Sting against Hollywood Hogan, both played by the CPU, arena 0, a 5-minute limit, run-ins off);
-then overlay 2's entry, `func_80090000_ovl2`, which runs the match and returns when it ends. It prints a line every 300
-frames, and when the results screen waits for a button it presses A on controller 1.
+`turnbuckle-dive --dev-match` starts the game straight into a match, without the menus (`src/dev/dev_match.c`). It does
+what the N64 does before a match, in the same order: the game's variables of main start from the ROM and overlay 2's
+are loaded; the four calls that open the boot loop (graphics, audio, controllers, the table of resource sizes);
+`func_8002B750`, which builds the wrestlers' name table; the settings the menus write for an exhibition match (Sting
+against Hollywood Hogan, both played by the CPU, arena 0, a 5-minute limit, run-ins off); then overlay 2's entry,
+`func_80090000_ovl2`, which runs the match and returns when it ends. When the results screen waits for a button, it
+presses A on controller 1. It needs the build with every game file of the developer program (`td_game_all`, below).
 
 ```
 ./build/debug/turnbuckle-dive --dev-match
 ```
 
-It needs the build with every game file of the developer program (`td_game_all`, next section); without it the option
-says so. In the asan preset (`./build/asan/turnbuckle-dive --dev-match`) the whole match runs under AddressSanitizer
-and UndefinedBehaviorSanitizer. Two of UndefinedBehaviorSanitizer's checks are off for game files there
-(`td_game_code` in `CMakeLists.txt` says why): the object-size and array-bounds checks, because the game reads through
-labels at offsets past their declared type and indexes rows and the wrestlers past their ends where the bytes exist.
-AddressSanitizer still stops any read or write outside real memory.
+### The Match Inspector
+
+The game draws no picture yet, so the match opens in the Match Inspector's window (`src/dev/inspector.cpp`): a table of
+the four wrestlers (character, state and its name, step, animation and frame, position, heading, health, spirit, who
+holds whom, opponent) and a map of the ring from above, with each wrestler as a dot and a line where it faces. Above
+them are the frame, the match frame (`D_800E2FAC`), the phase (setup, intro, fight, ending, results) and the random seed.
+It runs at the N64's speed, 30 frames a second.
+
+- F6 pauses and resumes the match, F7 runs one frame and pauses, F8 slows it down (each frame shown 1, 2, 4 or 8 times).
+  The same buttons are in the window, and the console (F1, Debug, Console) takes `pause`, `step 10` and `slowmo 4`.
+- F1 shows the menu bar, whose Debug menu opens the Match Inspector and LibUltraShip's Console, Stats and Gfx Debugger.
+- Closing the window ends the program.
+
+The inspector only reads the game's records, through `src/dev/dev_records.c`, which is compiled with the game's
+settings. It runs inside the game's frame hand-off, on the game's thread, while the game waits, so the two never clash.
+
+### Options
+
+| Option | What it does |
+|---|---|
+| `--headless` | no window: the match runs as fast as it can and prints a line every 300 frames (the tests use it) |
+| `--wr-log FILE` | writes the wrestler log: the four wrestler records at every frame |
+| `--res-log FILE` | writes each resource the game loads, with the frame |
+| `--seed N` | starts the random seed (`xseed`) at N instead of the ROM's value: a different match |
+| `--screenshot FILE` | saves the window at frame 300 (`--screenshot-frame N` for another) as a PNG; OpenGL only |
+| `--no-watchdog` | no watchdog (the VS Code entries use it, so that stepping in the debugger is not taken for a hang) |
+
+The logs and screenshots are made from your ROM: keep them in the build folder, never in the repository.
+
+### The checks
+
+The developer match checks the G6 gate as it runs, and ends with `dev-match: passed after N frames` or with a `FAIL:`
+line that says which check failed (exit code 1):
+
+- the match ends: the phase (`D_800EB465`) reaches 4, and never goes past 4 (two end checks in one frame would skip
+  phase 3, three push it past 4, where the match never ends);
+- it ends within 20000 frames (a 5-minute match takes about 9100);
+- its first loads are resources 0x126 to 0x12A, in that order (`resetMatchState`);
+- a watchdog thread stops the program when no frame arrives for 3 seconds, which is a hang inside one frame.
+
+The tests `dev_match` to `dev_match_detects_change` run it ([TESTING.md](TESTING.md)).
+
+### The same match every time
+
+A run with the same seed gives the same match, frame for frame, in a Debug build and in the asan preset, and wherever
+the system puts the program in memory. Two things make it so:
+
+- On the N64 an idle thread calls `guRandom` whenever the CPU has nothing to do, so the random seed moves on by however
+  much idle time each frame leaves. On PC no thread idles; `port_present` (`src/game_sdk.c`) draws one random number at
+  each frame and each wait for the retrace instead (`IDLE_RANDOMS`).
+- A few game functions read a local variable before they set it, where the N64 reads whatever its stack held. Game
+  files are compiled with `-ftrivial-auto-var-init=zero` (`td_game_code`), so such a variable starts as zero on every
+  run.
+
+`tools/wr_log.py` reads the wrestler log: `show FILE` prints each wrestler's state, health and position every 300 frames,
+and `diff A B` names the first frame, wrestler and field where two logs differ, or says they are the same:
+
+```
+./build/debug/turnbuckle-dive --dev-match --headless --wr-log build/debug/a.wrlog
+./build/debug/turnbuckle-dive --dev-match --headless --wr-log build/debug/b.wrlog
+python3 tools/wr_log.py diff build/debug/a.wrlog build/debug/b.wrlog
+```
+
+Other seeds play other matches, which reach other code: running many of them in the asan preset is a quick way to
+find bugs (`--seed 1`, `--seed 2` and so on).
+
+### Debugging the match
+
+- In VS Code, Run and Debug: "Debug Turnbuckle Dive: dev match" starts the match with the window under the debugger.
+  "Debug Turnbuckle Dive: dev match (asan preset)" does the same in the asan preset's build (choose that preset in
+  CMake Tools first): AddressSanitizer and UndefinedBehaviorSanitizer then stop the program at the bad line; it is
+  about 11 frames down the call stack, under the C library's and the sanitizers' own.
+- In Watch, `D_800F9D10[0]` shows a wrestler as one line (state name, health, position, who holds it) with its fields
+  below: every entry loads `tools/gdb/wrestler.py`. `(enum TdWrState)D_800F9D10[1].state` and
+  `(enum TdMatchPhase)D_800EB465` show names (`src/dev/wr_states.h`). In a Debug build the game's macros work too, in a
+  game file: `D_800F9D10[0].flags & WR_FLAG_LEGAL`.
+- Inside the match, `D_800E2FAC` counts the match's frames and `(int)D_800EB465` is the phase; a breakpoint with a
+  condition such as `D_800F9D10[1].health < 100` stops where it happens.
+- In gdb in a terminal, `source tools/gdb/wrestler.py` gives the same one-line records.
 
 ## Every file of the developer program: td_game_all
 
@@ -273,10 +351,11 @@ The developer program is the PC program that will start straight into a match, w
 the ones the match reaches, which the decompilation's tool `tools/port_filelist.py` works out by following the game's
 calls from its starting functions (the decompilation's `docs/port.md` says how). Today they are 857 files.
 
-The target `td_game_all` compiles every one of them, with the same settings as `td_game`. The test program
-`game_vars_check` links them all with the game's variables (above), so a full build (`cmake --build --preset debug`,
-or F7 in VS Code) stops on a game file that no longer compiles or uses a name the port lacks. Building one program
-alone, as F5 does before it starts the debugger, leaves them out.
+The target `td_game_all` compiles every one of them, with the same settings as `td_game`. `turnbuckle-dive` links them
+all, with the game's variables and the SDK functions, for the developer match (above), and so does the test program
+`game_vars_check`; so a build stops on a game file that no longer compiles or uses a name the port lacks. Without
+`td_game_all` (no Python 3, or the decompilation's build not run), `turnbuckle-dive` links only the ROM loader's files
+(`td_game`) and has no `--dev-match`.
 
 Configure runs `port_filelist.py` and prints how many files it found:
 

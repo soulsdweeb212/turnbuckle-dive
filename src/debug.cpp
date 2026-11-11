@@ -20,8 +20,10 @@ namespace {
 // its constructor: without them it cannot remember whether it is showing.
 class DebugMenuBar : public Ship::GuiMenuBar {
   public:
-    DebugMenuBar(std::shared_ptr<Ship::ConsoleVariable> cvars, std::shared_ptr<Ship::Window> window)
-        : Ship::GuiMenuBar(std::move(cvars), window, "gOpenMenuBar", false), mWindow(std::move(window)) {
+    DebugMenuBar(std::shared_ptr<Ship::ConsoleVariable> cvars, std::shared_ptr<Ship::Window> window,
+                 std::vector<std::string> names)
+        : Ship::GuiMenuBar(std::move(cvars), window, "gOpenMenuBar", false), mWindow(std::move(window)),
+          mNames(std::move(names)) {
     }
 
   protected:
@@ -36,10 +38,10 @@ class DebugMenuBar : public Ship::GuiMenuBar {
             return;
         }
         if (ImGui::BeginMenu("Debug")) {
-            for (const char* name : { "Console", "Stats", "Gfx Debugger" }) {
+            for (const std::string& name : mNames) {
                 auto guiWindow = mWindow->GetGui()->GetGuiWindow(name);
 
-                if (guiWindow != nullptr && ImGui::MenuItem(name, nullptr, guiWindow->IsVisible())) {
+                if (guiWindow != nullptr && ImGui::MenuItem(name.c_str(), nullptr, guiWindow->IsVisible())) {
                     guiWindow->ToggleVisibility();
                 }
             }
@@ -50,14 +52,18 @@ class DebugMenuBar : public Ship::GuiMenuBar {
 
   private:
     std::shared_ptr<Ship::Window> mWindow;
+    std::vector<std::string> mNames; // the program's windows, then LibUltraShip's three
 };
 
 } // namespace
 
-void AddDebugMenu(const std::shared_ptr<Fast::Fast3dWindow>& window) {
+void AddDebugMenu(const std::shared_ptr<Fast::Fast3dWindow>& window, std::vector<std::string> extraWindows) {
     auto cvars = window->GetContext()->GetChildren().GetFirst<Ship::ConsoleVariable>();
 
-    window->GetGui()->SetMenuBar(std::make_shared<DebugMenuBar>(cvars, window));
+    for (const char* name : { "Console", "Stats", "Gfx Debugger" }) {
+        extraWindows.push_back(name);
+    }
+    window->GetGui()->SetMenuBar(std::make_shared<DebugMenuBar>(cvars, window, std::move(extraWindows)));
 }
 
 // The Gfx Debugger window's Debug button only asks for a frame (GfxDebugger::RequestDebugging). The program answers by

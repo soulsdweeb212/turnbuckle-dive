@@ -159,11 +159,10 @@ void PutChunk(std::vector<uint8_t>* out, const char type[4], const std::vector<u
 // that says whether it is the last, then its length and the length's complement, then its bytes; an Adler-32
 // checksum of all the bytes ends it.
 bool SavePicturePng(const Picture& pic, const char* path) {
-    std::vector<uint8_t> rows;
+    std::vector<uint8_t> rgb;
     for (uint32_t y = 0; y < pic.h; y++) {
         uint32_t row = pic.topDown ? y : pic.h - 1 - y;
 
-        rows.push_back(0);
         for (uint32_t x = 0; x < pic.w; x++) {
             uint16_t px = pic.px[row * pic.w + x];
 
@@ -171,9 +170,18 @@ bool SavePicturePng(const Picture& pic, const char* path) {
             for (uint32_t shift : { 11u, 6u, 1u }) {
                 uint32_t channel = (uint32_t)(px >> shift) & 0x1F;
 
-                rows.push_back((uint8_t)((channel << 3) | (channel >> 2)));
+                rgb.push_back((uint8_t)((channel << 3) | (channel >> 2)));
             }
         }
+    }
+    return SaveRgbPng(rgb, pic.w, pic.h, path);
+}
+
+bool SaveRgbPng(const std::vector<uint8_t>& rgb, uint32_t w, uint32_t h, const char* path) {
+    std::vector<uint8_t> rows;
+    for (uint32_t y = 0; y < h; y++) {
+        rows.push_back(0); // the row's filter: none
+        rows.insert(rows.end(), rgb.begin() + (std::ptrdiff_t)(y * w * 3), rgb.begin() + (std::ptrdiff_t)((y + 1) * w * 3));
     }
 
     std::vector<uint8_t> zlib = { 0x78, 0x01 };
@@ -199,8 +207,8 @@ bool SavePicturePng(const Picture& pic, const char* path) {
     PutBe32(&zlib, (b << 16) | a);
 
     std::vector<uint8_t> header;
-    PutBe32(&header, pic.w);
-    PutBe32(&header, pic.h);
+    PutBe32(&header, w);
+    PutBe32(&header, h);
     header.insert(header.end(), { 8, 2, 0, 0, 0 }); // 8 bits per channel, RGB, the standard compression and filters,
                                                      // not interlaced
 

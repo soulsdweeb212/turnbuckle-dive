@@ -86,6 +86,10 @@ function(td_game_code target)
         # The game has its own sinf and cosf, which port.h renames n64_sinf and n64_cosf so that they give the N64's
         # results; as a second guard, the compiler must not compute sinf or cosf itself.
         -fno-builtin-sinf -fno-builtin-cosf
+        # Every local variable starts as zero. A few game functions read a local before they set it (clang's
+        # -Wsometimes-uninitialized names 7 in the developer program), and the N64 then reads whatever its stack held;
+        # with zeros the PC gives the same result on every run, so two runs of a match can be compared.
+        -ftrivial-auto-var-init=zero
         # A call to a function that has no declaration: the compiler would take its result as a 32-bit int, which cuts
         # a returned 64-bit pointer in half.
         -Werror=implicit-function-declaration
@@ -94,6 +98,9 @@ function(td_game_code target)
         # A pointer cast to a smaller integer, or such an integer cast to a pointer: on the N64 both are 32 bits, on a
         # 64-bit PC the pointer would lose its upper half.
         -Werror=pointer-to-int-cast -Werror=int-to-pointer-cast)
+    # In a Debug build, the debug information also holds the game's macros, so a debugger knows names such as
+    # WR_FLAG_LEGAL (in VS Code's Watch, D_800F9D10[0].flags & WR_FLAG_LEGAL).
+    target_compile_options(${target} PRIVATE $<$<CONFIG:Debug>:-g3>)
     if(TD_SANITIZE)
         # The game reaches many variables through a label and an offset past it (a joint array that starts at a
         # one-float label, a record's field label plus a stride), and on PC those labels sit at their N64 offsets
@@ -302,7 +309,13 @@ if(TARGET td_game_all)
     # with --dev-match runs a match (src/dev/dev_match.c). It links those files themselves rather than td_resources,
     # whose td_game holds some of the same files, so src/resources.c is compiled into it directly. The linker options
     # give some functions their old names (game_vars_link.txt); Linux keeps sqrtf in libm.
-    target_sources(turnbuckle-dive PRIVATE src/resources.c src/dev/dev_match.c $<TARGET_OBJECTS:td_game_all>)
+    # src/dev/dev_records.c reads the game's records by their types, so it is compiled with the game's settings.
+    add_library(td_dev_records OBJECT src/dev/dev_records.c)
+    td_game_code(td_dev_records)
+    target_include_directories(td_dev_records PRIVATE src/dev)
+    target_compile_options(td_dev_records PRIVATE -Wall -Wextra)
+    target_sources(turnbuckle-dive PRIVATE src/resources.c src/dev/dev_match.c $<TARGET_OBJECTS:td_dev_records>
+                   $<TARGET_OBJECTS:td_game_all>)
     target_link_libraries(turnbuckle-dive PRIVATE td_game_functions td_game_sdk $<$<PLATFORM_ID:Linux>:m>)
     target_link_options(turnbuckle-dive PRIVATE ${TD_VARS_LINK_OPTIONS})
     target_compile_definitions(turnbuckle-dive PRIVATE TD_GAME_CODE TD_DEV_MATCH)
@@ -358,6 +371,57 @@ if(BUILD_TESTING)
             PASS_REGULAR_EXPRESSION "FAIL: the digest of the 7657 resources of .* is [0-9a-f]+, expected")
 
         if(TARGET td_game_all)
+            # The developer match (src/dev/dev_match.c) checks the G6 gate itself and exits with 1 when a check fails:
+            # the match ends in phase 4 and never past it, within 20000 frames, its first loads are resources 0x126 to
+            # 0x12A, and no frame takes 3 seconds. It runs twice and writes the wrestler log both times;
+            # dev_match_repeatable then compares the two logs with tools/wr_log.py, frame by frame, and
+            # dev_match_detects_change compares the first with a run whose random seed starts elsewhere, which must
+            # differ (it shows that the comparison sees a different match). Without a ROM all four are skipped (77).
+            set(td_wrlog ${CMAKE_BINARY_DIR}/dev_match)
+            add_test(NAME dev_match COMMAND turnbuckle-dive --dev-match --headless --wr-log ${td_wrlog}_a.wrlog)
+            add_test(NAME dev_match_again COMMAND turnbuckle-dive --dev-match --headless --wr-log ${td_wrlog}_b.wrlog)
+            add_test(NAME dev_match_other_seed
+                COMMAND turnbuckle-dive --dev-match --headless --seed 0x1234567 --wr-log ${td_wrlog}_c.wrlog)
+            set_tests_properties(dev_match dev_match_again dev_match_other_seed PROPERTIES
+                SKIP_RETURN_CODE 77 FIXTURES_SETUP dev_match_logs)
+            add_test(NAME dev_match_repeatable
+                COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tools/wr_log.py diff ${td_wrlog}_a.wrlog
+                        ${td_wrlog}_b.wrlog)
+            add_test(NAME dev_match_detects_change
+                COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tools/wr_log.py diff ${td_wrlog}_a.wrlog
+                        ${td_wrlog}_c.wrlog)
+            set_tests_properties(dev_match_repeatable dev_match_detects_change PROPERTIES
+                SKIP_RETURN_CODE 77 FIXTURES_REQUIRED dev_match_logs)
+            set_tests_properties(dev_match_detects_change PROPERTIES PASS_REGULAR_EXPRESSION "differs")
+
+            # The debug kit, checked without a person (docs/GAME_CODE.md, "Debugging the match"). With gdb and a Debug
+            # build: gdb_knows_game_macros prints WR_FLAG_LEGAL, which needs the game's macros in the debug information
+            # (-g3, td_game_code); gdb_prints_wrestlers loads tools/gdb/wrestler.py and prints a wrestler record as one
+            # line, and a state by its name from the enum TdWrState. Both read the program file; neither runs it.
+            find_program(TD_GDB gdb)
+            if(TD_GDB AND CMAKE_BUILD_TYPE STREQUAL "Debug")
+                add_test(NAME gdb_knows_game_macros
+                    COMMAND ${TD_GDB} -batch -nx -ex "list dev_records_read" -ex "print WR_FLAG_LEGAL"
+                            $<TARGET_FILE:turnbuckle-dive>)
+                set_tests_properties(gdb_knows_game_macros PROPERTIES PASS_REGULAR_EXPRESSION "[$]1 = 512")
+                add_test(NAME gdb_prints_wrestlers
+                    COMMAND ${TD_GDB} -batch -nx -ex "source ${PROJECT_SOURCE_DIR}/tools/gdb/wrestler.py"
+                            -ex "print D_800F9D10[2]" -ex "print (enum TdWrState)0x45" $<TARGET_FILE:turnbuckle-dive>)
+                set_tests_properties(gdb_prints_wrestlers PROPERTIES
+                    PASS_REGULAR_EXPRESSION "wrestler 0: char 0x000, state 00 prematch.*TD_WR_TIED_UP")
+            endif()
+            if(TD_SANITIZE)
+                # A planted read past the end of the wrestler records must be reported, with its line
+                # (tests/sanitizer/main.c). It passes on the report, so it is left out of the rule at the end of this
+                # file that fails a test on any sanitizer report.
+                add_executable(test_sanitizer tests/sanitizer/main.c)
+                target_link_libraries(test_sanitizer PRIVATE td_game_vars)
+                td_strict(test_sanitizer)
+                add_test(NAME sanitizer_catches_overflow COMMAND test_sanitizer)
+                set_tests_properties(sanitizer_catches_overflow PROPERTIES
+                    PASS_REGULAR_EXPRESSION "global-buffer-overflow.*tests/sanitizer/main.c:14")
+            endif()
+
             # Every game file of the developer program linked with the game's variables and the SDK stand-ins, and a
             # check that the variables start as on the N64 (tests/game_vars/main.c says what it checks). The link
             # itself is the first check: it fails on any name a game file uses and the port lacks. Linux keeps the
@@ -404,6 +468,14 @@ if(TD_BUILD_HELLO)
     add_executable(hello hello/main.cpp)
     target_link_libraries(hello PRIVATE td_window)
     td_strict(hello)
+
+    if(TARGET td_game_all)
+        # The developer match's window, the Match Inspector (src/dev/inspector.cpp): turnbuckle-dive --dev-match opens
+        # it unless --headless is given. It needs LibUltraShip, so it comes with td_window.
+        target_sources(turnbuckle-dive PRIVATE src/dev/inspector.cpp)
+        target_link_libraries(turnbuckle-dive PRIVATE td_window)
+        target_compile_definitions(turnbuckle-dive PRIVATE TD_INSPECTOR)
+    endif()
 
     if(TD_GAME_CODE)
         # The asset viewer (docs/VIEWER.md): it draws a model, an effect sprite and a picture from the ROM with the
@@ -458,6 +530,7 @@ endif()
 # come last, after every add_test.
 if(BUILD_TESTING)
     get_directory_property(TD_TESTS TESTS)
+    list(REMOVE_ITEM TD_TESTS sanitizer_catches_overflow)
     set_tests_properties(${TD_TESTS} PROPERTIES
         FAIL_REGULAR_EXPRESSION "AddressSanitizer|LeakSanitizer|UndefinedBehaviorSanitizer|runtime error:")
 endif()
