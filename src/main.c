@@ -102,7 +102,7 @@ int main(int argc, char **argv) {
     unsigned capture_frames[64];
     unsigned capture_count = 0;
 #ifdef TD_DEV_MATCH
-    DevMatchOptions match_options = { NULL, NULL, 0, 0, 0, NULL, NULL, 0, 0 };
+    DevMatchOptions match_options = { NULL, NULL, 0, 0, 0, NULL, NULL, 0, 0, 0, NULL, NULL, 0, 0, NULL, 0, 0 };
 #endif
     RomStatus status;
     Rom rom;
@@ -138,6 +138,22 @@ int main(int argc, char **argv) {
             screenshot = argv[++i];
         } else if (strcmp(argv[i], "--screenshot-frame") == 0 && i + 1 < argc) {
             screenshot_frame = (unsigned)strtoul(argv[++i], NULL, 0);
+        } else if (strcmp(argv[i], "--players") == 0 && i + 1 < argc) {
+            match_options.players = atoi(argv[++i]) > 0 ? 1 : 0;
+        } else if (strcmp(argv[i], "--time-limit") == 0 && i + 1 < argc) {
+            int minutes = atoi(argv[++i]);
+            match_options.time_limit = minutes == 0 ? -1 : minutes;
+        } else if (strcmp(argv[i], "--matches") == 0 && i + 1 < argc) {
+            match_options.matches = atoi(argv[++i]);
+        } else if (strcmp(argv[i], "--record-pads") == 0 && i + 1 < argc) {
+            match_options.record_pads = argv[++i];
+        } else if (strcmp(argv[i], "--replay-pads") == 0 && i + 1 < argc) {
+            match_options.replay_pads = argv[++i];
+        } else if (strcmp(argv[i], "--pad-script") == 0 && i + 1 < argc) {
+            match_options.pad_script = argv[++i];
+        } else if (strcmp(argv[i], "--pad-bot") == 0 && i + 1 < argc) {
+            match_options.has_pad_bot = 1;
+            match_options.pad_bot_seed = (uint32_t)strtoul(argv[++i], NULL, 0);
         } else if (strcmp(argv[i], "--no-idle-randoms") == 0) {
             match_options.no_idle_randoms = 1;
         } else if (strcmp(argv[i], "--capture-match-frames") == 0 && i + 2 < argc) {
@@ -167,7 +183,7 @@ int main(int argc, char **argv) {
         } else if (strncmp(argv[i], "--", 2) == 0 || rom_arg != NULL) {
             fprintf(stderr, "Usage: turnbuckle-dive [--res ID | --dev-match [--headless] [--wr-log FILE] [--res-log FILE] [--seed N] "
                             "[--no-watchdog] "
-                            "[--hide-group N]... [--screenshot FILE [--screenshot-frame N | --screenshot-every N]] [--dump-frame N FILE] [--no-idle-randoms] [--capture-match-frames N,N,... DIR]] [ROM]\n");
+                            "[--hide-group N]... [--screenshot FILE [--screenshot-frame N | --screenshot-every N]] [--dump-frame N FILE] [--no-idle-randoms] [--capture-match-frames N,N,... DIR] [--players 0|1] [--time-limit MINUTES] [--matches N] [--record-pads FILE] [--replay-pads FILE] [--pad-script FILE] [--pad-bot SEED]] [ROM]\n");
             return 1;
         } else {
             rom_arg = argv[i];

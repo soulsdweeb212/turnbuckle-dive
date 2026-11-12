@@ -306,6 +306,54 @@ without a depth buffer, so that order alone decides which object covers which.
 The inspector only reads the game's records, through `src/dev/dev_records.c`, which is compiled with the game's
 settings. It runs inside the game's frame hand-off, on the game's thread, while the game waits, so the two never clash.
 
+### Playing the match
+
+`--players 1` puts Sting on controller 1, against the CPU's Hogan:
+
+```
+./build/debug/turnbuckle-dive --dev-match --players 1
+```
+
+The controllers come from LibUltraShip's control deck, read once a frame just before the game reads its pads.
+Controller 1 starts with Turnbuckle Dive's own defaults (`src/context.cpp`), which take the place of LibUltraShip's:
+
+| N64 | Keyboard | Gamepad (Xbox names) |
+|---|---|---|
+| stick | arrow keys | right stick |
+| d-pad | W A S D (up, left, down, right) | left stick, and the d-pad |
+| A, B | H, Y | A, X |
+| C up, down, left, right | I, K, J, L | Y, B, LB, RB |
+| L, R, Z | U, O, Z | LT, RT, View |
+| Start | space bar | Menu |
+
+LibUltraShip uses the defaults while the settings file (`turnbuckle-dive.cfg.json` in the build folder) holds no
+mapping of its own, and when its input editor resets a controller; F1, Debug, Input Editor changes the mapping, and
+the settings file then keeps the change.
+
+The match can also be played without anyone at the keyboard, and the same way every time:
+
+- `--record-pads FILE` saves every pad read, in the order the game makes them, with the frame of each.
+  `--replay-pads FILE` gives the game those reads again, so the match plays the same, frame for frame.
+- `--pad-script FILE` presses buttons at given frames: lines `FRAME BUTTONS [FRAMES]`, the buttons joined with `+`
+  (A, B, Z, START, L, R, DUP, DDOWN, DLEFT, DRIGHT, CUP, CDOWN, CLEFT, CRIGHT), held for FRAMES frames (1 if left out),
+  the frames counted from the match's first frame hand-off. `tests/pads/restart.txt` pauses and chooses the pause
+  menu's restart.
+- `--pad-bot SEED` moves the stick and presses buttons from a seeded random sequence (never Start). A script or the
+  bot also gets the A that the results screen waits for, as a CPU-against-CPU match does.
+- `--time-limit MINUTES` sets the limit: 5 by default, 10, 15, 30 or 60, or 0 for none, when the match ends only by a
+  fall, a submission, a count-out and the like. When it is over, the developer match prints how the wrestlers stand
+  (for a pinfall, one of them "pinned").
+- `--matches N` plays N matches one after the other. Before each match after the first, overlay 2 is loaded afresh,
+  as the N64's boot loop does, the settings are written again (a match writes the end health into them), and the
+  random seed and the pads start again from the first match's start. Match n's wrestler log is the `--wr-log` file
+  with `.n` after it. Each later match plays as the first, but for the joints in its first entry: the game copies
+  them from the scene's objects, which keep the last match's poses, on the N64 too (`tools/wr_log.py diff A B
+  --from 1` leaves that entry out).
+
+The pause menu (Start) can restart the match: overlay 2 then runs the match again without being loaded afresh, as on
+the N64, and the developer match says so ("the match started again"). The match frame `D_800E2FAC` counts on through
+a restart.
+
 ### Options
 
 | Option | What it does |
@@ -318,6 +366,11 @@ settings. It runs inside the game's frame hand-off, on the game's thread, while 
 | `--screenshot-every N` | with `--screenshot PREFIX`: saves the window every N frames, as PREFIX-NNNNN.png |
 | `--hide-group N` | does not draw draw group N (as the inspector's switches); may be given more than once |
 | `--dump-frame N FILE` | writes every drawing command of frame N to FILE |
+| `--players 1` | Sting is played on controller 1 ("Playing the match"); 0, the default, is CPU against CPU |
+| `--record-pads FILE`, `--replay-pads FILE` | save every pad read, or give the game the reads of such a file |
+| `--pad-script FILE`, `--pad-bot SEED` | controller 1 from a script of presses, or from the pad bot |
+| `--time-limit MINUTES` | 5 by default; 10, 15, 30, 60, or 0 for none |
+| `--matches N` | plays N matches one after the other, each as the first |
 | `--no-idle-randoms` | draws no random numbers in place of the N64's idle thread ("Comparing with the original game") |
 | `--capture-match-frames N,N,... DIR` | at each of those match frames, saves the window as DIR/port_NNNNN.png and the display list as DIR/port_NNNNN.txt |
 | `--no-watchdog` | no watchdog (the VS Code entries use it, so that stepping in the debugger is not taken for a hang) |
@@ -398,11 +451,17 @@ the four wrestler records, and for a list of match frames the display lists and 
    back to the N64's memory whole. Copy the script into Project64's `Scripts` folder and make it run at start
    (`Autorun Scripts=td_lockstep.js` under `[Debugger]` in `Config/Project64.cfg`), then open the ROM. The script
    writes into `C:/n64/out/lockstep/` and, a little after the match ends, writes `done.txt` and pauses the emulator.
-   Take the autorun line out again afterwards: with it, the game always skips its menus.
+   Take the autorun line out again afterwards: with it, the game always skips its menus. A `config.json` in that
+   folder sets the match, `{"players": 1, "timeLimit": 0, "pads": "FILE", "capture": [30, 300]}`: Sting on
+   controller 1, the time limit (an index of the game's table: 0 none, 1 five minutes), a pad file of the port's
+   `--record-pads` in the same folder, whose controller 1 the script writes into the game's pad buffer at each read
+   (just after `osContGetReadData`, at `0x80003F08`), and the match frames to capture. Without it, the match is CPU
+   against CPU, with the default capture.
 2. The port, the same match, its records and the same frames:
 
    ```
    ./build/debug/turnbuckle-dive --dev-match --headless --no-idle-randoms --wr-log build/debug/port.wrlog
+   ./build/debug/turnbuckle-dive --dev-match --headless --no-idle-randoms --players 1 --pad-bot 4 --time-limit 0 --record-pads build/debug/bot4.pads --wr-log build/debug/port.wrlog
    ./build/debug/turnbuckle-dive --dev-match --no-idle-randoms --capture-match-frames 29,30,31,299,300,301 build/debug/lists
    ./build/debug/turnbuckle-dive --dev-match --no-idle-randoms --hide-group 5 --capture-match-frames 29,30,31,299,300,301 build/debug/pictures
    ```

@@ -3,9 +3,11 @@ match"): one snapshot of the four wrestler records at every frame of a match.
 
     python3 tools/wr_log.py show FILE [--every N]   prints each wrestler's state, health and position every N frames
                                                     (default 300)
-    python3 tools/wr_log.py diff A B                compares two logs: prints "the same" and exits with 0, or names the
+    python3 tools/wr_log.py diff A B [--from N]     compares two logs: prints "the same" and exits with 0, or names the
                                                     first frame, wrestler and field where they differ and exits with 1;
-                                                    exits with 77 when a log is missing (its run was skipped)
+                                                    exits with 77 when a log is missing (its run was skipped). --from N
+                                                    starts at the Nth entry (0 is the first): a second match's first
+                                                    entry holds the joints the last match left (docs/GAME_CODE.md)
 
 The format, in the PC's byte order (src/dev/dev_match.c writes it): "TDWRLOG1"; u32 record size, u32 number of
 records, u32 number of fields; for each field u16 name length, the name, u32 offset, u32 size; then for every frame
@@ -73,7 +75,7 @@ def show(path, every):
         print('frame %5d  match %5d  phase %d  |  %s' % (frame, match, phase, '  |  '.join(parts)))
 
 
-def diff(path_a, path_b):
+def diff(path_a, path_b, start=0):
     import os
     for path in (path_a, path_b):
         if not os.path.exists(path):
@@ -84,7 +86,7 @@ def diff(path_a, path_b):
     if (a.record_size, a.records, a.fields) != (b.record_size, b.records, b.fields):
         print('the two logs describe different records (made by different builds)')
         return 1
-    for i in range(min(a.frames, b.frames)):
+    for i in range(start, min(a.frames, b.frames)):
         fa, fb = a.frame(i), b.frame(i)
         if fa == fb:
             continue
@@ -106,7 +108,7 @@ def diff(path_a, path_b):
         print('the same for %d frames, then one log ends (%d / %d frames)' % (min(a.frames, b.frames), a.frames,
                                                                              b.frames))
         return 1
-    print('the same: %d frames' % a.frames)
+    print('the same: %d frames%s' % (a.frames - start, ' from entry %d' % start if start else ''))
     return 0
 
 
@@ -115,8 +117,9 @@ def main(argv):
         every = int(argv[argv.index('--every') + 1]) if '--every' in argv else 300
         show(argv[1], every)
         return 0
-    if len(argv) == 3 and argv[0] == 'diff':
-        return diff(argv[1], argv[2])
+    if len(argv) in (3, 5) and argv[0] == 'diff':
+        start = int(argv[4]) if len(argv) == 5 and argv[3] == '--from' else 0
+        return diff(argv[1], argv[2], start)
     print(__doc__.split('\n\n')[1], file=sys.stderr)
     return 2
 

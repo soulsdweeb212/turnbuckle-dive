@@ -57,6 +57,13 @@ different after any change; a digest is such a fingerprint taken over many piece
 | `dev_match_other_seed` | The same with the random seed started elsewhere, a different match, into a third log. |
 | `dev_match_repeatable` | `tools/wr_log.py` compares the first two logs, every wrestler at every frame: they must be the same. |
 | `dev_match_detects_change` | The same comparison of the first log with the other seed's. This test passes when the tool reports where they differ, which shows that the comparison sees a different match. |
+| `dev_match_pads_record` | Sting played by the pad bot (seed 7), every pad read saved to a pad file, and the wrestler log written ([GAME_CODE.md](GAME_CODE.md), "Playing the match"). |
+| `dev_match_pads_replay` | The same match from the pad file, into a second log. |
+| `dev_match_pads_replay_same` | The two logs must be the same, frame for frame. |
+| `dev_match_two_matches` | Two matches one after the other, each with its log. |
+| `dev_match_two_matches_same` | The second match's log must equal the first's, from its second entry on. |
+| `dev_match_pause_restart` | A pad script pauses the match and chooses the pause menu's restart: the match must start again and end. |
+| `dev_match_pinfall` | The pad bot (seed 4), no time limit: the match must end with a wrestler pinned. |
 | `game_vars` | Every game file of the developer program links with the game's variables, and the variables start as on the N64: each value in the PC's byte order equals the ROM's, each address table holds what its N64 addresses name, and each handler table entry is the function the N64 calls. |
 | `game_vars_detects_change` | The same with one value left in the N64's byte order. This test passes when the check reports it. |
 | `gdb_knows_game_macros` | gdb, reading `turnbuckle-dive`, prints the game's macro `WR_FLAG_LEGAL`: the debug information holds the game's macros. Only in a Debug build, with gdb installed. |
@@ -66,7 +73,7 @@ different after any change; a digest is such a fingerprint taken over many piece
 | `viewer_reference` | `tools/viewer_ref.py` works out from your ROM, without the game's code, what the asset viewer must build and draw, and writes it to `build/debug/viewer_ref.json`: the reference. |
 | `viewer_check` | The asset viewer builds its three subjects (a wrestler's head from its three parts, an effect sprite and a 2D picture) with the game's code and compares them with the reference: first the vertices and triangles of each of the head's parts, and the camera placed over them, then every pixel of each picture. Between the head's two sides Fast3D draws at another resolution, as when someone stretches the window. Last, the picture's palette is changed in memory, and the picture must be drawn in the new colours. Its window opens, draws and closes by itself. |
 
-Near the end, CTest prints how many passed, `100% tests passed, 0 tests failed out of 19` (20 in the asan and order presets), and
+Near the end, CTest prints how many passed, `100% tests passed, 0 tests failed out of 26` (27 in the asan and order presets), and
 then the time the tests took. The tests from `rom_loader` on, but for the two gdb tests, need your ROM. When they find none, CTest marks them `***Skipped` instead of `Passed`, still
 counts them in that line, and names them at the very end, under `The following tests did not run:`.
 

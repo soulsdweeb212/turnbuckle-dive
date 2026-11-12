@@ -32,7 +32,9 @@
 #include "fast/interpreter.h"
 #include "frame.h"
 #include "game_sdk.h"
+#include "libultraship/controller/controldeck/ControlDeck.h"
 #include "libultraship/libultraship.h"
+#include "libultraship/window/gui/InputEditorWindow.h"
 #include "ship/config/ConsoleVariable.h"
 #include "ship/core/Context.h"
 #include "ship/debug/Console.h"
@@ -420,9 +422,25 @@ extern "C" int dev_inspector_start(void) {
     auto cvars = gLus.ctx->GetChildren().GetFirst<Ship::ConsoleVariable>();
     gLus.window->GetGui()->AddGuiWindow(std::make_shared<MatchInspector>(
         cvars, gLus.window, "gMatchInspectorShown", false, "Match Inspector", ImVec2(560, 520), ImGuiWindowFlags_None));
-    td::AddDebugMenu(gLus.window, { "Match Inspector" });
+    gLus.window->GetGui()->AddGuiWindow(std::make_shared<LUS::InputEditorWindow>(
+        "gInputEditorShown", "Input Editor", gLus.ctx->GetChildren().GetFirst<LUS::ControlDeck>(), gLus.window));
+    td::AddDebugMenu(gLus.window, { "Match Inspector", "Input Editor" });
     AddConsoleCommands();
     return 0;
+}
+
+// The controllers, as LibUltraShip's control deck maps them (keyboard or gamepad; F1, Debug, Input Editor changes the
+// mapping), read once a frame just before the game goes on, so the game's pad reads of the next frame see them.
+void ReadPads() {
+    auto deck = gLus.ctx->GetChildren().GetFirst<LUS::ControlDeck>();
+    OSContPad pads[MAXCONTROLLERS] = {};
+
+    if (deck != nullptr) {
+        deck->WriteToPad(pads);
+    }
+    for (int i = 0; i < 4 && i < MAXCONTROLLERS; i++) {
+        dev_match_set_pad(i, static_cast<uint16_t>(pads[i].button & 0xFFFF), pads[i].stick_x, pads[i].stick_y);
+    }
 }
 
 extern "C" void dev_inspector_frame(void* user) {
@@ -439,6 +457,7 @@ extern "C" void dev_inspector_frame(void* user) {
     if (gControl.step > 0) {
         gControl.step--;
     }
+    ReadPads();
 }
 
 extern "C" void dev_inspector_stop(void) {

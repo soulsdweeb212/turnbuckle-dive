@@ -411,6 +411,43 @@ if(BUILD_TESTING)
             set_tests_properties(dev_match_repeatable dev_match_detects_change PROPERTIES
                 SKIP_RETURN_CODE 77 FIXTURES_REQUIRED dev_match_logs)
             set_tests_properties(dev_match_detects_change PROPERTIES PASS_REGULAR_EXPRESSION "differs")
+
+            # G8 (docs/GAME_CODE.md, "Playing the match"): Sting played on controller 1 by the pad bot, every pad read
+            # recorded, then replayed into a second run whose wrestler log must equal the first's; two matches in a
+            # row, the second as the first (but for the joints its first entry holds, which the last match left);
+            # the pause menu's restart, by a pad script; and a match without a time limit that ends in a pinfall.
+            set(td_pads ${CMAKE_BINARY_DIR}/dev_match_bot.pads)
+            add_test(NAME dev_match_pads_record
+                COMMAND turnbuckle-dive --dev-match --headless --players 1 --pad-bot 7 --record-pads ${td_pads}
+                        --wr-log ${td_wrlog}_bot_a.wrlog)
+            add_test(NAME dev_match_pads_replay
+                COMMAND turnbuckle-dive --dev-match --headless --players 1 --replay-pads ${td_pads}
+                        --wr-log ${td_wrlog}_bot_b.wrlog)
+            add_test(NAME dev_match_pads_replay_same
+                COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tools/wr_log.py diff ${td_wrlog}_bot_a.wrlog
+                        ${td_wrlog}_bot_b.wrlog)
+            set_tests_properties(dev_match_pads_record PROPERTIES SKIP_RETURN_CODE 77 FIXTURES_SETUP dev_match_pads)
+            set_tests_properties(dev_match_pads_replay PROPERTIES SKIP_RETURN_CODE 77 FIXTURES_REQUIRED dev_match_pads
+                                 FIXTURES_SETUP dev_match_pads_replayed)
+            set_tests_properties(dev_match_pads_replay_same PROPERTIES SKIP_RETURN_CODE 77
+                                 FIXTURES_REQUIRED "dev_match_pads;dev_match_pads_replayed")
+            add_test(NAME dev_match_two_matches
+                COMMAND turnbuckle-dive --dev-match --headless --matches 2 --wr-log ${td_wrlog}_two.wrlog)
+            add_test(NAME dev_match_two_matches_same
+                COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tools/wr_log.py diff ${td_wrlog}_two.wrlog
+                        ${td_wrlog}_two.wrlog.2 --from 1)
+            set_tests_properties(dev_match_two_matches PROPERTIES SKIP_RETURN_CODE 77 FIXTURES_SETUP dev_match_two)
+            set_tests_properties(dev_match_two_matches_same PROPERTIES SKIP_RETURN_CODE 77
+                                 FIXTURES_REQUIRED dev_match_two)
+            add_test(NAME dev_match_pause_restart
+                COMMAND turnbuckle-dive --dev-match --headless --players 1
+                        --pad-script ${PROJECT_SOURCE_DIR}/tests/pads/restart.txt)
+            set_tests_properties(dev_match_pause_restart PROPERTIES SKIP_RETURN_CODE 77
+                PASS_REGULAR_EXPRESSION "started again at frame [0-9]+.*\n(.*\n)*dev-match: passed")
+            add_test(NAME dev_match_pinfall
+                COMMAND turnbuckle-dive --dev-match --headless --players 1 --pad-bot 4 --time-limit 0)
+            set_tests_properties(dev_match_pinfall PROPERTIES SKIP_RETURN_CODE 77
+                PASS_REGULAR_EXPRESSION "state 39 \\(pinned\\).*\n(.*\n)*dev-match: passed")
             if(TD_ORDER_CHECK)
                 # The byte-order check finds no read whose value differs from the N64's in the default match
                 # (docs/TESTING.md, "The byte-order check"). About a minute: every access of the game's code is checked.

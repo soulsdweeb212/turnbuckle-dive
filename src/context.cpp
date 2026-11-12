@@ -19,6 +19,7 @@
 #include "frame.h"
 #include "libultraship/bridge/UltraBridge.h"
 #include "libultraship/controller/controldeck/ControlDeck.h"
+#include "libultraship/controller/controldevice/controller/mapping/ControllerDefaultMappings.h"
 #include "libultraship/libultraship.h"
 #include "ship/audio/Audio.h"
 #include "ship/config/Config.h"
@@ -74,6 +75,76 @@ bool WindowOpened(const char* program, const std::shared_ptr<Fast::Fast3dWindow>
         return false;
     }
     return true;
+}
+
+// The names of the N64's buttons, as LibUltraShip's own control deck gives them; its input editor shows them.
+std::unordered_map<CONTROLLERBUTTONS_T, std::string> ButtonNames() {
+    return { { BTN_A, "A" },          { BTN_B, "B" },           { BTN_L, "L" },          { BTN_R, "R" },
+             { BTN_Z, "Z" },          { BTN_START, "Start" },   { BTN_CLEFT, "CLeft" },  { BTN_CRIGHT, "CRight" },
+             { BTN_CUP, "CUp" },      { BTN_CDOWN, "CDown" },   { BTN_DLEFT, "DLeft" },  { BTN_DRIGHT, "DRight" },
+             { BTN_DUP, "DUp" },      { BTN_DDOWN, "DDown" } };
+}
+
+// Controller 1's defaults, until the settings file holds mappings of its own (LibUltraShip uses these only then; the
+// input editor changes them, and the settings file then keeps the changes).
+// - Keyboard: the arrow keys the stick, W A S D the d-pad (up, left, down, right), H A, Y B, U L, O R, Z Z, I J K L
+//   the C buttons (up, left, down, right), the space bar Start.
+// - Gamepad, by an Xbox controller's names (SDL's south, east, west and north buttons): the right stick the stick;
+//   the left stick and the d-pad both the d-pad; A A, X B, B C-down, Y C-up, LB C-left, RB C-right, LT L, RT R,
+//   Menu Start, View Z.
+// Every table is given: LibUltraShip fills an empty one with its own defaults.
+std::shared_ptr<LUS::ControllerDefaultMappings> DefaultMappings() {
+    using Ship::KbScancode;
+    std::unordered_map<CONTROLLERBUTTONS_T, std::unordered_set<KbScancode>> keys = {
+        { BTN_A, { KbScancode::LUS_KB_H } },          { BTN_B, { KbScancode::LUS_KB_Y } },
+        { BTN_L, { KbScancode::LUS_KB_U } },          { BTN_R, { KbScancode::LUS_KB_O } },
+        { BTN_Z, { KbScancode::LUS_KB_Z } },          { BTN_START, { KbScancode::LUS_KB_SPACE } },
+        { BTN_CUP, { KbScancode::LUS_KB_I } },        { BTN_CLEFT, { KbScancode::LUS_KB_J } },
+        { BTN_CDOWN, { KbScancode::LUS_KB_K } },      { BTN_CRIGHT, { KbScancode::LUS_KB_L } },
+        { BTN_DUP, { KbScancode::LUS_KB_W } },        { BTN_DLEFT, { KbScancode::LUS_KB_A } },
+        { BTN_DDOWN, { KbScancode::LUS_KB_S } },      { BTN_DRIGHT, { KbScancode::LUS_KB_D } },
+    };
+    std::unordered_map<Ship::StickIndex, std::vector<std::pair<Ship::Direction, KbScancode>>> keyStick = {
+        { Ship::LEFT_STICK,
+          { { Ship::UP, KbScancode::LUS_KB_ARROWKEY_UP },
+            { Ship::DOWN, KbScancode::LUS_KB_ARROWKEY_DOWN },
+            { Ship::LEFT, KbScancode::LUS_KB_ARROWKEY_LEFT },
+            { Ship::RIGHT, KbScancode::LUS_KB_ARROWKEY_RIGHT } } },
+    };
+    std::unordered_map<CONTROLLERBUTTONS_T, std::unordered_set<SDL_GamepadButton>> padButtons = {
+        { BTN_A, { SDL_GAMEPAD_BUTTON_SOUTH } },
+        { BTN_B, { SDL_GAMEPAD_BUTTON_WEST } },
+        { BTN_CDOWN, { SDL_GAMEPAD_BUTTON_EAST } },
+        { BTN_CUP, { SDL_GAMEPAD_BUTTON_NORTH } },
+        { BTN_CLEFT, { SDL_GAMEPAD_BUTTON_LEFT_SHOULDER } },
+        { BTN_CRIGHT, { SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER } },
+        { BTN_START, { SDL_GAMEPAD_BUTTON_START } },
+        { BTN_Z, { SDL_GAMEPAD_BUTTON_BACK } },
+        { BTN_DUP, { SDL_GAMEPAD_BUTTON_DPAD_UP } },
+        { BTN_DDOWN, { SDL_GAMEPAD_BUTTON_DPAD_DOWN } },
+        { BTN_DLEFT, { SDL_GAMEPAD_BUTTON_DPAD_LEFT } },
+        { BTN_DRIGHT, { SDL_GAMEPAD_BUTTON_DPAD_RIGHT } },
+    };
+    std::unordered_map<CONTROLLERBUTTONS_T, std::vector<std::pair<SDL_GamepadAxis, int32_t>>> padAxisButtons = {
+        { BTN_L, { { SDL_GAMEPAD_AXIS_LEFT_TRIGGER, 1 } } },
+        { BTN_R, { { SDL_GAMEPAD_AXIS_RIGHT_TRIGGER, 1 } } },
+        { BTN_DUP, { { SDL_GAMEPAD_AXIS_LEFTY, -1 } } },
+        { BTN_DDOWN, { { SDL_GAMEPAD_AXIS_LEFTY, 1 } } },
+        { BTN_DLEFT, { { SDL_GAMEPAD_AXIS_LEFTX, -1 } } },
+        { BTN_DRIGHT, { { SDL_GAMEPAD_AXIS_LEFTX, 1 } } },
+    };
+    std::unordered_map<Ship::StickIndex, std::vector<std::pair<Ship::Direction, std::pair<SDL_GamepadAxis, int32_t>>>>
+        padStick = {
+            { Ship::LEFT_STICK,
+              { { Ship::LEFT, { SDL_GAMEPAD_AXIS_RIGHTX, -1 } },
+                { Ship::RIGHT, { SDL_GAMEPAD_AXIS_RIGHTX, 1 } },
+                { Ship::UP, { SDL_GAMEPAD_AXIS_RIGHTY, -1 } },
+                { Ship::DOWN, { SDL_GAMEPAD_AXIS_RIGHTY, 1 } } } },
+        };
+    return std::make_shared<LUS::ControllerDefaultMappings>(
+        keys, keyStick, padButtons,
+        std::unordered_map<Ship::StickIndex, std::vector<std::pair<Ship::Direction, SDL_GamepadButton>>>(),
+        padAxisButtons, padStick);
 }
 
 } // namespace
@@ -169,7 +240,8 @@ LibUltraShip StartLibUltraShip(const char* program, bool withCrashHandler, int w
     }
     auto window = std::make_shared<Fast::Fast3dWindow>(config, cvars, nullptr);
     ctx->GetChildren().Add(window);
-    auto deck = std::make_shared<LUS::ControlDeck>(window, cvars);
+    auto deck = std::make_shared<LUS::ControlDeck>(std::vector<CONTROLLERBUTTONS_T>(), DefaultMappings(), ButtonNames(),
+                                                   window, cvars);
     ctx->GetChildren().Add(deck);
 
     auto audio = std::make_shared<Ship::Audio>(Ship::AudioSettings{}, config);

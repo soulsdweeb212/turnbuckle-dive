@@ -1,0 +1,8 @@
+# The pause menu's restart (docs/GAME_CODE.md, "Pad scripts"): controller 1 pauses the match, moves down to the
+# second item, chooses it, moves to "yes" and confirms. FRAME BUTTONS [FRAMES]; the frames count from the match's
+# first frame hand-off.
+600 START
+660 DDOWN
+700 A
+740 DUP
+780 A
