@@ -1,16 +1,16 @@
-// The Match Inspector: the developer match's window (docs/GAME_CODE.md, "The developer match"). The game draws no
-// picture yet, so the window shows the match as data: a table of the four wrestlers (state, animation, position,
-// health, spirit, who holds whom) and a map of the ring from above, live, 30 frames a second. It can pause the match,
-// run it one frame at a time and slow it down.
+// The developer match's window (docs/GAME_CODE.md, "The developer match"): the game's own picture, drawn by Fast3D
+// from the display lists the game builds, and over it the Match Inspector, which shows the match as data: a table of
+// the four wrestlers (state, animation, position, health, spirit, who holds whom) and a map of the ring from above,
+// live, 30 frames a second. It can pause the match, run it one frame at a time and slow it down.
 //
 // How it runs: the developer match calls dev_inspector_frame after each frame the game hands over (port_present), on
-// the game's own thread, while the game waits. It draws one window frame with LibUltraShip's GUI only (no game
-// picture: RunGuiOnly), or several in slow motion, and while paused keeps drawing without returning, so the game stays
-// where it is. The records are read through src/dev/dev_records.c, compiled with the game's settings; the inspector only
+// the game's own thread, while the game waits. It draws one window frame from the frame's display list, or several in
+// slow motion, and while paused keeps drawing the same list without returning, so the game stays where it is and the
+// memory the list points to does not change. The records are read through src/dev/dev_records.c, compiled with the game's settings; the inspector only
 // reads them.
 //
-// Keys, in the window: F6 pauses and resumes, F7 runs one frame and pauses, F8 changes the slow motion (1, 2, 4, 8
-// window frames per game frame). F1 shows the menu bar, whose Debug menu opens this window and LibUltraShip's Console,
+// Keys, in the window: F5 shows and hides the inspector, F6 pauses and resumes, F7 runs one frame and pauses, F8
+// changes the slow motion (1, 2, 4, 8 window frames per game frame). F1 shows the menu bar, whose Debug menu opens this window and LibUltraShip's Console,
 // Stats and Gfx Debugger. The console also takes the commands pause, step [frames] and slowmo [factor].
 #include "inspector.h"
 
@@ -29,7 +29,9 @@
 #include "dev_match.h"
 #include "dev_records.h"
 #include "fast/Fast3dWindow.h"
+#include "fast/interpreter.h"
 #include "frame.h"
+#include "game_sdk.h"
 #include "libultraship/libultraship.h"
 #include "ship/config/ConsoleVariable.h"
 #include "ship/core/Context.h"
@@ -51,6 +53,11 @@ Control gControl;
 td::LibUltraShip gLus;
 std::string gShotPath; // --screenshot: the file, and the game frame to take it at
 unsigned gShotFrame;
+std::string gShotPrefix; // --screenshot-every: the files' prefix, the interval, and the next frame to save
+unsigned gShotEvery;
+unsigned gShotNext;
+std::string gDumpPath; // --dump-frame: the frame, and the file to list its display list in
+unsigned gDumpFrame;
 
 // The colours of the four wrestlers, in the table's headers and on the ring map.
 const ImVec4 kSlotColour[DEV_WRESTLERS] = { { 1.0f, 0.85f, 0.2f, 1.0f },
@@ -80,6 +87,9 @@ class MatchInspector : public Ship::GuiWindow {
     // LibUltraShip calls this for every registered window at every window frame, shown or not, so the keys work with
     // the inspector closed too.
     void UpdateElement() override {
+        if (ImGui::IsKeyPressed(ImGuiKey_F5, false)) {
+            ToggleVisibility();
+        }
         if (ImGui::IsKeyPressed(ImGuiKey_F6, false)) {
             TogglePause();
         }
@@ -118,9 +128,81 @@ class MatchInspector : public Ship::GuiWindow {
 
         DrawTable(w);
         DrawRing(w);
+        ImGui::SameLine();
+        ImGui::BeginGroup();
+        DrawSwitches();
+        ImGui::EndGroup();
+        DrawOrder();
     }
 
   private:
+    // The draw groups, as the match uses them (seen by hiding each one at a time), and the switches that hide them.
+    // A switch takes effect from the next frame the game hands over: F7 shows it while paused.
+    static constexpr struct {
+        int group;
+        const char* what;
+    } kGroups[] = {
+        { 0, "arena: crowd, stage, signs" }, { 3, "ring posts and turnbuckles" }, { 4, "wrestlers and ropes" },
+        { 5, "HUD" },                        { 6, "ring mat" },
+    };
+
+    static void DrawSwitches() {
+        ImGui::TextUnformatted("Draw groups");
+        uint32_t mask = dev_match_hidden_groups();
+        for (const auto& g : kGroups) {
+            bool shown = !(mask & (1u << g.group));
+            if (ImGui::Checkbox((std::to_string(g.group) + ": " + g.what).c_str(), &shown)) {
+                mask = shown ? mask & ~(1u << g.group) : mask | (1u << g.group);
+                dev_match_hide_groups(mask);
+            }
+        }
+    }
+
+    // The scene's work blocks in the game's depth order (dev_records_draw_blocks): what decides which object covers
+    // which, since the match draws without a depth buffer.
+    static void DrawOrder() {
+        static DevDrawBlock blocks[512];
+        if (!ImGui::CollapsingHeader("Draw order (depth sort)")) {
+            return;
+        }
+        size_t n = dev_records_draw_blocks(blocks, 512);
+        n = std::min<size_t>(n, 512);
+        uint32_t mask = dev_match_hidden_groups();
+        ImGui::Text("%zu work blocks, farthest first", n);
+        if (!ImGui::BeginTable("order", 6,
+                               ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY,
+                               ImVec2(0.0f, 240.0f))) {
+            return;
+        }
+        ImGui::TableSetupScrollFreeze(0, 1);
+        for (const char* name : { "#", "group", "kind", "depth", "z", "drawn" }) {
+            ImGui::TableSetupColumn(name);
+        }
+        ImGui::TableHeadersRow();
+        ImGuiListClipper clipper;
+        clipper.Begin(static_cast<int>(n));
+        while (clipper.Step()) {
+            for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; i++) {
+                const DevDrawBlock& b = blocks[i];
+                ImGui::TableNextRow();
+                ImGui::TableNextColumn();
+                ImGui::Text("%d", i);
+                ImGui::TableNextColumn();
+                ImGui::Text("%u", b.group);
+                ImGui::TableNextColumn();
+                ImGui::TextUnformatted(b.mesh ? (b.flat ? "mesh 2D" : "mesh") : (b.flat ? "list 2D" : "list"));
+                ImGui::TableNextColumn();
+                ImGui::Text("%.0f", b.depth);
+                ImGui::TableNextColumn();
+                ImGui::Text("%.0f", b.eye_z);
+                ImGui::TableNextColumn();
+                ImGui::TextUnformatted(b.hidden ? "hidden" : (b.group < 32 && (mask & (1u << b.group))) ? "switched off"
+                                                                                                      : "yes");
+            }
+        }
+        ImGui::EndTable();
+    }
+
     template <typename Cell> static void Row(const char* name, const DevWrestler (&w)[DEV_WRESTLERS], Cell cell) {
         ImGui::TableNextRow();
         ImGui::TableNextColumn();
@@ -198,10 +280,7 @@ class MatchInspector : public Ship::GuiWindow {
 
 // Reads the window's picture, just drawn and not shown yet, and saves it (--screenshot). OpenGL keeps the bottom row
 // first, so the rows are turned over.
-void SaveScreenshot() {
-    std::string path = gShotPath;
-
-    gShotPath.clear();
+void SaveScreenshot(const std::string& path) {
     if (gLus.window->GetWindowBackendName() != "OpenGL") {
         std::printf("dev-match: --screenshot needs the OpenGL backend, not %s\n",
                     gLus.window->GetWindowBackendName().c_str());
@@ -222,10 +301,14 @@ void SaveScreenshot() {
     }
 }
 
-// One window frame with LibUltraShip's GUI only, the way its own frame (DrawAndRunGraphicsCommands) is put together,
-// but with RunGuiOnly in place of the game's display list. EndFrame waits for the next frame at the target rate.
+// One window frame: the game's last frame, drawn by Fast3D from the frame's display list (game_sdk_frame), with the
+// GUI on top; or the GUI alone when the hand-off drew nothing (RunGuiOnly). EndFrame waits for the next frame at the
+// target rate. Textures the game changes in place are decoded again by Fast3D itself (LibUltraShip patch 0009).
 void DrawWindowFrame() {
     auto window = gLus.window;
+    uint32_t count = 0;
+    uint32_t tasks = 0;
+    const void* frame = game_sdk_frame(&count, &tasks);
 
     window->HandleEvents();
     if (!WindowIsRunning()) {
@@ -233,16 +316,45 @@ void DrawWindowFrame() {
         dev_inspector_stop();
         std::exit(0);
     }
+    // The steps of LibUltraShip's own frame (Fast3dWindow::DrawAndRunGraphicsCommands), so that a screenshot can read the
+    // window after the GUI is drawn and before EndFrame shows it.
     window->GetMouseStateManager()->StartFrame();
     window->GetGui()->StartDraw();
     window->StartFrame();
-    window->RunGuiOnly();
+    if (count != 0 && !gDumpPath.empty() && dev_match_frames() >= gDumpFrame) {
+        std::FILE* out = std::fopen(gDumpPath.c_str(), "w");
+
+        if (out != nullptr) {
+            uint32_t n = td::DumpDisplayList(static_cast<const Gfx*>(frame), out);
+            std::fclose(out);
+            std::printf("dev-match: frame %u: %u commands in %u tasks, listed in %s\n", dev_match_frames(), n, tasks,
+                        gDumpPath.c_str());
+        }
+        gDumpPath.clear();
+    }
+    if (count != 0) {
+        window->GetInterpreterWeak().lock()->Run(static_cast<Gfx*>(const_cast<void*>(frame)), {});
+    } else {
+        window->RunGuiOnly();
+    }
     window->GetGui()->EndDraw();
     if (!gShotPath.empty() && dev_match_frames() >= gShotFrame) {
-        SaveScreenshot();
+        SaveScreenshot(gShotPath);
+        gShotPath.clear();
+    }
+    if (gShotEvery != 0 && count != 0 && dev_match_frames() >= gShotNext) {
+        char name[32];
+
+        std::snprintf(name, sizeof(name), "-%05u.png", dev_match_frames());
+        SaveScreenshot(gShotPrefix + name);
+        gShotNext = dev_match_frames() - dev_match_frames() % gShotEvery + gShotEvery;
     }
     window->EndFrame();
     dev_match_alive();
+    // The Gfx Debugger's Debug button (F1, Debug, Gfx Debugger) holds this frame until its Resume Game button.
+    if (count != 0) {
+        td::HoldForGfxDebugger(window, static_cast<Gfx*>(const_cast<void*>(frame)), dev_match_alive);
+    }
 }
 
 void AddConsoleCommands() {
@@ -280,11 +392,13 @@ extern "C" int dev_inspector_start(void) {
     if (gLus.window == nullptr) {
         return -1;
     }
-    // The N64 runs a match at 30 frames a second; one window frame per game frame keeps that speed.
+    // The game's picture, 480x240 shown at 4:3 (src/context.h). The N64 runs a match at 30 frames a second; one window
+    // frame per game frame keeps that speed.
+    td::ShowGamePicture(gLus.window, false);
     gLus.window->SetTargetFps(30);
     auto cvars = gLus.ctx->GetChildren().GetFirst<Ship::ConsoleVariable>();
     gLus.window->GetGui()->AddGuiWindow(std::make_shared<MatchInspector>(
-        cvars, gLus.window, "gMatchInspectorOpen", true, "Match Inspector", ImVec2(720, 560), ImGuiWindowFlags_None));
+        cvars, gLus.window, "gMatchInspectorShown", false, "Match Inspector", ImVec2(560, 520), ImGuiWindowFlags_None));
     td::AddDebugMenu(gLus.window, { "Match Inspector" });
     AddConsoleCommands();
     return 0;
@@ -308,6 +422,17 @@ extern "C" void dev_inspector_frame(void* user) {
 
 extern "C" void dev_inspector_stop(void) {
     td::StopLibUltraShip(&gLus);
+}
+
+extern "C" void dev_inspector_screenshots(const char* prefix, unsigned every) {
+    gShotPrefix = prefix;
+    gShotEvery = every;
+    gShotNext = every;
+}
+
+extern "C" void dev_inspector_dump(const char* path, unsigned frame) {
+    gDumpPath = path;
+    gDumpFrame = frame;
 }
 
 extern "C" void dev_inspector_screenshot(const char* path, unsigned frame) {

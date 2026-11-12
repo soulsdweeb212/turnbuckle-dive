@@ -6,6 +6,11 @@ project(turnbuckle-dive
     LANGUAGES C CXX)
 
 option(TD_SANITIZE "Build with AddressSanitizer and UndefinedBehaviorSanitizer" OFF)
+option(TD_ORDER_CHECK "Build the game files with the byte-order check (src/dev/order_check.c; GCC on Linux)" OFF)
+if(TD_ORDER_CHECK)
+    # The port's byte-order conversions tell the check what they convert (src/dev/order_check.h).
+    add_compile_definitions(TD_ORDER_CHECK)
+endif()
 option(TD_BUILD_HELLO
     "Build the programs that open a LibUltraShip window: hello and, with game code, the viewer (needs lib/libultraship)"
     ON)
@@ -112,6 +117,11 @@ function(td_game_code target)
         # block or of a variable stored apart, which is what would go wrong if they were not.
         target_compile_options(${target} PRIVATE -fno-sanitize=object-size,bounds)
     endif()
+    if(TD_ORDER_CHECK)
+        # GCC's thread sanitizer puts a call before each read and write of memory, which src/dev/order_check.c
+        # provides in place of the sanitizer's own library (that file says what it checks).
+        target_compile_options(${target} PRIVATE -fsanitize=thread)
+    endif()
 endfunction()
 
 # Game code is built when the decompilation is there, with the game's PC code, and the compiler is GCC or Clang, whose
@@ -162,6 +172,14 @@ td_strict(td_core)
 # (Threads::Threads adds it where it is separate, and nothing where it is not, as on Windows).
 find_package(Threads REQUIRED)
 target_link_libraries(td_core PUBLIC Threads::Threads)
+if(TD_ORDER_CHECK)
+    # The byte-order check's calls, in every program (all of them link td_core, whose conversions call the check), and
+    # the C library's copies passed through it, so that copied bytes keep what the check knows of them.
+    add_library(td_order_check STATIC src/dev/order_check.c)
+    td_strict(td_order_check)
+    target_link_libraries(td_core INTERFACE "$<LINK_LIBRARY:WHOLE_ARCHIVE,td_order_check>")
+    target_link_options(td_core INTERFACE -Wl,--wrap=memcpy -Wl,--wrap=memmove -Wl,--wrap=memset)
+endif()
 # Visual Studio's compiler (cl, not clang-cl): src/slots.c relies on volatile loads and stores being ordered as its
 # /volatile:ms option says, which is the default only on x86 and x64 (the file explains why).
 set_source_files_properties(src/slots.c PROPERTIES COMPILE_OPTIONS "$<$<C_COMPILER_ID:MSVC>:/volatile:ms>")
@@ -393,6 +411,14 @@ if(BUILD_TESTING)
             set_tests_properties(dev_match_repeatable dev_match_detects_change PROPERTIES
                 SKIP_RETURN_CODE 77 FIXTURES_REQUIRED dev_match_logs)
             set_tests_properties(dev_match_detects_change PROPERTIES PASS_REGULAR_EXPRESSION "differs")
+            if(TD_ORDER_CHECK)
+                # The byte-order check finds no read whose value differs from the N64's in the default match
+                # (docs/TESTING.md, "The byte-order check"). About a minute: every access of the game's code is checked.
+                add_test(NAME byte_order_match
+                    COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tools/order_check.py --run
+                            $<TARGET_FILE:turnbuckle-dive> --dev-match --headless --no-watchdog)
+                set_tests_properties(byte_order_match PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 600)
+            endif()
 
             # The debug kit, checked without a person (docs/GAME_CODE.md, "Debugging the match"). With gdb and a Debug
             # build: gdb_knows_game_macros prints WR_FLAG_LEGAL, which needs the game's macros in the debug information

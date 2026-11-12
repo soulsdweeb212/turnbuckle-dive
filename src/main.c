@@ -95,8 +95,11 @@ int main(int argc, char **argv) {
     int headless = 0;
     const char *screenshot = NULL;
     unsigned screenshot_frame = 300;
+    unsigned screenshot_every = 0;
+    const char *dump = NULL;
+    unsigned dump_frame = 0;
 #ifdef TD_DEV_MATCH
-    DevMatchOptions match_options = { NULL, NULL, 0, 0, 0, NULL, NULL };
+    DevMatchOptions match_options = { NULL, NULL, 0, 0, 0, NULL, NULL, 0 };
 #endif
     RomStatus status;
     Rom rom;
@@ -132,6 +135,16 @@ int main(int argc, char **argv) {
             screenshot = argv[++i];
         } else if (strcmp(argv[i], "--screenshot-frame") == 0 && i + 1 < argc) {
             screenshot_frame = (unsigned)strtoul(argv[++i], NULL, 0);
+        } else if (strcmp(argv[i], "--hide-group") == 0 && i + 1 < argc) {
+            unsigned long group = strtoul(argv[++i], NULL, 0);
+            if (group < 32) {
+                match_options.hide_groups |= 1u << group;
+            }
+        } else if (strcmp(argv[i], "--screenshot-every") == 0 && i + 1 < argc) {
+            screenshot_every = (unsigned)strtoul(argv[++i], NULL, 0);
+        } else if (strcmp(argv[i], "--dump-frame") == 0 && i + 2 < argc) {
+            dump_frame = (unsigned)strtoul(argv[++i], NULL, 0);
+            dump = argv[++i];
         } else if (strcmp(argv[i], "--no-watchdog") == 0) {
             match_options.no_watchdog = 1;
         } else if (strcmp(argv[i], "--seed") == 0 && i + 1 < argc) {
@@ -141,7 +154,7 @@ int main(int argc, char **argv) {
         } else if (strncmp(argv[i], "--", 2) == 0 || rom_arg != NULL) {
             fprintf(stderr, "Usage: turnbuckle-dive [--res ID | --dev-match [--headless] [--wr-log FILE] [--res-log FILE] [--seed N] "
                             "[--no-watchdog] "
-                            "[--screenshot FILE [--screenshot-frame N]]] [ROM]\n");
+                            "[--hide-group N]... [--screenshot FILE [--screenshot-frame N | --screenshot-every N]] [--dump-frame N FILE]] [ROM]\n");
             return 1;
         } else {
             rom_arg = argv[i];
@@ -180,8 +193,13 @@ int main(int argc, char **argv) {
         if (!headless) {
             if (dev_inspector_start() == 0) {
                 match_options.on_frame = dev_inspector_frame;
-                if (screenshot != NULL) {
+                if (screenshot != NULL && screenshot_every != 0) {
+                    dev_inspector_screenshots(screenshot, screenshot_every);
+                } else if (screenshot != NULL) {
                     dev_inspector_screenshot(screenshot, screenshot_frame);
+                }
+                if (dump != NULL) {
+                    dev_inspector_dump(dump, dump_frame);
                 }
             } else {
                 printf("dev-match: no window; the match runs without the Match Inspector\n");
@@ -200,6 +218,9 @@ int main(int argc, char **argv) {
     (void)headless;
     (void)screenshot;
     (void)screenshot_frame;
+    (void)screenshot_every;
+    (void)dump;
+    (void)dump_frame;
 #ifdef TD_GAME_CODE
     run_game_loader(&rom, res_id);
 #endif

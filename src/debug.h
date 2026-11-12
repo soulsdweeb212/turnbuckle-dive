@@ -4,6 +4,7 @@
 #ifndef TD_DEBUG_H
 #define TD_DEBUG_H
 
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -25,8 +26,10 @@ void AddDebugMenu(const std::shared_ptr<Fast::Fast3dWindow>& window, std::vector
 // it hands the list to the Gfx Debugger and then keeps drawing that same frame, without returning, until the
 // debugger's Resume Game button is pressed or the window closes. Meanwhile the debugger shows the frame's commands as a
 // tree, and clicking a command draws the frame only up to it. The caller must leave the list and everything it points
-// to unchanged until this returns.
-void HoldForGfxDebugger(const std::shared_ptr<Fast::Fast3dWindow>& window, Gfx* frame);
+// to unchanged until this returns. eachFrame, when given, is called after each frame drawn meanwhile (the developer
+// match tells its watchdog that the program is still running).
+void HoldForGfxDebugger(const std::shared_ptr<Fast::Fast3dWindow>& window, Gfx* frame,
+                        const std::function<void()>& eachFrame = {});
 
 } // namespace td
 

@@ -938,6 +938,47 @@ void ForgetTextures(const std::shared_ptr<Fast::Fast3dWindow>& window) {
     }
 }
 
+// A picture whose palette changes where it is, as the game's palettes do (turned grey, or a freed buffer given another
+// picture's palette): every entry is made opaque red, and the same frame is drawn again without dropping Fast3D's
+// textures. Fast3D must see that the palette changed and decode the picture again (cmake/patches/libultraship/0009),
+// so every pixel that must show the picture shows red.
+bool CheckRecoloured(const std::shared_ptr<Fast::Fast3dWindow>& window, const ViewerPicture& picture,
+                     const PixelTable& table, td::Picture* pic) {
+    const uint16_t kRed = 0xF801; // RGBA5551, big-endian in the palette: red, opaque
+    const Rgb red = { 31, 0, 0 };
+    uint8_t* palette = const_cast<uint8_t*>(picture.palette); // the loaded picture's own bytes
+    uint32_t subject = 0, wrong = 0;
+
+    for (uint32_t i = 0; i < picture.palette_entries; i++) {
+        palette[2 * i] = kRed >> 8;
+        palette[2 * i + 1] = kRed & 0xFF;
+    }
+    if (!DrawFrames(window, 3) || !ReadFrame(window, pic)) {
+        return false;
+    }
+    for (uint32_t y = 0; y < kHeight; y++) {
+        for (uint32_t x = 0; x < kWidth; x++) {
+            const std::vector<int>& allowed = table.sets[table.pixels[y * kWidth + x]];
+            if (IsMarker(x, y) || allowed.empty() ||
+                std::any_of(allowed.begin(), allowed.end(), [](int c) { return c < 0; })) {
+                continue;
+            }
+            subject++;
+            Rgb got = Channels(pic->At(x, y));
+            if (!Near(got, red)) {
+                if (++wrong <= 5) {
+                    std::printf("check: the recoloured picture, pixel (%u,%u) is (%d,%d,%d), not red\n", x, y, got.r,
+                                got.g, got.b);
+                }
+            }
+        }
+    }
+    bool pass = wrong == 0 && subject >= 100;
+    std::printf("check: %s, the picture with its palette changed in memory: %u of %u pixels that show it are red\n",
+                pass ? "PASS" : "FAIL", subject - wrong, subject);
+    return pass;
+}
+
 // --check: the subjects the reference names, each drawn for three frames and then read back.
 int RunCheck(const std::shared_ptr<Fast::Fast3dWindow>& window, const Reference& ref) {
     bool pass = true;
@@ -1055,6 +1096,7 @@ int RunCheck(const std::shared_ptr<Fast::Fast3dWindow>& window, const Reference&
     std::snprintf(what, sizeof(what), "picture 0x%X, %ux%u at (%d,%d)", picture.id, picture.width, picture.height,
                   PictureX(picture), PictureY(picture));
     pass = CheckPixels(pic, ref.picture, what) && pass;
+    pass = CheckRecoloured(window, picture, ref.picture, &pic) && pass;
     viewer_picture_free(&picture);
     return pass ? 0 : 2;
 }

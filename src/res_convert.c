@@ -21,6 +21,7 @@
 #include <stdint.h>
 
 #include "game.h"
+#include "dev/order_check.h"
 
 #define SHARED_MOVES 0x126u
 #define CHAR_FIRST 0x13Fu /* the first animation list */
@@ -34,6 +35,7 @@ static void swap(uint8_t *p, unsigned width) {
         p[i] = p[width - 1 - i];
         p[width - 1 - i] = t;
     }
+    ORDER_CHECK_VALUE(p, width);
 }
 
 static void swap_all(uint8_t *buf, int32_t size, unsigned width, uint32_t id, const char *kind) {

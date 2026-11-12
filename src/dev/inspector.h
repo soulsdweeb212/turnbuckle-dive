@@ -21,6 +21,14 @@ void dev_inspector_stop(void);
  * picture shows the match's state, made from the user's ROM: keep it out of the repository. */
 void dev_inspector_screenshot(const char *path, unsigned frame);
 
+/* Saves the window every `every` game frames, from frame `every` on, to PNG files named prefix-NNNNN.png (NNNNN the
+ * frame). As dev_inspector_screenshot, OpenGL only, and the pictures stay out of the repository. */
+void dev_inspector_screenshots(const char *prefix, unsigned every);
+
+/* Writes every command of game frame `frame`'s display list, nested lists included, to a text file at path (frame.h's
+ * DumpDisplayList): the address, the two words and the command's name, indented by depth. */
+void dev_inspector_dump(const char *path, unsigned frame);
+
 #ifdef __cplusplus
 }
 #endif

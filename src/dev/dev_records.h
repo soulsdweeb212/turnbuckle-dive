@@ -54,6 +54,28 @@ typedef struct {
 } DevField;
 const DevField *dev_records_fields(size_t *count, size_t *record_size);
 
+/* One work block of the scene (Nw2SceneWork in the game's common.h), what the draw-order table shows. The game keeps
+ * the blocks sorted by depth, farthest first (func_80001EA8), and draws them by group in this order: the group-0
+ * blocks, group 6, group 3, then the meshes of every other group, then group 5's display lists. */
+typedef struct {
+    uint8_t group;  /* the owning object's draw group (its +0x18), without the hide bit */
+    uint8_t hidden; /* 1 when the object or the block is not drawn (bit 0x80 of the group or of the kind) */
+    uint8_t flat;   /* 1: a 2D object, drawn without perspective */
+    uint8_t mesh;   /* 1: a mesh (kind 1), 0: a display list */
+    float depth;    /* the sort key */
+    float eye_z;    /* its centre's distance in front of the camera */
+} DevDrawBlock;
+
+/* Fills out with up to max work blocks, in the game's depth order, and returns how many the scene has. */
+size_t dev_records_draw_blocks(DevDrawBlock *out, size_t max);
+
+/* The draw switches. dev_records_hide_groups(mask) stops the objects of each group whose bit is set in mask (bit n for
+ * group n) from being drawn, by setting the hide bit of their draw group, and dev_records_unhide_groups puts back what
+ * it changed. The developer match calls the two around the port's building of a frame (GameSdkHooks), so the game's
+ * own code never sees the change. */
+void dev_records_hide_groups(uint32_t mask);
+void dev_records_unhide_groups(void);
+
 /* A wrestler state's short name ("" for one docs/wrestler.md does not identify), and a match phase's name. */
 const char *dev_state_name(int state);
 const char *dev_phase_name(int phase);

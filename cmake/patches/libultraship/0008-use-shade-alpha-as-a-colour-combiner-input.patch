@@ -1,0 +1,36 @@
+Use the vertices' alpha where a colour combiner reads shade alpha
+
+The RDP's colour combiner can take the shade alpha, the alpha that the vertices interpolate, as a colour input
+(G_CCMUX_SHADE_ALPHA, 11), as it can take the primitive or environment colour's alpha. Fast3D's combiner knew the other
+two but not this one: it printed "Unsupported ccmux: 11" and used 0 there.
+
+WCW/nWo Revenge lights its wrestlers, ropes, turnbuckles and other parts on the CPU: it writes each vertex's brightness
+into the vertex's alpha (func_80001930) and draws them with (TEXEL0 - 0) * SHADE_ALPHA + 0 as the colour (combine mode
+FC15FE2B FFFFF3F9). With the input at 0, all of them came out black.
+
+The input now gets a slot like the others, and its value at each vertex is the vertex colour's alpha in all four
+channels, as PRIMITIVE_ALPHA and ENV_ALPHA are made from their colours.
+
+diff --git a/src/fast/interpreter.cpp b/src/fast/interpreter.cpp
+--- a/src/fast/interpreter.cpp
++++ b/src/fast/interpreter.cpp
+@@ -343,6 +343,7 @@
+                     case G_CCMUX_PRIMITIVE_ALPHA:
+                     case G_CCMUX_PRIM_LOD_FRAC:
+                     case G_CCMUX_SHADE:
++                    case G_CCMUX_SHADE_ALPHA:
+                     case G_CCMUX_ENVIRONMENT:
+                     case G_CCMUX_ENV_ALPHA:
+                     case G_CCMUX_LOD_FRACTION:
+@@ -2306,6 +2307,11 @@
+                     case G_CCMUX_SHADE:
+                         color = &v_arr[i]->color;
+                         break;
++                    case G_CCMUX_SHADE_ALPHA: {
++                        tmp.r = tmp.g = tmp.b = tmp.a = v_arr[i]->color.a;
++                        color = &tmp;
++                        break;
++                    }
+                     case G_CCMUX_ENVIRONMENT:
+                         color = &mRdp->env_color;
+                         break;

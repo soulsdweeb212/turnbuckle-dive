@@ -56,6 +56,16 @@
             }
         },
         {
+            "name": "order",
+            "displayName": "Debug + byte-order check",
+            "description": "Lists game code that reads bytes at another width than they were written (docs/TESTING.md)",
+            "inherits": "linux-base",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "TD_ORDER_CHECK": "ON"
+            }
+        },
+        {
             "name": "windows-base",
             "hidden": true,
             "description": "Visual Studio's compiler (cl) for 64-bit Windows; run from the x64 Native Tools Command Prompt for VS 2022 or from Visual Studio",
@@ -121,6 +131,10 @@
             "configurePreset": "asan"
         },
         {
+            "name": "order",
+            "configurePreset": "order"
+        },
+        {
             "name": "windows-debug",
             "configurePreset": "windows-debug"
         },
@@ -147,6 +161,13 @@
         {
             "name": "asan",
             "configurePreset": "asan",
+            "output": {
+                "outputOnFailure": true
+            }
+        },
+        {
+            "name": "order",
+            "configurePreset": "order",
             "output": {
                 "outputOnFailure": true
             }

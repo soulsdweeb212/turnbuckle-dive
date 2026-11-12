@@ -90,6 +90,14 @@ void port_heap_free(void *block);
 #define GAME_PRESENT_SYNC 2
 void port_present(int32_t kind);
 
+/* Drawing (port.h says how it fits together): port_render_frame, game code (func_80002CC4.c), does the N64 render
+ * thread's work for one frame, and each graphics task it builds reaches the port through port_gfx_submit
+ * (src/game_sdk.c): the task's display list of port.h's 16-byte commands (struct Gfx, two uintptr_t words), its number
+ * of commands, and whether it is the frame's last task. */
+struct Gfx;
+void port_render_frame(void);
+void port_gfx_submit(const struct Gfx *list, uint32_t count, int32_t last);
+
 /* Game variables the port reads: the loader's two tables. Like every game variable, they are defined in the C file that
  * tools/game_vars.py writes into the build folder (src/game_vars.h). */
 extern uint32_t *D_800482E0;

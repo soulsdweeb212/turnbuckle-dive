@@ -25,6 +25,8 @@ typedef struct {
      * headless run, which runs as fast as it can. */
     void (*on_frame)(void *user);
     void *user;
+    /* The draw groups not to draw from the start, bit n for group n (dev_records_hide_groups); 0 for none. */
+    uint32_t hide_groups;
 } DevMatchOptions;
 
 /* Runs one CPU-vs-CPU match on the checked ROM and checks the G6 gate (docs/GAME_CODE.md, "The developer match"):
@@ -33,6 +35,11 @@ int dev_match_run(const Rom *rom, const DevMatchOptions *options);
 
 /* Tells the watchdog the program is alive while on_frame keeps the game waiting. */
 void dev_match_alive(void);
+
+/* The draw groups not drawn from the next frame on, bit n for group n (the Match Inspector's switches), and those
+ * hidden now. Only the picture changes: the game's code never sees it. */
+void dev_match_hide_groups(uint32_t mask);
+uint32_t dev_match_hidden_groups(void);
 
 /* How many frames the game has handed over since the match started. */
 uint32_t dev_match_frames(void);

@@ -182,6 +182,9 @@ there), the texel each pixel shows, and how the texel's colour is blended. The c
    the framebuffer lines of the output give each size.
 5. Every pixel of the effect sprite.
 6. Every pixel of the picture, which the tool works out tile by tile as the N64 draws it (its comments say how).
+7. The picture again, after the check makes every entry of its palette red in memory, as the game changes palettes
+   where they are. Fast3D must see that the palette changed and decode the picture again (patch 0009): every pixel
+   that shows the picture must be red.
 
 Each pixel must have the colour the tool works out, and pixels where the tool says the background shows must not be
 drawn. Where a triangle's edge or a texel's edge passes close to a pixel's middle, the tool allows the colour on each

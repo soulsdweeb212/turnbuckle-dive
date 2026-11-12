@@ -62,10 +62,11 @@ different after any change; a digest is such a fingerprint taken over many piece
 | `gdb_knows_game_macros` | gdb, reading `turnbuckle-dive`, prints the game's macro `WR_FLAG_LEGAL`: the debug information holds the game's macros. Only in a Debug build, with gdb installed. |
 | `gdb_prints_wrestlers` | gdb, with `tools/gdb/wrestler.py`, prints a wrestler record as one readable line, and a state by its name. Same conditions. |
 | `sanitizer_catches_overflow` | Only in the asan preset: a program reads one byte past the wrestler records, and passes when AddressSanitizer reports it with the program's file and line. |
+| `byte_order_match` | Only in the order preset: plays the developer match under the byte-order check (below, "The byte-order check") and passes when no read of the game's code gives another value than the N64's. It takes about a minute. |
 | `viewer_reference` | `tools/viewer_ref.py` works out from your ROM, without the game's code, what the asset viewer must build and draw, and writes it to `build/debug/viewer_ref.json`: the reference. |
-| `viewer_check` | The asset viewer builds its three subjects (a wrestler's head from its three parts, an effect sprite and a 2D picture) with the game's code and compares them with the reference: first the vertices and triangles of each of the head's parts, and the camera placed over them, then every pixel of each picture. Between the head's two sides Fast3D draws at another resolution, as when someone stretches the window. Its window opens, draws and closes by itself. |
+| `viewer_check` | The asset viewer builds its three subjects (a wrestler's head from its three parts, an effect sprite and a 2D picture) with the game's code and compares them with the reference: first the vertices and triangles of each of the head's parts, and the camera placed over them, then every pixel of each picture. Between the head's two sides Fast3D draws at another resolution, as when someone stretches the window. Last, the picture's palette is changed in memory, and the picture must be drawn in the new colours. Its window opens, draws and closes by itself. |
 
-Near the end, CTest prints how many passed, `100% tests passed, 0 tests failed out of 19` (20 in the asan preset), and
+Near the end, CTest prints how many passed, `100% tests passed, 0 tests failed out of 19` (20 in the asan and order presets), and
 then the time the tests took. The tests from `rom_loader` on, but for the two gdb tests, need your ROM. When they find none, CTest marks them `***Skipped` instead of `Passed`, still
 counts them in that line, and names them at the very end, under `The following tests did not run:`.
 
@@ -151,10 +152,51 @@ those commands into OpenGL calls, the standard way for a program to have the GPU
 two ways to see them, both in `build/debug` (`cd build/debug` from this repository's folder):
 
 - `./viewer --dump` draws one frame, prints every command of its lists in the order Fast3D runs them, and ends.
+  `./turnbuckle-dive --dev-match --dump-frame 600 frame600.txt` does the same for the match: it writes the commands of
+  the match's frame 600 to `frame600.txt`, and the match goes on.
 - In a viewer window, press F1: a menu bar appears at the top. Open its Debug menu and choose Gfx Debugger, then click
   the Debug button in the Gfx Debugger's window. The frame freezes, and its commands show as a tree. Clicking a
   command draws the frame only up to that command. The Resume Game button, which takes the Debug button's place, lets
   the viewer go on.
+
+## The byte-order check
+
+The N64 keeps the bytes of a number biggest first; a PC keeps them smallest first. Game code that writes a value at
+one size and reads the same bytes at another size (one byte of a 4-byte number, or two 2-byte fields read as one
+4-byte number) then reads a different value on a PC than on the N64, and the match plays differently. That is how
+the Irish whip stopped short of the ropes. The compiler cannot see it when the two sizes are in different files, so
+a check watches the game run instead. It is a build of its own, the `order` preset (Linux and GCC only), run from this
+repository's folder:
+
+```
+cmake --preset order
+cmake --build --preset order
+cd build/order
+./turnbuckle-dive --dev-match --headless --no-watchdog
+cd ../..
+python3 tools/order_check.py build/order/turnbuckle-dive build/order/order_check.txt
+```
+
+`ctest --preset order` runs the tests in that build, among them `byte_order_match`, which does the same for the
+default match and fails when the list names a line.
+
+The match takes about a minute instead of a few seconds, because every read and write of the game's code goes
+through the check. At the end the program writes `order_check.txt`, and `tools/order_check.py` turns it into names:
+each line of game code whose read gave another value than the N64 would have read, how many times, from which frame,
+and the lines that wrote those bytes. `no read differs from the N64` means that no read did, in that match. `--seed N`
+plays another match, which runs other code; `TD_ORDER_CHECK_OUT=name.txt` before the command names the list's file,
+and the tool adds up the lists it is given.
+
+How it works: for every byte the game code writes, the check records the size and place of the value it belongs to,
+and the line that wrote it. When game code reads bytes that were written at another size, the check works out the
+value the N64 would read there (each value's bytes in the other order) and compares it with the value the PC read.
+A copy that keeps the bytes in order (a value read and written again at the same size) is not a finding. Bytes the
+port converted from the ROM count as written at the size the port converted them, and bytes nothing has written yet
+match any read. The comment at the top of `src/dev/order_check.c` says more. The check sees only the code that the
+match runs.
+
+A finding is fixed in the game file, in a `#ifdef TARGET_PC` version of the line that reads the value the N64 reads
+(the decompilation's docs/port.md, "Byte order on PC").
 
 ## What happens inside a program, from start to end
 

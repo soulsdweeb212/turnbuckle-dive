@@ -119,11 +119,11 @@ These write 16-byte commands that hold whole pointers, and the record they fill 
 decompilation's `docs/port.md` explains how.
 
 Fast3D, LibUltraShip's renderer, keeps every texture it has decoded, filed under the addresses of its texels and
-palette, not under what they hold. The game loads new textures and palettes into buffers it already has
-(`func_80004E08` and `func_8000670C` keep a buffer when the new resource fits in it) and changes palettes where they
-are (`convertRgba16ToGrayscale`), so once the game's own scene code runs, the port must drop Fast3D's textures each
-time the game writes into a texture or palette that was drawn (`gfx_texture_cache_clear`). The viewer loads each
-subject once, and drops them after freeing a subject.
+palette. The game loads new textures and palettes into buffers it already has (`func_80004E08` and `func_8000670C`
+keep a buffer when the new resource fits in it) and changes palettes where they are (`convertRgba16ToGrayscale`).
+So each cached texture also keeps a fingerprint of the bytes it was decoded from, and Fast3D decodes it again when
+they have changed (`cmake/patches/libultraship/0009-…`); the port does not have to tell it. The viewer still drops
+the textures after freeing a subject.
 
 ## What the port provides to the game
 
@@ -265,17 +265,42 @@ presses A on controller 1. It needs the build with every game file of the develo
 ./build/debug/turnbuckle-dive --dev-match
 ```
 
+### The picture
+
+The window shows the match as the game draws it. On the N64 a render thread builds each frame's display lists and
+gives them to the graphics chip; on PC nothing runs beside the game, so at each frame's hand-off (`port_present`, in
+`src/game_sdk.c`) the port calls `port_render_frame`, the PC version of that thread's loop (in the decompilation's
+`func_80002CC4.c`). It builds the frame's lists with the game's own functions, and the game sends each finished list
+to `port_gfx_submit`, which copies its commands into one list for the whole frame. The window then has Fast3D,
+LibUltraShip's renderer, draw that list (`src/dev/inspector.cpp`). `--dump-frame` writes one frame's list to a file
+([TESTING.md](TESTING.md), "Seeing the drawing commands").
+
+Fast3D decodes each texture once and keeps it; a texture whose bytes the game changes is decoded again (see "How it
+is compiled" above, and LibUltraShip patch 0009). While the match is paused, the window draws the same
+frame's list again at each of its own frames.
+
 ### The Match Inspector
 
-The game draws no picture yet, so the match opens in the Match Inspector's window (`src/dev/inspector.cpp`): a table of
-the four wrestlers (character, state and its name, step, animation and frame, position, heading, health, spirit, who
-holds whom, opponent) and a map of the ring from above, with each wrestler as a dot and a line where it faces. Above
-them are the frame, the match frame (`D_800E2FAC`), the phase (setup, intro, fight, ending, results) and the random seed.
-It runs at the N64's speed, 30 frames a second.
+The Match Inspector (`src/dev/inspector.cpp`) is a window over the picture, hidden at first; F5 shows and hides it. It
+has a table of the four wrestlers (character, state and its name, step, animation and frame, position, heading,
+health, spirit, who holds whom, opponent) and a map of the ring from above, with each wrestler as a dot and a line
+where it faces. Above them are the frame, the match frame (`D_800E2FAC`), the phase (setup, intro, fight, ending,
+results) and the random seed. The match runs at the N64's speed, 30 frames a second.
+
+Beside the map are the draw groups, one switch each. The game files each object of the scene under a group, and
+hiding a group shows what it holds: 0 the arena (crowd, stage, signs), 3 the ring posts and turnbuckles, 4 the
+wrestlers and ropes, 5 the HUD, 6 the ring mat. A switch takes effect from the next frame (F7 shows it while paused),
+and changes only the picture: while the port builds a frame, the objects of a hidden group have their hide bit set,
+and right after it their group is put back, so the game's own code never sees it (the wrestler log stays the same).
+Under "Draw order (depth sort)" is the list of the scene's work blocks in the order the game sorts them, farthest
+first, with each one's group, kind (a mesh or a display list, 2D or not), sort key and distance. The match draws
+without a depth buffer, so that order alone decides which object covers which.
 
 - F6 pauses and resumes the match, F7 runs one frame and pauses, F8 slows it down (each frame shown 1, 2, 4 or 8 times).
   The same buttons are in the window, and the console (F1, Debug, Console) takes `pause`, `step 10` and `slowmo 4`.
 - F1 shows the menu bar, whose Debug menu opens the Match Inspector and LibUltraShip's Console, Stats and Gfx Debugger.
+  The Gfx Debugger's Debug button holds the match on its current frame and lists the frame's commands as a tree;
+  clicking one draws the frame only up to it. Resume Game lets the match go on.
 - Closing the window ends the program.
 
 The inspector only reads the game's records, through `src/dev/dev_records.c`, which is compiled with the game's
@@ -290,6 +315,9 @@ settings. It runs inside the game's frame hand-off, on the game's thread, while 
 | `--res-log FILE` | writes each resource the game loads, with the frame |
 | `--seed N` | starts the random seed (`xseed`) at N instead of the ROM's value: a different match |
 | `--screenshot FILE` | saves the window at frame 300 (`--screenshot-frame N` for another) as a PNG; OpenGL only |
+| `--screenshot-every N` | with `--screenshot PREFIX`: saves the window every N frames, as PREFIX-NNNNN.png |
+| `--hide-group N` | does not draw draw group N (as the inspector's switches); may be given more than once |
+| `--dump-frame N FILE` | writes every drawing command of frame N to FILE |
 | `--no-watchdog` | no watchdog (the VS Code entries use it, so that stepping in the debugger is not taken for a hang) |
 
 The logs and screenshots are made from your ROM: keep them in the build folder, never in the repository.

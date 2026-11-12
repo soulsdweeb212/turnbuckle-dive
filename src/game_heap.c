@@ -18,6 +18,7 @@
 #include <stdlib.h>
 
 #include "game.h"
+#include "dev/order_check.h"
 
 void *port_heap_alloc(uint32_t bytes) {
     void *block = calloc(1, bytes != 0 ? bytes : 1);
@@ -25,6 +26,7 @@ void *port_heap_alloc(uint32_t bytes) {
     if (block == NULL) {
         port_fatal("allocateHeap: no memory for 0x%X bytes", bytes);
     }
+    ORDER_CHECK_FORGET(block, bytes);
     return block;
 }
 

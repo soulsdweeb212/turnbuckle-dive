@@ -1,0 +1,148 @@
+Decode a cached texture again when its bytes change
+
+Fast3D keeps each texture it decodes in a cache, under the address of its texels, the addresses of its palette, its
+format and its size. A later draw of the same texture takes the decoded picture from there. Nothing in the key says
+what the bytes were, so when a game changes a texture where it is, or frees the memory and loads another texture at
+the same address, Fast3D goes on drawing the old picture.
+
+WCW/nWo Revenge does both: it edits textures and palettes in place (the wrestlers' names, palettes turned grey) and
+loads new textures into buffers it reuses. A game can ask Fast3D to forget an address (gfx_texture_cache_delete), but
+only if it knows every place that writes texture memory.
+
+Each cache entry now also keeps a fingerprint of the bytes the texture was decoded from (Interpreter::TextureContent):
+its texels, read as the decoders read them, and for a CI texture the palette entries it uses, from Fast3D's own copy
+of the palette. A lookup that finds the entry with another fingerprint decodes the texture again, into the same
+texture. N64 textures are at most a few kilobytes, so working out the fingerprint at each use costs far less than
+decoding. Replacement textures and textures from resource files cannot change and keep a fingerprint of 0.
+
+diff --git a/include/fast/interpreter.h b/include/fast/interpreter.h
+--- a/include/fast/interpreter.h
++++ b/include/fast/interpreter.h
+@@ -212,6 +212,9 @@
+     uint32_t texture_id;
+     uint8_t cms, cmt;
+     bool linear_filter;
++    // A fingerprint of the bytes the texture was decoded from (Interpreter::TextureContent), or 0 for a texture that
++    // cannot change: a lookup that finds the entry with another fingerprint decodes the texture again.
++    uint64_t content;
+ 
+     std::list<struct TextureCacheMapIter>::iterator lru_location;
+ };
+@@ -439,7 +442,8 @@
+     void ShaderCacheClear();
+     void TextureCacheClear();
+     std::shared_ptr<Ship::IResource> ResolveResourceCached(const char* path);
+-    bool TextureCacheLookup(int i, const TextureCacheKey& key);
++    bool TextureCacheLookup(int i, const TextureCacheKey& key, uint64_t content = 0);
++    uint64_t TextureContent(int tile, const uint8_t* addr, uint32_t tmemIndex, uint8_t fmt, uint8_t siz) const;
+     void TextureCacheDelete(const uint8_t* origAddr);
+     void ImportTextureRgba16(int tile, bool importReplacement);
+     void ImportTextureRgba32(int tile, bool importReplacement);
+diff --git a/src/fast/interpreter.cpp b/src/fast/interpreter.cpp
+--- a/src/fast/interpreter.cpp
++++ b/src/fast/interpreter.cpp
+@@ -496,7 +496,7 @@
+     mRapi->ClearShaderCache();
+ }
+ 
+-bool Interpreter::TextureCacheLookup(int i, const TextureCacheKey& key) {
++bool Interpreter::TextureCacheLookup(int i, const TextureCacheKey& key, uint64_t content) {
+     TextureCacheMap::iterator it = mTextureCache.map.find(key);
+     TextureCacheNode** n = &mRenderingState.mTextures[i];
+ 
+@@ -505,7 +505,13 @@
+         *n = &*it;
+         mTextureCache.lru.splice(mTextureCache.lru.end(), mTextureCache.lru,
+                                  it->second.lru_location); // move to back
+-        return true;
++        if (it->second.content == content) {
++            return true;
++        }
++        // The bytes at the texture's address have changed since it was decoded: the caller decodes it again into the
++        // same texture, which is selected.
++        it->second.content = content;
++        return false;
+     }
+ 
+     if (mTextureCache.map.size() >= TEXTURE_CACHE_MAX_SIZE) {
+@@ -531,6 +537,7 @@
+     it = mTextureCache.map.insert(std::make_pair(key, TextureCacheValue())).first;
+     TextureCacheNode* node = &*it;
+     node->second.texture_id = texture_id;
++    node->second.content = content;
+     node->second.lru_location = mTextureCache.lru.insert(mTextureCache.lru.end(), { it });
+ 
+     mRapi->SelectTexture(i, texture_id);
+@@ -571,6 +578,60 @@
+     }
+ }
+ 
++// A fingerprint of the bytes a texture is decoded from: its texels as the decoders read them (lines of
++// line_size_bytes, full_image_line_size_bytes apart, from the loaded address), and for a CI texture the palette entries
++// it uses, from Fast3D's copy of the palette that G_LOADTLUT made. The cache key holds only addresses, and a game can
++// change a texture or a palette where it is, or load another one at the same address after freeing the memory; with
++// the fingerprint in the cache entry, such a texture is decoded again instead of drawn as it was.
++static uint64_t FingerprintBytes(uint64_t h, const uint8_t* p, size_t n) {
++    while (n >= 8) {
++        uint64_t w;
++        memcpy(&w, p, 8);
++        h = (h ^ w) * 0x9E3779B97F4A7C15ULL;
++        h ^= h >> 32;
++        p += 8;
++        n -= 8;
++    }
++    while (n > 0) {
++        h = (h ^ *p++) * 0x100000001B3ULL;
++        n--;
++    }
++    return h;
++}
++
++uint64_t Interpreter::TextureContent(int tile, const uint8_t* addr, uint32_t tmemIndex, uint8_t fmt,
++                                     uint8_t siz) const {
++    const auto& loaded = mRdp->loaded_texture[tmemIndex];
++    uint32_t size = loaded.size_bytes;
++    uint32_t line = loaded.line_size_bytes;
++    uint32_t stride = loaded.full_image_line_size_bytes;
++    size_t span = size;
++    uint64_t h = 0xCBF29CE484222325ULL;
++
++    if (addr == nullptr || size == 0) {
++        return 0;
++    }
++    if (line != 0 && stride > line && size > line) {
++        span = (size_t)stride * (size / line - 1) + line;
++    }
++    h = FingerprintBytes(h, addr, span);
++    if (fmt == G_IM_FMT_CI) {
++        uint8_t pal = mRdp->texture_tile[tile].palette;
++        if (siz == G_IM_SIZ_4b) {
++            if (mRdp->palettes[pal / 8] != nullptr) {
++                h = FingerprintBytes(h, mRdp->palettes[pal / 8] + (pal % 8) * 16 * 2, 16 * 2);
++            }
++        } else {
++            for (int k = 0; k < 2; k++) {
++                if (mRdp->palettes[k] != nullptr) {
++                    h = FingerprintBytes(h, mRdp->palettes[k], 256);
++                }
++            }
++        }
++    }
++    return h | 1; // never 0, which stands for a texture that cannot change
++}
++
+ // Pick the per-line byte width for texture decode. Prefer the DRAM stride from
+ // loaded_texture when it looks like real per-line info (differs from total size).
+ // Fall back to the TMEM tile stride when loaded sizes match total (LoadBlock with
+@@ -1358,7 +1419,10 @@
+         key = { origAddr, {}, fmt, siz, paletteIndex, origSizeBytes };
+     }
+ 
+-    if (TextureCacheLookup(i, key)) {
++    // Textures from the game's memory can change; replacements and textures from resource files cannot.
++    uint64_t content =
++        importReplacement || metadata->resource != nullptr ? 0 : TextureContent(tile, origAddr, tmemIdex, fmt, siz);
++    if (TextureCacheLookup(i, key, content)) {
+         return;
+     }
+ 

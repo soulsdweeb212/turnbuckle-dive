@@ -258,13 +258,35 @@ static void on_load(uint32_t id) {
     }
 }
 
+/* The draw switches: the groups to hide, applied only while the port builds a frame (dev_records.h). */
+static uint32_t g_hide_groups;
+
+void dev_match_hide_groups(uint32_t mask) {
+    g_hide_groups = mask;
+}
+
+uint32_t dev_match_hidden_groups(void) {
+    return g_hide_groups;
+}
+
+static void before_render(void) {
+    if (g_hide_groups != 0) {
+        dev_records_hide_groups(g_hide_groups);
+    }
+}
+
+static void after_render(void) {
+    dev_records_unhide_groups();
+}
+
 int dev_match_run(const Rom *rom, const DevMatchOptions *options) {
-    static const GameSdkHooks hooks = { on_present, read_pad };
-    static const DevMatchOptions none = { NULL, NULL, 0, 0, 0, NULL, NULL };
+    static const GameSdkHooks hooks = { on_present, read_pad, before_render, after_render };
+    static const DevMatchOptions none = { NULL, NULL, 0, 0, 0, NULL, NULL, 0 };
     pthread_t dog;
     unsigned i;
 
     g_options = options != NULL ? options : &none;
+    g_hide_groups = g_options->hide_groups;
     rom_attach(rom);
     game_sdk_set(&hooks, 0x1); /* controller 1 plugged in, for the results screen */
     port_res_hook(on_load);

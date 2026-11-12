@@ -12,6 +12,7 @@
  *
  * Sound is not ported yet: the libmus functions do nothing and report that nothing is playing. */
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "game.h"
@@ -43,11 +44,97 @@ uint32_t game_sdk_frames(void) {
 
 uint32_t guRandom(void); /* the game's own (src/main/guRandom.c) */
 
+/* ---- The frame's display list ----
+ * port_render_frame (game code) builds the frame's graphics tasks; each reaches port_gfx_submit, which copies its
+ * commands at once, because the game builds its tasks in four records that it reuses in turn. The commands of all the
+ * frame's tasks go into one list, each task's closing G_ENDDL left out, so they run one after another, and the list
+ * gets one G_ENDDL at its end. A command is port.h's 16-byte Gfx, two words as wide as a pointer. */
+typedef struct {
+    uintptr_t w0;
+    uintptr_t w1;
+} FrameCmd;
+_Static_assert(sizeof(FrameCmd) == 16, "a display-list command is 16 bytes, like port.h's Gfx");
+
+#define G_SETCIMG_OP 0xFFu
+#define G_ENDDL_OP 0xDFu
+
+static FrameCmd *g_frame;
+static uint32_t g_frame_count;
+static uint32_t g_frame_cap;
+static uint32_t g_frame_tasks;
+static uint32_t g_frame_images; /* the colour images (G_SETCIMG) the frame's tasks have set */
+
+static void frame_add(const FrameCmd *cmds, uint32_t count) {
+    if (g_frame_count + count > g_frame_cap) {
+        uint32_t cap = g_frame_cap != 0 ? g_frame_cap : 4096;
+        FrameCmd *grown;
+
+        while (cap < g_frame_count + count) {
+            cap *= 2;
+        }
+        grown = realloc(g_frame, cap * sizeof(FrameCmd));
+        if (grown == NULL) {
+            port_fatal("port_gfx_submit: no memory for a frame of %u commands", cap);
+        }
+        g_frame = grown;
+        g_frame_cap = cap;
+    }
+    memcpy(g_frame + g_frame_count, cmds, count * sizeof(FrameCmd));
+    g_frame_count += count;
+}
+
+/* Checks each task as it comes, as the G7 gate asks: its list ends with G_ENDDL; every colour image it sets
+ * (G_SETCIMG) is a real address, because Fast3D takes a fill rectangle into a NULL colour image for a depth clear; and
+ * the frame sets one colour image only, the frame's own, which the first task's setup sets. On the N64 the frame's
+ * last task then sets the next framebuffer and clears it; on PC it must not, or the clear would cover the frame
+ * (submitGraphicsTask). */
+void port_gfx_submit(const struct Gfx *list, uint32_t count, int32_t last) {
+    const FrameCmd *cmds = (const FrameCmd *)list;
+    uint32_t i;
+
+    (void)last;
+    if (count == 0 || (cmds[count - 1].w0 >> 24) != G_ENDDL_OP) {
+        port_fatal("port_gfx_submit: a task's list of %u commands does not end with G_ENDDL", count);
+    }
+    for (i = 0; i + 1 < count; i++) {
+        if ((cmds[i].w0 >> 24) == G_SETCIMG_OP) {
+            if (cmds[i].w1 == 0 || g_frame_images != 0) {
+                port_fatal("port_gfx_submit: command %u of the frame's task %u sets colour image %u to %p", i,
+                           g_frame_tasks + 1, g_frame_images + 1, (void *)cmds[i].w1);
+            }
+            g_frame_images++;
+        }
+    }
+    frame_add(cmds, count - 1);
+    g_frame_tasks++;
+}
+
+const void *game_sdk_frame(uint32_t *count, uint32_t *tasks) {
+    *count = g_frame_count;
+    *tasks = g_frame_tasks;
+    return g_frame;
+}
+
 void port_present(int32_t kind) {
     int i;
 
     if (kind == GAME_PRESENT_FRAME) {
+        static const FrameCmd end = { (uintptr_t)G_ENDDL_OP << 24, 0 };
+
         g_frames++;
+        g_frame_count = 0;
+        g_frame_tasks = 0;
+        g_frame_images = 0;
+        if (g_hooks.before_render != NULL) {
+            g_hooks.before_render();
+        }
+        port_render_frame();
+        if (g_hooks.after_render != NULL) {
+            g_hooks.after_render();
+        }
+        if (g_frame_tasks != 0) {
+            frame_add(&end, 1);
+        }
     }
     if (kind == GAME_PRESENT_FRAME || kind == GAME_PRESENT_SYNC) {
         for (i = 0; i < IDLE_RANDOMS; i++) {

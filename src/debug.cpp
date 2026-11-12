@@ -71,7 +71,8 @@ void AddDebugMenu(const std::shared_ptr<Fast::Fast3dWindow>& window, std::vector
 // command chosen in the debugger's tree. So the frame is drawn again and again from the same list while the user looks
 // at it. LibUltraShip's C helper functions for this (GfxDebuggerRequestDebugging and the rest) find no debugger in this
 // setup, so the window's own GfxDebugger is used.
-void HoldForGfxDebugger(const std::shared_ptr<Fast::Fast3dWindow>& window, Gfx* frame) {
+void HoldForGfxDebugger(const std::shared_ptr<Fast::Fast3dWindow>& window, Gfx* frame,
+                        const std::function<void()>& eachFrame) {
     auto debugger = window->GetGfxDebugger();
 
     if (debugger == nullptr || !debugger->IsDebuggingRequested()) {
@@ -81,6 +82,9 @@ void HoldForGfxDebugger(const std::shared_ptr<Fast::Fast3dWindow>& window, Gfx* 
     while (debugger->IsDebugging() && WindowIsRunning()) {
         window->HandleEvents();
         window->DrawAndRunGraphicsCommands(frame, {});
+        if (eachFrame) {
+            eachFrame();
+        }
     }
 }
 

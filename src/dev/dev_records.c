@@ -1,6 +1,7 @@
 /* Reads the game's match state for the developer match (src/dev/dev_records.h). It is compiled with the game's
  * settings and includes the game's headers, so it reads the records by their types; the rest of the port sees only
- * the plain values of dev_records.h. It only reads: it never changes the game's values. */
+ * the plain values of dev_records.h. It only reads the game's values, but for the draw switches, which change the
+ * objects' draw groups while the port builds a frame and then put them back (dev_records_hide_groups). */
 #include <string.h> /* system headers come before common.h, whose port.h renames some C library functions */
 
 #include "common.h"
@@ -196,6 +197,62 @@ static const char *const kPhaseNames[] = {
     [TD_PHASE_SETUP] = "setup", [TD_PHASE_INTRO] = "intro", [TD_PHASE_FIGHT] = "fight",
     [TD_PHASE_ENDING] = "ending", [TD_PHASE_RESULTS] = "results",
 };
+
+extern s16 D_80047062; /* how many work blocks D_80046860 holds */
+
+size_t dev_records_draw_blocks(DevDrawBlock *out, size_t max) {
+    size_t n = (size_t)(u16)D_80047062;
+    size_t i;
+
+    for (i = 0; i < n && i < max; i++) {
+        const Nw2SceneWork *w = D_80046860[i];
+        const Nw2SceneObj *o = SLOT_TO_PTR(w->owner);
+
+        out[i].group = (uint8_t)(o->group & 0x7F);
+        out[i].hidden = (uint8_t)((o->group & 0x80) != 0 || (w->kind & 0x80) != 0);
+        out[i].flat = (uint8_t)(o->flat != 0);
+        out[i].mesh = (uint8_t)((w->kind & 0x7F) == 1);
+        out[i].depth = w->depth;
+        out[i].eye_z = w->eye[2];
+    }
+    return n;
+}
+
+/* The objects whose groups dev_records_hide_groups changed, and their groups before. */
+static struct {
+    Nw2SceneObj *obj;
+    u8 group;
+} g_hidden[512];
+static size_t g_hidden_count;
+
+void dev_records_hide_groups(uint32_t mask) {
+    size_t n = (size_t)(u16)D_80047062;
+    size_t i, k;
+
+    g_hidden_count = 0;
+    for (i = 0; i < n; i++) {
+        Nw2SceneObj *o = SLOT_TO_PTR(((const Nw2SceneWork *)D_80046860[i])->owner);
+
+        if ((o->group & 0x80) != 0 || (o->group & 0x7F) >= 32 || !(mask & (1u << (o->group & 0x7F)))) {
+            continue;
+        }
+        for (k = 0; k < g_hidden_count && g_hidden[k].obj != o; k++) {
+        }
+        if (k == g_hidden_count && g_hidden_count < sizeof(g_hidden) / sizeof(g_hidden[0])) {
+            g_hidden[g_hidden_count].obj = o;
+            g_hidden[g_hidden_count].group = o->group;
+            g_hidden_count++;
+            o->group |= 0x80;
+        }
+    }
+}
+
+void dev_records_unhide_groups(void) {
+    while (g_hidden_count > 0) {
+        g_hidden_count--;
+        g_hidden[g_hidden_count].obj->group = g_hidden[g_hidden_count].group;
+    }
+}
 
 const char *dev_state_name(int state) {
     return state >= 0 && state < 0x92 && kStateNames[state] != NULL ? kStateNames[state] : "";

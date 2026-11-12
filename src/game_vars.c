@@ -4,6 +4,7 @@
 
 #include "game.h"
 #include "game_vars.h"
+#include "dev/order_check.h"
 
 /* Turns the w-byte value at p from the N64's byte order (most significant byte first) into the PC's (least
  * significant byte first) by reversing its bytes. */
@@ -15,6 +16,7 @@ static void swap_value(uint8_t *p, unsigned w) {
         p[i] = p[w - 1 - i];
         p[w - 1 - i] = t;
     }
+    ORDER_CHECK_VALUE(p, w);
 }
 
 static void swap_var(uint8_t *block, const GameVar *v) {
