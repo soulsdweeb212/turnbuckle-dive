@@ -39,8 +39,13 @@ uint32_t game_sdk_frames(void) {
  * On the N64 an idle thread (func_800004B8) calls guRandom in a loop whenever the CPU has nothing else to do, so the
  * random seed xseed moves on by however much idle time each frame leaves, which differs from run to run. On PC no
  * thread idles; instead each hand-off that waits for the screen (a frame, or a wait for the retrace) draws a fixed
- * number of random numbers, IDLE_RANDOMS, so the same match gives the same numbers on every run. */
-#define IDLE_RANDOMS 1
+ * number of random numbers, g_idle_randoms (1, or 0 with game_sdk_set_idle_randoms), so the same match gives the
+ * same numbers on every run. */
+static int g_idle_randoms = 1;
+
+void game_sdk_set_idle_randoms(int count) {
+    g_idle_randoms = count;
+}
 
 uint32_t guRandom(void); /* the game's own (src/main/guRandom.c) */
 
@@ -137,7 +142,7 @@ void port_present(int32_t kind) {
         }
     }
     if (kind == GAME_PRESENT_FRAME || kind == GAME_PRESENT_SYNC) {
-        for (i = 0; i < IDLE_RANDOMS; i++) {
+        for (i = 0; i < g_idle_randoms; i++) {
             guRandom();
         }
     }

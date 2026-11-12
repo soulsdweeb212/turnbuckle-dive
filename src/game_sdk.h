@@ -33,6 +33,11 @@ typedef struct {
 /* Sets the hooks, and which controllers are plugged in: bit n for controller n + 1. */
 void game_sdk_set(const GameSdkHooks *hooks, unsigned plugged);
 
+/* How many random numbers (guRandom) each frame hand-off and each wait for the retrace draws, in place of the N64's
+ * idle thread: 1 by default, 0 to compare with the original game run without its idle thread's calls (docs/GAME_CODE.md,
+ * "Comparing with the original game"). */
+void game_sdk_set_idle_randoms(int count);
+
 /* How many times the game has handed over a frame (GAME_PRESENT_FRAME) since the program started. */
 uint32_t game_sdk_frames(void);
 

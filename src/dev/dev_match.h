@@ -27,6 +27,9 @@ typedef struct {
     void *user;
     /* The draw groups not to draw from the start, bit n for group n (dev_records_hide_groups); 0 for none. */
     uint32_t hide_groups;
+    /* 1: no random numbers drawn in place of the N64's idle thread (game_sdk_set_idle_randoms), to compare with the
+     * original game run by Project64's td_lockstep.js, which turns the idle thread's calls off. */
+    int no_idle_randoms;
 } DevMatchOptions;
 
 /* Runs one CPU-vs-CPU match on the checked ROM and checks the G6 gate (docs/GAME_CODE.md, "The developer match"):

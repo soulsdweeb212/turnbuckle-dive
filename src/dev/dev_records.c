@@ -198,6 +198,10 @@ static const char *const kPhaseNames[] = {
     [TD_PHASE_ENDING] = "ending", [TD_PHASE_RESULTS] = "results",
 };
 
+uint32_t dev_records_match_frame(void) {
+    return D_800E2FAC;
+}
+
 extern s16 D_80047062; /* how many work blocks D_80046860 holds */
 
 size_t dev_records_draw_blocks(DevDrawBlock *out, size_t max) {

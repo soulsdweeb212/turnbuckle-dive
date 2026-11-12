@@ -318,6 +318,8 @@ settings. It runs inside the game's frame hand-off, on the game's thread, while 
 | `--screenshot-every N` | with `--screenshot PREFIX`: saves the window every N frames, as PREFIX-NNNNN.png |
 | `--hide-group N` | does not draw draw group N (as the inspector's switches); may be given more than once |
 | `--dump-frame N FILE` | writes every drawing command of frame N to FILE |
+| `--no-idle-randoms` | draws no random numbers in place of the N64's idle thread ("Comparing with the original game") |
+| `--capture-match-frames N,N,... DIR` | at each of those match frames, saves the window as DIR/port_NNNNN.png and the display list as DIR/port_NNNNN.txt |
 | `--no-watchdog` | no watchdog (the VS Code entries use it, so that stepping in the debugger is not taken for a hang) |
 
 The logs and screenshots are made from your ROM: keep them in the build folder, never in the repository.
@@ -342,7 +344,7 @@ the system puts the program in memory. Two things make it so:
 
 - On the N64 an idle thread calls `guRandom` whenever the CPU has nothing to do, so the random seed moves on by however
   much idle time each frame leaves. On PC no thread idles; `port_present` (`src/game_sdk.c`) draws one random number at
-  each frame and each wait for the retrace instead (`IDLE_RANDOMS`).
+  each frame and each wait for the retrace instead (`g_idle_randoms`).
 - A few game functions read a local variable before they set it, where the N64 reads whatever its stack held. Game
   files are compiled with `-ftrivial-auto-var-init=zero` (`td_game_code`), so such a variable starts as zero on every
   run.
@@ -372,6 +374,54 @@ find bugs (`--seed 1`, `--seed 2` and so on).
 - Inside the match, `D_800E2FAC` counts the match's frames and `(int)D_800EB465` is the phase; a breakpoint with a
   condition such as `D_800F9D10[1].health < 100` stops where it happens.
 - In gdb in a terminal, `source tools/gdb/wrestler.py` gives the same one-line records.
+
+### Comparing with the original game
+
+The developer match can be checked against the original game, run in the Project64 emulator on Windows. The emulator
+is only a measuring tool: it never becomes part of Turnbuckle Dive, and its script stays out of both repositories, in
+the decompilation's folder at `notes/gameplay_route/work/reference/out/pj64/Scripts/td_lockstep.js`.
+
+The two can play the very same match because of one change on each side. On the N64, an idle thread calls the random
+number generator (`guRandom`) whenever nothing else runs, so the random seed moves on by however much idle time each
+frame leaves, which no two machines share. The script turns that one call (at `0x80000560`) into a no-op, and the port
+then runs with `--no-idle-randoms`, which drops its stand-in for it (`g_idle_randoms`, above). Both then draw a random
+number only where the game asks for one, the same numbers in the same order, unless the port's code does something
+the original does not, which is what the comparison looks for.
+
+The script also starts the match the way the developer match does: when the boot loop is about to run overlay 1 (the
+menus), it makes overlay 1's entry jump to `func_8002B750`, which builds the name table, and before overlay 2 runs it
+writes the same settings as `write_settings`. Then, at every frame hand-off, it saves the match frame, the seed and
+the four wrestler records, and for a list of match frames the display lists and the picture.
+
+1. In Project64 (a 4.0 development build): the debugger on, the interpreter core, "Randomize SI/PI interrupts" off,
+   and GLideN64's `frameBufferEmulation\copyToRDRAM=1` in its `GLideN64.ini`, so that each frame's picture is copied
+   back to the N64's memory whole. Copy the script into Project64's `Scripts` folder and make it run at start
+   (`Autorun Scripts=td_lockstep.js` under `[Debugger]` in `Config/Project64.cfg`), then open the ROM. The script
+   writes into `C:/n64/out/lockstep/` and, a little after the match ends, writes `done.txt` and pauses the emulator.
+   Take the autorun line out again afterwards: with it, the game always skips its menus.
+2. The port, the same match, its records and the same frames:
+
+   ```
+   ./build/debug/turnbuckle-dive --dev-match --headless --no-idle-randoms --wr-log build/debug/port.wrlog
+   ./build/debug/turnbuckle-dive --dev-match --no-idle-randoms --capture-match-frames 29,30,31,299,300,301 build/debug/lists
+   ./build/debug/turnbuckle-dive --dev-match --no-idle-randoms --hide-group 5 --capture-match-frames 29,30,31,299,300,301 build/debug/pictures
+   ```
+
+   Each match frame is taken with its neighbours, because Project64 names a frame by the hand-off before its drawing.
+   GLideN64 leaves the HUD out of the picture it copies back, so the pictures come from a run without it.
+3. `tools/n64_compare.py` compares them:
+
+   ```
+   python3 tools/n64_compare.py records /mnt/c/n64/out/lockstep/lockstep.bin build/debug/port.wrlog
+   python3 tools/n64_compare.py frames /mnt/c/n64/out/lockstep build/debug/lists --pictures build/debug/pictures
+   ```
+
+   `records` compares every field of every wrestler, and the seed, at every frame, and prints `the same: N frames` or
+   the first frame that differs with each field and its two values. `frames` compares each frame's display lists
+   command by command (leaving out the words that hold addresses) and its picture (the port's window cut to the 4:3
+   picture and averaged down to the N64's 480x240): it passes when the lists agree, but for the clear of the next
+   framebuffer that the port leaves out on purpose, and 95% of the pixels are within 32 of 255 in every channel.
+   `--out DIR` also writes the two pictures and their difference.
 
 ## Every file of the developer program: td_game_all
 

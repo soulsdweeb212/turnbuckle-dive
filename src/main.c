@@ -98,8 +98,11 @@ int main(int argc, char **argv) {
     unsigned screenshot_every = 0;
     const char *dump = NULL;
     unsigned dump_frame = 0;
+    const char *capture_dir = NULL;
+    unsigned capture_frames[64];
+    unsigned capture_count = 0;
 #ifdef TD_DEV_MATCH
-    DevMatchOptions match_options = { NULL, NULL, 0, 0, 0, NULL, NULL, 0 };
+    DevMatchOptions match_options = { NULL, NULL, 0, 0, 0, NULL, NULL, 0, 0 };
 #endif
     RomStatus status;
     Rom rom;
@@ -135,6 +138,16 @@ int main(int argc, char **argv) {
             screenshot = argv[++i];
         } else if (strcmp(argv[i], "--screenshot-frame") == 0 && i + 1 < argc) {
             screenshot_frame = (unsigned)strtoul(argv[++i], NULL, 0);
+        } else if (strcmp(argv[i], "--no-idle-randoms") == 0) {
+            match_options.no_idle_randoms = 1;
+        } else if (strcmp(argv[i], "--capture-match-frames") == 0 && i + 2 < argc) {
+            char *list = argv[++i];
+            capture_dir = argv[++i];
+            while (*list != '\0' && capture_count < sizeof(capture_frames) / sizeof(capture_frames[0])) {
+                char *end;
+                capture_frames[capture_count++] = (unsigned)strtoul(list, &end, 0);
+                list = *end == ',' ? end + 1 : end + strlen(end);
+            }
         } else if (strcmp(argv[i], "--hide-group") == 0 && i + 1 < argc) {
             unsigned long group = strtoul(argv[++i], NULL, 0);
             if (group < 32) {
@@ -154,7 +167,7 @@ int main(int argc, char **argv) {
         } else if (strncmp(argv[i], "--", 2) == 0 || rom_arg != NULL) {
             fprintf(stderr, "Usage: turnbuckle-dive [--res ID | --dev-match [--headless] [--wr-log FILE] [--res-log FILE] [--seed N] "
                             "[--no-watchdog] "
-                            "[--hide-group N]... [--screenshot FILE [--screenshot-frame N | --screenshot-every N]] [--dump-frame N FILE]] [ROM]\n");
+                            "[--hide-group N]... [--screenshot FILE [--screenshot-frame N | --screenshot-every N]] [--dump-frame N FILE] [--no-idle-randoms] [--capture-match-frames N,N,... DIR]] [ROM]\n");
             return 1;
         } else {
             rom_arg = argv[i];
@@ -201,6 +214,9 @@ int main(int argc, char **argv) {
                 if (dump != NULL) {
                     dev_inspector_dump(dump, dump_frame);
                 }
+                if (capture_dir != NULL) {
+                    dev_inspector_capture(capture_dir, capture_frames, capture_count);
+                }
             } else {
                 printf("dev-match: no window; the match runs without the Match Inspector\n");
             }
@@ -221,6 +237,9 @@ int main(int argc, char **argv) {
     (void)screenshot_every;
     (void)dump;
     (void)dump_frame;
+    (void)capture_dir;
+    (void)capture_frames;
+    (void)capture_count;
 #ifdef TD_GAME_CODE
     run_game_loader(&rom, res_id);
 #endif

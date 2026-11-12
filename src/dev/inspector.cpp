@@ -56,6 +56,8 @@ unsigned gShotFrame;
 std::string gShotPrefix; // --screenshot-every: the files' prefix, the interval, and the next frame to save
 unsigned gShotEvery;
 unsigned gShotNext;
+std::string gCaptureDir; // --capture-match-frames: the folder, and the match frames still to capture
+std::vector<unsigned> gCaptureFrames;
 std::string gDumpPath; // --dump-frame: the frame, and the file to list its display list in
 unsigned gDumpFrame;
 
@@ -332,6 +334,22 @@ void DrawWindowFrame() {
         }
         gDumpPath.clear();
     }
+    std::string capture;
+    if (count != 0 && !gCaptureFrames.empty()) {
+        unsigned m = dev_records_match_frame();
+        auto it = std::find(gCaptureFrames.begin(), gCaptureFrames.end(), m);
+        if (it != gCaptureFrames.end()) {
+            char name[32];
+            std::snprintf(name, sizeof(name), "/port_%05u", m);
+            capture = gCaptureDir + name;
+            gCaptureFrames.erase(it);
+            std::FILE* out = std::fopen((capture + ".txt").c_str(), "w");
+            if (out != nullptr) {
+                td::DumpDisplayList(static_cast<const Gfx*>(frame), out);
+                std::fclose(out);
+            }
+        }
+    }
     if (count != 0) {
         window->GetInterpreterWeak().lock()->Run(static_cast<Gfx*>(const_cast<void*>(frame)), {});
     } else {
@@ -341,6 +359,9 @@ void DrawWindowFrame() {
     if (!gShotPath.empty() && dev_match_frames() >= gShotFrame) {
         SaveScreenshot(gShotPath);
         gShotPath.clear();
+    }
+    if (!capture.empty()) {
+        SaveScreenshot(capture + ".png");
     }
     if (gShotEvery != 0 && count != 0 && dev_match_frames() >= gShotNext) {
         char name[32];
@@ -428,6 +449,11 @@ extern "C" void dev_inspector_screenshots(const char* prefix, unsigned every) {
     gShotPrefix = prefix;
     gShotEvery = every;
     gShotNext = every;
+}
+
+extern "C" void dev_inspector_capture(const char* dir, const unsigned* frames, unsigned count) {
+    gCaptureDir = dir;
+    gCaptureFrames.assign(frames, frames + count);
 }
 
 extern "C" void dev_inspector_dump(const char* path, unsigned frame) {

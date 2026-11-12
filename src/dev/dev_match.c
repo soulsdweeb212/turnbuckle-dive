@@ -281,12 +281,13 @@ static void after_render(void) {
 
 int dev_match_run(const Rom *rom, const DevMatchOptions *options) {
     static const GameSdkHooks hooks = { on_present, read_pad, before_render, after_render };
-    static const DevMatchOptions none = { NULL, NULL, 0, 0, 0, NULL, NULL, 0 };
+    static const DevMatchOptions none = { NULL, NULL, 0, 0, 0, NULL, NULL, 0, 0 };
     pthread_t dog;
     unsigned i;
 
     g_options = options != NULL ? options : &none;
     g_hide_groups = g_options->hide_groups;
+    game_sdk_set_idle_randoms(g_options->no_idle_randoms ? 0 : 1);
     rom_attach(rom);
     game_sdk_set(&hooks, 0x1); /* controller 1 plugged in, for the results screen */
     port_res_hook(on_load);

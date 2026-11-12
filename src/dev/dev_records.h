@@ -66,6 +66,9 @@ typedef struct {
     float eye_z;    /* its centre's distance in front of the camera */
 } DevDrawBlock;
 
+/* The match frame, D_800E2FAC. */
+uint32_t dev_records_match_frame(void);
+
 /* Fills out with up to max work blocks, in the game's depth order, and returns how many the scene has. */
 size_t dev_records_draw_blocks(DevDrawBlock *out, size_t max);
 
