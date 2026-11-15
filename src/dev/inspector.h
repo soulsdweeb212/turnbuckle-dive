@@ -2,6 +2,8 @@
 #ifndef TD_INSPECTOR_H
 #define TD_INSPECTOR_H
 
+#include <stdint.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -16,6 +18,9 @@ void dev_inspector_frame(void *user);
 
 /* Closes the window. */
 void dev_inspector_stop(void);
+/* The game frame count that the screenshots below go by: by default the developer match's (dev_match_frames); the
+ * developer boot hands over its own. */
+void dev_inspector_frames_from(uint32_t (*frames)(void));
 
 /* Saves the window, as drawn at game frame `frame`, to a PNG file at path (OpenGL only, the default on Linux). The
  * picture shows the match's state, made from the user's ROM: keep it out of the repository. */

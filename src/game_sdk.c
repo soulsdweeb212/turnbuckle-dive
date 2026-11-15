@@ -1,6 +1,6 @@
-/* The port's versions of the N64 SDK functions that the developer program's game files call: libultra's message
- * queues, controllers, Rumble Pak, cartridge reads, video, threads, interrupts and caches, the scheduler's client list,
- * and the music library libmus. The decompilation's include/port.h says why several are renamed port_...: their N64
+/* The port's versions of the N64 SDK functions that the game's files call: libultra's message queues, controllers,
+ * Rumble Pak and Controller Pak, cartridge reads and the save memory, video, threads, interrupts and caches, the
+ * scheduler's client list, and the music library libmus. The decompilation's include/port.h says why several are renamed port_...: their N64
  * records are smaller than LibUltraShip's.
  *
  * How the game runs on them: one thread, the game's own. On the N64 the game also has a render thread (func_80002CC4),
@@ -314,6 +314,25 @@ int32_t port_osContSetCh(uint8_t channels) {
     return 0;
 }
 
+/* No Controller Pak is plugged in, so the menus find no pak to save to: osPfsInitPak answers 1 (PFS_ERR_NOPACK), as
+ * the N64 does without one, and so does osPfsFindFile, which the game only calls after osPfsInitPak has succeeded. */
+int32_t osPfsInitPak(void *mq, void *pfs, int32_t channel) {
+    (void)mq;
+    (void)pfs;
+    (void)channel;
+    return 1;
+}
+
+int32_t osPfsFindFile(void *pfs, uint16_t company, uint32_t game, uint8_t *name, uint8_t *ext, int32_t *file) {
+    (void)pfs;
+    (void)company;
+    (void)game;
+    (void)name;
+    (void)ext;
+    (void)file;
+    return 1;
+}
+
 /* No Rumble Pak is plugged in: osMotorInit answers 1 (PFS_ERR_NOPACK), as the N64 does without one. */
 int32_t port_osMotorInit(void *mq, void *pfs, int32_t channel) {
     (void)mq;
@@ -345,15 +364,51 @@ typedef struct {
 
 static uint8_t g_cart_handle[0x74]; /* the size of the N64's OSPiHandle; the game never reads it */
 
+/* The save memory: the cartridge's 32 KiB of battery-backed SRAM, where the menus keep the game's saves. The game
+ * reaches it through a PI handle of its own, which func_80000A40 fills (device type 3, SRAM, at 0xA8000000) and hands
+ * to osEPiLinkHandle once; a request through that handle has an offset into the SRAM as its devAddr, and reads
+ * (direction 0) or writes (1) it. On PC the SRAM is memory, all zeros until the game writes a save
+ * (game_sdk_sram). */
+static uint8_t g_sram[GAME_SDK_SRAM_SIZE];
+static void *g_sram_handle;
+static uint32_t g_sram_writes;
+
+void osEPiLinkHandle(void *handle) {
+    if (((const uint8_t *)handle)[4] != 3) { /* the handle's device type (OSPiHandle.type) */
+        port_fatal("osEPiLinkHandle: a handle of device type %u; the game links only its SRAM's (3)",
+                   ((const uint8_t *)handle)[4]);
+    }
+    g_sram_handle = handle;
+}
+
+uint8_t *game_sdk_sram(uint32_t *writes) {
+    if (writes != NULL) {
+        *writes = g_sram_writes;
+    }
+    return g_sram;
+}
+
 void *osCartRomInit(void) {
     return g_cart_handle;
 }
 
 int32_t port_osEPiStartDma(void *handle, PortIoMesg *mb, int32_t direction) {
-    if (direction != 0) {
+    if (handle != NULL && handle == g_sram_handle) {
+        if (mb->devAddr > GAME_SDK_SRAM_SIZE || mb->size > GAME_SDK_SRAM_SIZE - mb->devAddr) {
+            port_fatal("osEPiStartDma: 0x%X bytes at 0x%X of the SRAM, which has 0x%X", (unsigned)mb->size,
+                       (unsigned)mb->devAddr, (unsigned)GAME_SDK_SRAM_SIZE);
+        }
+        if (direction == 0) {
+            memcpy(mb->dramAddr, g_sram + mb->devAddr, mb->size);
+        } else {
+            memcpy(g_sram + mb->devAddr, mb->dramAddr, mb->size);
+            g_sram_writes++;
+        }
+    } else if (direction != 0) {
         port_fatal("osEPiStartDma: a write to the cartridge (direction %d)", (int)direction);
+    } else {
+        port_rom_read(mb->dramAddr, mb->devAddr, mb->size);
     }
-    port_rom_read(mb->dramAddr, mb->devAddr, mb->size);
     mb->piHandle = handle;
     if (mb->retQueue != NULL) {
         port_osSendMesg(mb->retQueue, port_ptr_to_slot(mb), 0);
@@ -482,4 +537,16 @@ int32_t MusHandleSetReverb(uint32_t handle, int32_t reverb) {
     (void)handle;
     (void)reverb;
     return 0;
+}
+
+int32_t MusHandleSetVolume(uint32_t handle, int32_t volume) {
+    (void)handle;
+    (void)volume;
+    return 0;
+}
+
+/* An audio library setting, the N64's D_80060500, which func_8000333C sets from its argument: nothing plays yet, so
+ * nothing reads it. */
+void func_8001613C(int32_t mode) {
+    (void)mode;
 }

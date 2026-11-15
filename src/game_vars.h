@@ -35,8 +35,9 @@ typedef struct {
 
 /* One field of an address table's element: where it is in the N64 element and in the PC element, and its kind: '1',
  * '2', '4' or '8' (a value of that many bytes, turned into the PC's byte order), 'p' (an N64 address, turned into the
- * PC address of what it names), 'f' (the N64 address of a function, turned into the PC function) or 'z' (an entry the
- * game never reads, NULL on PC). */
+ * PC address of what it names), 'k' (a word that holds a number or an address, the decompilation's IdOrAddr: an N64
+ * address, negative as an s32, becomes the PC address, any other value stays a number, -1 as all ones), 'f' (the N64 address of a
+ * function, turned into the PC function) or 'z' (an entry the game never reads, NULL on PC). */
 typedef struct {
     uint16_t n64_offset;
     uint16_t pc_offset;
@@ -57,9 +58,23 @@ typedef struct {
     uint32_t field_count;
 } GameVarFill;
 
-/* An object at N64 address n64 is at pc on PC (game_var_targets, sorted by n64). */
+/* A display list in the ROM's data (the map's "gfx" lines): its PC copy, its N64 address and its number of commands.
+ * The N64's commands are 8 bytes, two big-endian 32-bit words; the PC's are 16, two pointer-wide words (LUS's Gfx),
+ * so game_vars_load builds the copy command by command: each word widened, and the address in a command that holds
+ * one (G_VTX, G_DL, G_SETTIMG, G_MOVEMEM) turned into the PC address of what it names (game_vars_address). */
+typedef struct {
+    const char *name;
+    uint8_t *data;
+    uint32_t n64;
+    uint32_t count;
+} GameVarGfx;
+
+/* An object at N64 address n64 of overlay `overlay` (0: main) is at pc on PC (game_var_targets, sorted by n64, then
+ * overlay). The two overlays share addresses, so an address names an object of main or of the overlay whose data
+ * holds it. */
 typedef struct {
     uint32_t n64;
+    int overlay;
     void *pc;
 } GameVarTarget;
 
@@ -70,10 +85,12 @@ typedef struct {
 } GameVarFunction;
 
 #define GAME_VAR_NO_ROM 0xFFFFFFFFu /* a section of zeros (BSS) */
-#define GAME_VAR_SECTIONS 5
+#define GAME_VAR_SECTIONS 6
 
 /* An N64 section: the block of PC memory that holds it, its N64 address and size, its ROM offset, the overlay it
- * belongs to (0: main), its block variables and its own-storage variables. */
+ * belongs to (0: main), its block variables, its own-storage variables, its address tables and its display lists. The
+ * overlays' sections share one area of PC memory by N64 address, as they share the N64's memory: overlay 1's BSS lies
+ * where overlay 2's data lies, and loading either overlay fills or zeroes its own sections there. */
 typedef struct {
     const char *name;
     uint8_t *block;
@@ -87,6 +104,8 @@ typedef struct {
     uint32_t own_count;
     const GameVarFill *fills;
     uint32_t fill_count;
+    const GameVarGfx *gfx;
+    uint32_t gfx_count;
 } GameVarSection;
 
 extern const GameVarSection game_var_sections[GAME_VAR_SECTIONS];
@@ -102,9 +121,10 @@ extern const GameVarFunction game_var_functions[];
 extern const uint32_t game_var_function_count;
 void game_vars_use_functions(const GameVarFunction *functions, uint32_t count);
 
-/* The PC address of the data that the N64 address n64 names: an object of game_var_targets, or the place in a section's
- * block. 0 gives NULL; any other address stops the program. */
-void *game_vars_address(uint32_t n64);
+/* The PC address of the data that the N64 address n64 names, for the code of `overlay` (0: main, 1 or 2): an object
+ * of game_var_targets of main or that overlay, or the place in a section's block. 0 gives NULL; any other address
+ * stops the program. */
+void *game_vars_address(uint32_t n64, int overlay);
 /* The PC function at the N64 address n64 (game_vars_use_functions); any other address stops the program. */
 void (*game_vars_function(uint32_t n64))(void);
 
@@ -112,7 +132,7 @@ void (*game_vars_function(uint32_t n64))(void);
  * sections that the ROM fills is copied from the ROM, and each value of the swap patterns turned into the PC's byte
  * order; its BSS and the own storage of its variables are set to zeros. Loading an overlay again starts it afresh, as
  * on the N64. The address tables of its sections are built in their PC layout, each N64 address turned into the PC
- * address of what it names (game_vars_address). */
+ * address of what it names (game_vars_address), and so are the PC copies of its display lists (GameVarGfx). */
 void game_vars_load(int overlay);
 
 #endif

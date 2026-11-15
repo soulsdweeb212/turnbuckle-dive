@@ -11,10 +11,16 @@
  *    go back to zeros.
  * 4. The address tables: every address field of every table (and of every array or record they reach) holds what its
  *    N64 word names, found here by a plain search instead of game_vars_address's: NULL for 0, the object at that N64
- *    address, or the place in its section's block; every function field holds the function at that N64 address, so
+ *    address, or the place in its section's block (a field that holds a number or an address, 'k', holds the number
+ *    itself when its word is not an address); every function field holds the function at that N64 address, so
  *    each entry of the handler tables D_800E2FF0 and D_800E3660 is the function the N64 calls there.
  * 5. A function's old name (set by the linker from the map) is the same function: func_800E2400 is
  *    tryBeginBlockReaction.
+ * 6. The display lists of the ROM's data: every command of every PC copy has the N64 command's first word, and its
+ *    second word too unless that is an address (G_VTX, G_DL, G_SETTIMG, G_MOVEMEM), which must be what the address
+ *    names, found by the same plain search as in 4; a G_DL must lead to a command of a PC copy.
+ * 7. The overlay table at 0x80036E30 in main's data, read from the ROM: port_overlay_of finds overlay 1 from its first
+ *    entry's ROM range and overlay 2 from its second, as the boot loop's func_80000700 and func_8000082C ask on PC.
  *
  * It needs the ROM, so CI never runs it; with no ROM it exits with code 77, which CTest reports as "skipped". It finds
  * the ROM like the program does (rom_find in src/rom.c).
@@ -133,8 +139,9 @@ static uint32_t rom_word(uint32_t rom) {
 /* An address no field can hold: what expected_address gives for a word that names nothing. */
 static char g_names_nothing;
 
-/* What an N64 address must become, by a plain search of the targets and sections. */
-static void *expected_address(uint32_t n64) {
+/* What an N64 address that the data of `overlay` (0: main) holds must become, by a plain search of the targets and
+ * sections of main and that overlay. */
+static void *expected_address(uint32_t n64, int overlay) {
     uint32_t i;
     int s;
 
@@ -142,14 +149,16 @@ static void *expected_address(uint32_t n64) {
         return NULL;
     }
     for (i = 0; i < game_var_target_count; i++) {
-        if (game_var_targets[i].n64 == n64) {
-            return game_var_targets[i].pc;
+        const GameVarTarget *t = &game_var_targets[i];
+
+        if (t->n64 == n64 && (t->overlay == 0 || t->overlay == overlay)) {
+            return t->pc;
         }
     }
     for (s = 0; s < GAME_VAR_SECTIONS; s++) {
         const GameVarSection *sec = &game_var_sections[s];
 
-        if (n64 >= sec->vram && n64 - sec->vram < sec->size) {
+        if ((sec->overlay == 0 || sec->overlay == overlay) && n64 >= sec->vram && n64 - sec->vram < sec->size) {
             return sec->block + (n64 - sec->vram);
         }
     }
@@ -188,10 +197,22 @@ static int check_tables(unsigned *tables, unsigned *addresses, unsigned *functio
                     const uint8_t *pc = f->data + (size_t)k * f->pc_size + fd->pc_offset;
                     uint32_t word;
 
-                    if (fd->kind != 'p' && fd->kind != 'f' && fd->kind != 'z') {
+                    if (fd->kind != 'p' && fd->kind != 'f' && fd->kind != 'z' && fd->kind != 'k') {
                         continue;
                     }
                     word = rom_word(sec->rom + (at - sec->vram));
+                    if (fd->kind == 'k' && (!(word & 0x80000000u) || word == 0xFFFFFFFFu)) {
+                        uintptr_t v;
+
+                        memcpy(&v, pc, sizeof(v)); /* a number: as it is, -1 as all ones */
+                        if (v != (uintptr_t)(intptr_t)(int32_t)word) {
+                            printf("FAIL: %s[%u]+0x%X: the number 0x%08X became 0x%llX\n", f->name, (unsigned)k,
+                                   (unsigned)fd->n64_offset, word, (unsigned long long)v);
+                            return 0;
+                        }
+                        (*addresses)++;
+                        continue;
+                    }
                     if (fd->kind == 'f') {
                         void (*fn)(void);
 
@@ -206,7 +227,7 @@ static int check_tables(unsigned *tables, unsigned *addresses, unsigned *functio
                         void *p;
 
                         memcpy(&p, pc, sizeof(p));
-                        if (p != (fd->kind == 'z' ? NULL : expected_address(word))) {
+                        if (p != (fd->kind == 'z' ? NULL : expected_address(word, sec->overlay))) {
                             printf("FAIL: %s[%u]+0x%X: the address 0x%08X became %p\n", f->name, (unsigned)k,
                                    (unsigned)fd->n64_offset, word, p);
                             return 0;
@@ -215,6 +236,81 @@ static int check_tables(unsigned *tables, unsigned *addresses, unsigned *functio
                     }
                 }
             }
+        }
+    }
+    return 1;
+}
+
+/* Whether p is a command of a display list's PC copy: where a G_DL must lead, since Fast3D reads PC commands. */
+static int is_gfx_command(uintptr_t p) {
+    int s;
+
+    for (s = 0; s < GAME_VAR_SECTIONS; s++) {
+        const GameVarSection *sec = &game_var_sections[s];
+        uint32_t t;
+
+        for (t = 0; t < sec->gfx_count; t++) {
+            uintptr_t lo = (uintptr_t)sec->gfx[t].data;
+
+            if (p >= lo && p - lo < (uintptr_t)sec->gfx[t].count * 16 && (p - lo) % 16 == 0) {
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+
+/* Checks every command of every display list's PC copy with the ROM; counts the lists and commands. */
+static int check_gfx(unsigned *lists, unsigned *commands) {
+    int s;
+
+    for (s = 0; s < GAME_VAR_SECTIONS; s++) {
+        const GameVarSection *sec = &game_var_sections[s];
+        uint32_t t;
+
+        for (t = 0; t < sec->gfx_count; t++) {
+            const GameVarGfx *g = &sec->gfx[t];
+            const uintptr_t *pc = (const uintptr_t *)g->data;
+            uint32_t k;
+
+            (*lists)++;
+            for (k = 0; k < g->count; k++) {
+                uint32_t rom = sec->rom + (g->n64 - sec->vram) + k * 8;
+                uint32_t w0 = rom_word(rom);
+                uint32_t w1 = rom_word(rom + 4);
+                uint32_t op = w0 >> 24;
+                /* G_VTX, G_DL, G_SETTIMG, G_MOVEMEM: a KSEG0 or physical address, which name the same place */
+                uintptr_t want = op == 0x01 || op == 0xDE || op == 0xFD || op == 0xDC
+                                     ? (uintptr_t)expected_address(w1 | 0x80000000u, sec->overlay)
+                                     : w1;
+
+                if (pc[k * 2] != w0 || pc[k * 2 + 1] != want || (op == 0xDE && !is_gfx_command(want))) {
+                    printf("FAIL: %s, command %u (0x%08X): %08X %08X became 0x%llX 0x%llX%s\n", g->name, (unsigned)k,
+                           g->n64 + k * 8, w0, w1, (unsigned long long)pc[k * 2], (unsigned long long)pc[k * 2 + 1],
+                           op == 0xDE ? " (a G_DL must lead to a PC copy of a display list)" : "");
+                    return 0;
+                }
+                (*commands)++;
+            }
+        }
+    }
+    return 1;
+}
+
+/* port_overlay_of over the ROM's overlay table: entry n (0x24 bytes each, its ROM start and end first) is overlay
+ * n + 1. */
+static int check_overlay_table(void) {
+    const GameVarSection *data = &game_var_sections[0]; /* main.data */
+    uint32_t n;
+
+    for (n = 0; n < 2; n++) {
+        uint32_t at = data->rom + (0x80036E30u + n * 0x24 - data->vram);
+        int32_t got = port_overlay_of(rom_word(at), rom_word(at + 4));
+
+        if (got != (int32_t)n + 1) {
+            printf("FAIL: the overlay table's entry %u (ROM 0x%X to 0x%X) is overlay %d, not %u\n", (unsigned)n,
+                   rom_word(at), rom_word(at + 4), (int)got, (unsigned)n + 1);
+            return 0;
         }
     }
     return 1;
@@ -262,6 +358,8 @@ int main(int argc, char **argv) {
     unsigned tables = 0;
     unsigned addresses = 0;
     unsigned functions = 0;
+    unsigned lists = 0;
+    unsigned commands = 0;
 
     if (argc == 2 && strcmp(argv[1], "--unswap") == 0) {
         unswap = 1;
@@ -341,13 +439,20 @@ int main(int argc, char **argv) {
         ok = check_tables(&tables, &addresses, &functions);
     }
     if (ok) {
+        ok = check_gfx(&lists, &commands);
+    }
+    if (ok) {
+        ok = check_overlay_table();
+    }
+    if (ok) {
         ok = check_reload();
     }
     if (ok) {
-        printf("The game's variables start as on the N64: %ld values in their PC byte order, every other byte as in the "
-               "ROM; %u address tables built, with %u addresses and %u functions in place; overlay 2 starts afresh "
+        printf("The game's variables start as on the N64: %ld values in their PC byte order, every other byte as in "
+               "the ROM; %u address tables built, with %u addresses and %u functions in place; %u display lists with "
+               "%u commands in their PC form; the overlay table names overlays 1 and 2; overlay 2 starts afresh "
                "when loaded again.\n",
-               values, tables, addresses, functions);
+               values, tables, addresses, functions, lists, commands);
     }
     rom_attach(NULL);
     rom_free(&rom);

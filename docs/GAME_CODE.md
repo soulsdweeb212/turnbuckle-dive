@@ -191,14 +191,20 @@ decompilation's `docs/port.md`, "The game's variables", says how), and the file 
 runs it again when the map or the tool changes). `td_game_vars` compiles it with `src/game_vars.c`, which fills the
 variables. Storage on PC is of two kinds:
 
-- *Block.* Each N64 section is one array of PC memory (`td_main_data`, `td_main_bss`, `td_ovl1_data`, `td_ovl2_data`,
-  `td_ovl2_bss`), and each variable that holds no address is a name for its N64 offset in that array. Such a variable's
+- *Block.* Each N64 section of main is one array of PC memory (`td_main_data`, `td_main_bss`), and the overlays'
+  sections share one more (`td_overlays`), by N64 address: on the N64 overlay 1's BSS lies where overlay 2's code,
+  data and BSS lie, only one overlay is loaded at a time, and loading one fills or zeroes its own sections. Each
+  variable that holds no address is a name for its N64 address in its array. Such a variable's
   type is laid out the same on both machines, so its neighbours are where they were on the N64: a record read through a
   label inside it (`D_8007E280` is `D_8007E228` + 0x58), arrays read as one, and the buffer that `func_80001260` finds
   by rounding `D_8007FC4F`'s address all work as on the N64. C cannot name the middle of an array, so `game_vars.c`
   sets these names in assembly (`.set D_8007E280, td_main_bss + 0x...`).
 - *Own.* A variable whose type holds an address is bigger on PC, so it gets its own array, as many bytes as its PC type.
   Code reaches it only by its own name (the decompilation's `docs/port.md`, "Shared records on PC").
+- *Display lists.* A display list that lies ready-made in the ROM's data (most are overlay 1's: the menus' frames and
+  boxes) gets its own array too, 16 bytes per command, which holds its PC copy (`GameVarGfx` in `src/game_vars.h`). A
+  list that starts inside another (`D_800C5D48`, the last two commands of `D_800C5D10`) is a name for the PC command
+  of the same number in that array.
 
 One variable with storage of its own gets zeroed bytes before it (`tools/game_vars.py`, `GUARD_BEFORE`): the
 wrestlers, `D_800F9D10`. The game uses -1 for "no wrestler" and reads fields of `D_800F9D10[-1]` where it then does
@@ -213,7 +219,12 @@ to the programs that link every game file.
 **Filling.** `game_vars_load(overlay)` (`src/game_vars.h`) starts the variables of main (0) or of overlay 1 or 2 as the
 N64 does when it loads that code: it copies each of its data sections from the ROM, then turns each 2-, 4- or 8-byte
 value into the PC's byte order by reversing its bytes, as the map's swap patterns say; its BSS and own storage go back
-to zeros. Loading an overlay again starts its variables afresh, as on the N64.
+to zeros. Loading an overlay again starts its variables afresh, as on the N64. The game's own loader,
+`func_80000700`, does this on PC: the boot loop hands it an entry of the overlay table `D_80036E30` (the ROM range of
+an overlay's code and data), `port_overlay_of` finds which overlay that range holds (the one whose data section's ROM
+offset lies in it), and `port_overlay_load` loads its variables. Both overlays' code is compiled into the program, so
+`func_8000082C` then calls the entry of that overlay by its PC name (`func_80090000` for overlay 1,
+`func_80090000_ovl2` for overlay 2: on the N64 both are the code at 0x80090000).
 
 **Address tables.** 24 variables that hold addresses are started by the N64 from the ROM: the tables of handlers
 `D_800E2FF0` and `D_800E3660`, the wrestler name tables, the tables of animation data and others. Many of them hold
@@ -221,19 +232,32 @@ addresses of further tables, down to three levels. The map describes each of the
 addresses reach (357 in all), as a list of fields: where each field is in the N64 element and in the PC element, and
 whether it is a value, an address or a function. After the sections, `game_vars_load` builds each table in its PC
 layout from its N64 bytes in the ROM: a value is turned into the PC's byte order, and an address into the PC address
-of what it names (`game_vars_address`): another table, a variable the port provides (the framebuffers), or the place
-in a section's block. The data that the addresses point at is turned into the PC's byte order like the variables
+of what it names (`game_vars_address`): another table, a variable the port provides (the framebuffers), a display
+list's PC copy, or the place in a section's block. An address of the overlays' area names what lies there for the
+overlay whose table holds it. The data that the addresses point at is turned into the PC's byte order like the variables
 (the map's "data" lines). A function address becomes the PC function (`game_vars_function`). The functions the tables
 hold are listed in `game_functions.c`, which `tools/game_vars.py` also writes; it names game functions, so it is the
 library `td_game_functions`, which only programs that link every game file use, and such a program hands the list
 over with `game_vars_use_functions` before it loads overlay 2. The viewer and `rom_loader` never load overlay 2.
+
+**Display lists.** Last, `game_vars_load` builds the PC copy of each display list of the overlay's sections from its
+N64 commands in the ROM (`build_gfx` in `src/game_vars.c`). An N64 command is two 32-bit words, most significant byte
+first; the PC's is two 64-bit words, LUS's `Gfx`, in the PC's byte order. Each word is widened, and the second word
+of the four commands that hold an address (`G_VTX` vertices, `G_DL` another list, `G_SETTIMG` a texture or palette,
+`G_MOVEMEM` the viewport) becomes the PC address of what it names, so a list that calls another calls its PC copy.
+The decompilation's tool has checked every command of every list before it wrote the map: it knows each command, and
+each address is the KSEG0 or physical address of data the ROM fills. The vertices and the viewport are turned into the
+PC's byte order like any variable; textures and palettes keep the N64's, which is the order LUS reads them in.
 
 **The check.** The test `game_vars` (`tests/game_vars/main.c`) is linked from every game file of the developer program,
 the variables and the SDK stand-ins, so it builds only when no game file uses a name the port lacks. It then fills the
 variables and compares each section with the ROM: each value read as a PC integer must equal the ROM's bytes read
 big-endian, and every other byte must equal the ROM's. Then every address and function field of every address table:
 each must hold what its N64 word names, found by a plain search of its own, so each entry of the handler tables is the
-function the N64 calls there. It also checks that loading overlay 2 again starts it afresh.
+function the N64 calls there. Then every command of every display list's PC copy: its first word must be the
+N64 command's, its second too unless it is an address, which must be what the address names, and a `G_DL` must lead to
+a command of a PC copy. It checks that `port_overlay_of` finds overlays 1 and 2 from the two entries of the ROM's
+overlay table, and that loading overlay 2 again starts it afresh.
 `game_vars_detects_change` runs it with one value left in the N64's byte order, and passes only if the check fails,
 which shows that the comparison really looks at the values. Both need the ROM and are skipped without it.
 
@@ -482,22 +506,41 @@ the four wrestler records, and for a list of match frames the display lists and 
    framebuffer that the port leaves out on purpose, and 95% of the pixels are within 32 of 255 in every channel.
    `--out DIR` also writes the two pictures and their difference.
 
-## Every file of the developer program: td_game_all
+## The developer boot
 
-The developer program is the PC program that will start straight into a match, without the menus. Its game files are
-the ones the match reaches, which the decompilation's tool `tools/port_filelist.py` works out by following the game's
-calls from its starting functions (the decompilation's `docs/port.md` says how). Today they are 857 files.
+`turnbuckle-dive --dev-boot FRAMES` starts the game as the N64 does, from its boot loop, and stops after FRAMES frames
+(`src/dev/dev_boot.c`). The game's variables of main start from the ROM; then the boot loop (`func_80013108`) starts
+the graphics, sound and controllers, loads overlay 1 (the menus) and runs it. On PC the game's loader
+(`func_80000700`) starts the loaded overlay's variables afresh and `func_8000082C` calls its entry (above, "The
+game's variables"). No controller is pressed. The Match Inspector's window draws the frames, and takes its
+screenshots by the boot's frame count; `--headless` runs without a window:
+
+```
+./build/debug/turnbuckle-dive --dev-boot 600 --headless
+./build/debug/turnbuckle-dive --dev-boot 360 --screenshot build/debug/boot --screenshot-every 60
+```
+
+It ends with exit code 0 at the FRAMES-th frame. The game's boot loop never returns, so the program ends there
+(`_Exit`, which leaves out the exit handlers: the game's heap is still in use). Like the developer match's, the
+pictures are made from the user's ROM: keep them out of the repository.
+
+## Every file of the game: td_game_all
+
+The game's files are the ones its boot reaches: the boot loop, the menus (overlay 1) and the match (overlay 2), which
+the decompilation's tool `tools/port_filelist.py` works out by following the game's calls from its starting functions
+(`--set boot`; the decompilation's `docs/port.md` says how). Today they are 1201 files. The developer match uses the
+857 of them that the match reaches.
 
 The target `td_game_all` compiles every one of them, with the same settings as `td_game`. `turnbuckle-dive` links them
-all, with the game's variables and the SDK functions, for the developer match (above), and so does the test program
-`game_vars_check`; so a build stops on a game file that no longer compiles or uses a name the port lacks. Without
-`td_game_all` (no Python 3, or the decompilation's build not run), `turnbuckle-dive` links only the ROM loader's files
-(`td_game`) and has no `--dev-match`.
+all, with the game's variables and the SDK functions, for the developer match (above) and the developer boot (below),
+and so does the test program `game_vars_check`; so a build stops on a game file that no longer compiles or uses a name
+the port lacks. Without `td_game_all` (no Python 3, or the decompilation's build not run), `turnbuckle-dive` links
+only the ROM loader's files (`td_game`) and has no `--dev-match` or `--dev-boot`.
 
 Configure runs `port_filelist.py` and prints how many files it found:
 
 ```
--- Game code: td_game_all compiles the developer program's 857 files
+-- Game code: td_game_all compiles the game's 1201 files
 ```
 
 The tool writes two text files into the build folder: the list (`game_match_files.txt`), and the paths of every file it

@@ -42,7 +42,7 @@ void game_vars_use_functions(const GameVarFunction *functions, uint32_t count) {
     g_function_count = count;
 }
 
-void *game_vars_address(uint32_t n64) {
+void *game_vars_address(uint32_t n64, int overlay) {
     uint32_t lo = 0;
     uint32_t hi = game_var_target_count;
     int i;
@@ -50,26 +50,28 @@ void *game_vars_address(uint32_t n64) {
     if (n64 == 0) {
         return NULL;
     }
-    while (lo < hi) { /* binary search: the targets are sorted by N64 address */
+    while (lo < hi) { /* binary search for the first target at n64: the targets are sorted by N64 address */
         uint32_t mid = lo + (hi - lo) / 2;
 
-        if (game_var_targets[mid].n64 == n64) {
-            return game_var_targets[mid].pc;
-        }
         if (game_var_targets[mid].n64 < n64) {
             lo = mid + 1;
         } else {
             hi = mid;
         }
     }
+    for (; lo < game_var_target_count && game_var_targets[lo].n64 == n64; lo++) {
+        if (game_var_targets[lo].overlay == 0 || game_var_targets[lo].overlay == overlay) {
+            return game_var_targets[lo].pc;
+        }
+    }
     for (i = 0; i < GAME_VAR_SECTIONS; i++) {
         const GameVarSection *sec = &game_var_sections[i];
 
-        if (n64 >= sec->vram && n64 - sec->vram < sec->size) {
+        if ((sec->overlay == 0 || sec->overlay == overlay) && n64 >= sec->vram && n64 - sec->vram < sec->size) {
             return sec->block + (n64 - sec->vram);
         }
     }
-    port_fatal("game_vars_address: 0x%08X names no game variable", n64);
+    port_fatal("game_vars_address: 0x%08X names no game variable of overlay %d", n64, overlay);
 }
 
 void (*game_vars_function(uint32_t n64))(void) {
@@ -115,13 +117,28 @@ static void fill_table(const GameVarSection *sec, const GameVarFill *f) {
             uint8_t *to = f->data + (size_t)k * f->pc_size + fd->pc_offset;
             uint32_t word = 0; /* an address field's N64 word, big-endian */
 
-            if (fd->kind == 'p' || fd->kind == 'f') {
+            if (fd->kind == 'p' || fd->kind == 'f' || fd->kind == 'k') {
                 word = ((uint32_t)from[0] << 24) | ((uint32_t)from[1] << 16) | ((uint32_t)from[2] << 8) | from[3];
             }
             switch (fd->kind) {
             case 'p': {
-                void *p = game_vars_address(word);
+                void *p = game_vars_address(word, sec->overlay);
                 memcpy(to, &p, sizeof(p));
+                break;
+            }
+            case 'k': {
+                /* a number or an address: the game tells them apart by the sign of the s32, so on PC an address must
+                 * be 0x80000000 or more and a number stays below (the decompilation's IdOrAddr) */
+                uintptr_t v = (uintptr_t)(intptr_t)(int32_t)word; /* a number; -1 stays -1 (all ones) */
+
+                if ((word & 0x80000000u) && word != 0xFFFFFFFFu) {
+                    v = (uintptr_t)game_vars_address(word, sec->overlay);
+                    if (v < 0x80000000u) {
+                        port_fatal("game_vars_load: %s: the PC address %p of 0x%08X could be taken for a number",
+                                   f->name, (void *)v, word);
+                    }
+                }
+                memcpy(to, &v, sizeof(v));
                 break;
             }
             case 'f': {
@@ -140,6 +157,42 @@ static void fill_table(const GameVarSection *sec, const GameVarFill *f) {
             }
             }
         }
+    }
+    free(rom);
+}
+
+static uint32_t big_endian_word(const uint8_t *p) {
+    return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) | ((uint32_t)p[2] << 8) | p[3];
+}
+
+/* The commands whose second word is an address: G_VTX (vertices), G_DL (another list), G_SETTIMG (a texture or
+ * palette) and G_MOVEMEM (the viewport). The decompilation's tools/port_data.py (GBI_OPS) has checked every command of
+ * every list against these: each such word is the KSEG0 or physical address of data that the ROM fills. */
+static int gfx_holds_address(uint32_t w0) {
+    uint32_t op = w0 >> 24;
+
+    return op == 0x01 || op == 0xDE || op == 0xFD || op == 0xDC;
+}
+
+/* Builds the PC copy of one display list from its N64 commands in the ROM (GameVarGfx). */
+static void build_gfx(const GameVarSection *sec, const GameVarGfx *g) {
+    uint8_t *rom = malloc((size_t)g->count * 8);
+    uintptr_t *to = (uintptr_t *)g->data;
+    uint32_t k;
+
+    if (rom == NULL) {
+        port_fatal("game_vars_load: no memory for %s", g->name);
+    }
+    port_rom_read(rom, sec->rom + (g->n64 - sec->vram), g->count * 8);
+    for (k = 0; k < g->count; k++) {
+        uint32_t w0 = big_endian_word(rom + k * 8);
+        uint32_t w1 = big_endian_word(rom + k * 8 + 4);
+
+        to[k * 2] = w0;
+        /* A physical address (0x000C5C30) names the same place as its KSEG0 address (0x800C5C30). */
+        to[k * 2 + 1] = gfx_holds_address(w0) ? (uintptr_t)game_vars_address(w1 | 0x80000000u, sec->overlay) : w1;
+        ORDER_CHECK_VALUE(&to[k * 2], sizeof(uintptr_t));
+        ORDER_CHECK_VALUE(&to[k * 2 + 1], sizeof(uintptr_t));
     }
     free(rom);
 }
@@ -166,7 +219,8 @@ void game_vars_load(int overlay) {
             memset(sec->own[j].data, 0, sec->own[j].size);
         }
     }
-    /* The tables last: their addresses may name data of any section of this overlay, now in place. */
+    /* The tables and display lists last: their addresses may name data of any section of this overlay, now in
+     * place. */
     for (i = 0; i < GAME_VAR_SECTIONS; i++) {
         const GameVarSection *sec = &game_var_sections[i];
 
@@ -174,6 +228,31 @@ void game_vars_load(int overlay) {
             for (j = 0; j < sec->fill_count; j++) {
                 fill_table(sec, &sec->fills[j]);
             }
+            for (j = 0; j < sec->gfx_count; j++) {
+                build_gfx(sec, &sec->gfx[j]);
+            }
         }
     }
+}
+
+int32_t port_overlay_of(uint32_t rom_start, uint32_t rom_end) {
+    int i;
+
+    /* The overlay whose data the range holds: each overlay's code and data are one range of the ROM, and its data
+     * section's ROM offset lies in it (overlay 1: 0x3C770 to 0x834A0, its data at 0x72240). */
+    for (i = 0; i < GAME_VAR_SECTIONS; i++) {
+        const GameVarSection *sec = &game_var_sections[i];
+
+        if (sec->overlay != 0 && sec->rom != GAME_VAR_NO_ROM && sec->rom >= rom_start && sec->rom < rom_end) {
+            return sec->overlay;
+        }
+    }
+    port_fatal("port_overlay_of: the ROM range 0x%X to 0x%X holds no overlay's data", rom_start, rom_end);
+}
+
+void port_overlay_load(int32_t overlay) {
+    if (overlay != 1 && overlay != 2) {
+        port_fatal("port_overlay_load: no overlay %d", (int)overlay);
+    }
+    game_vars_load(overlay);
 }

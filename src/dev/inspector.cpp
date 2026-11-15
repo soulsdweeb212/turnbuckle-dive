@@ -55,6 +55,9 @@ Control gControl;
 td::LibUltraShip gLus;
 std::string gShotPath; // --screenshot: the file, and the game frame to take it at
 unsigned gShotFrame;
+// The game frame count that the screenshots go by: the developer match's (dev_match_frames), or the developer boot's
+// (dev_inspector_frames_from).
+uint32_t (*gFrames)(void) = dev_match_frames;
 std::string gShotPrefix; // --screenshot-every: the files' prefix, the interval, and the next frame to save
 unsigned gShotEvery;
 unsigned gShotNext;
@@ -114,7 +117,7 @@ class MatchInspector : public Ship::GuiWindow {
         DevMatch m;
 
         dev_records_read(w, &m);
-        ImGui::Text("frame %u   match frame %u   phase %d (%s)   seed %08X", dev_match_frames(), m.match_frame,
+        ImGui::Text("frame %u   match frame %u   phase %d (%s)   seed %08X", gFrames(), m.match_frame,
                     static_cast<int>(m.phase), dev_phase_name(m.phase), m.seed);
         if (ImGui::Button(gControl.paused ? "Resume (F6)" : "Pause (F6)")) {
             TogglePause();
@@ -301,7 +304,7 @@ void SaveScreenshot(const std::string& path) {
         std::copy_n(bottomUp.data() + static_cast<size_t>(h - 1 - y) * w * 3, w * 3, rgb.data() + static_cast<size_t>(y) * w * 3);
     }
     if (td::SaveRgbPng(rgb, w, h, path.c_str())) {
-        std::printf("dev-match: saved the window at frame %u to %s\n", dev_match_frames(), path.c_str());
+        std::printf("dev-match: saved the window at frame %u to %s\n", gFrames(), path.c_str());
     }
 }
 
@@ -325,13 +328,13 @@ void DrawWindowFrame() {
     window->GetMouseStateManager()->StartFrame();
     window->GetGui()->StartDraw();
     window->StartFrame();
-    if (count != 0 && !gDumpPath.empty() && dev_match_frames() >= gDumpFrame) {
+    if (count != 0 && !gDumpPath.empty() && gFrames() >= gDumpFrame) {
         std::FILE* out = std::fopen(gDumpPath.c_str(), "w");
 
         if (out != nullptr) {
             uint32_t n = td::DumpDisplayList(static_cast<const Gfx*>(frame), out);
             std::fclose(out);
-            std::printf("dev-match: frame %u: %u commands in %u tasks, listed in %s\n", dev_match_frames(), n, tasks,
+            std::printf("dev-match: frame %u: %u commands in %u tasks, listed in %s\n", gFrames(), n, tasks,
                         gDumpPath.c_str());
         }
         gDumpPath.clear();
@@ -358,19 +361,19 @@ void DrawWindowFrame() {
         window->RunGuiOnly();
     }
     window->GetGui()->EndDraw();
-    if (!gShotPath.empty() && dev_match_frames() >= gShotFrame) {
+    if (!gShotPath.empty() && gFrames() >= gShotFrame) {
         SaveScreenshot(gShotPath);
         gShotPath.clear();
     }
     if (!capture.empty()) {
         SaveScreenshot(capture + ".png");
     }
-    if (gShotEvery != 0 && count != 0 && dev_match_frames() >= gShotNext) {
+    if (gShotEvery != 0 && count != 0 && gFrames() >= gShotNext) {
         char name[32];
 
-        std::snprintf(name, sizeof(name), "-%05u.png", dev_match_frames());
+        std::snprintf(name, sizeof(name), "-%05u.png", gFrames());
         SaveScreenshot(gShotPrefix + name);
-        gShotNext = dev_match_frames() - dev_match_frames() % gShotEvery + gShotEvery;
+        gShotNext = gFrames() - gFrames() % gShotEvery + gShotEvery;
     }
     window->EndFrame();
     dev_match_alive();
@@ -478,6 +481,10 @@ extern "C" void dev_inspector_capture(const char* dir, const unsigned* frames, u
 extern "C" void dev_inspector_dump(const char* path, unsigned frame) {
     gDumpPath = path;
     gDumpFrame = frame;
+}
+
+extern "C" void dev_inspector_frames_from(uint32_t (*frames)(void)) {
+    gFrames = frames;
 }
 
 extern "C" void dev_inspector_screenshot(const char* path, unsigned frame) {

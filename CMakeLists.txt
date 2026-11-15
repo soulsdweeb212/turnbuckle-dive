@@ -256,8 +256,8 @@ if(TD_GAME_CODE)
     target_link_libraries(td_resources PUBLIC "$<LINK_LIBRARY:WHOLE_ARCHIVE,td_game>")
     td_strict(td_resources)
 
-    # Every game file of the developer program (the program that starts straight into a match), compiled with the
-    # game's settings but not linked yet: td_game_all. The decompilation's tools/port_filelist.py works out the list
+    # Every game file that the game's boot reaches (the boot loop, the menus of overlay 1, the match of overlay 2),
+    # compiled with the game's settings but not linked yet: td_game_all. The decompilation's tools/port_filelist.py works out the list
     # (its docs/port.md says how) and writes two text files: the list, and the paths of every file it read to make it;
     # CMake configures again when one of those files changes, so the list follows the decompilation. A game file that
     # stops compiling on the PC stops a full build. The tool needs the data files that the decompilation's build
@@ -266,7 +266,7 @@ if(TD_GAME_CODE)
     set(TD_MATCH_LIST ${CMAKE_BINARY_DIR}/game_match_files.txt)
     set(TD_MATCH_DEPENDS ${CMAKE_BINARY_DIR}/game_match_depends.txt)
     execute_process(
-        COMMAND ${Python3_EXECUTABLE} -B ${TD_DECOMP}/tools/port_filelist.py --set match
+        COMMAND ${Python3_EXECUTABLE} -B ${TD_DECOMP}/tools/port_filelist.py --set boot
                 --output ${TD_MATCH_LIST} --depends ${TD_MATCH_DEPENDS}
         WORKING_DIRECTORY ${TD_DECOMP}
         RESULT_VARIABLE td_match_result
@@ -303,7 +303,7 @@ if(TD_GAME_CODE)
         list(LENGTH td_match_files td_match_count)
         add_library(td_game_all OBJECT ${td_match_files})
         td_game_code(td_game_all)
-        message(STATUS "Game code: td_game_all compiles the developer program's ${td_match_count} files")
+        message(STATUS "Game code: td_game_all compiles the game's ${td_match_count} files")
 
         # The functions that the game's address tables hold, by N64 address (game_functions.c, from tools/game_vars.py).
         # It names game functions, so only programs that link every game file use it.
@@ -332,7 +332,7 @@ if(TARGET td_game_all)
     td_game_code(td_dev_records)
     target_include_directories(td_dev_records PRIVATE src/dev)
     target_compile_options(td_dev_records PRIVATE -Wall -Wextra)
-    target_sources(turnbuckle-dive PRIVATE src/resources.c src/dev/dev_match.c $<TARGET_OBJECTS:td_dev_records>
+    target_sources(turnbuckle-dive PRIVATE src/resources.c src/dev/dev_match.c src/dev/dev_boot.c $<TARGET_OBJECTS:td_dev_records>
                    $<TARGET_OBJECTS:td_game_all>)
     target_link_libraries(turnbuckle-dive PRIVATE td_game_functions td_game_sdk $<$<PLATFORM_ID:Linux>:m>)
     target_link_options(turnbuckle-dive PRIVATE ${TD_VARS_LINK_OPTIONS})

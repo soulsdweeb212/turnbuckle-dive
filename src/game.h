@@ -83,6 +83,14 @@ uint32_t port_slot_count(void);
 void *port_heap_alloc(uint32_t bytes);
 void port_heap_free(void *block);
 
+/* The overlays (src/game_vars.c; port.h says how the boot loop uses them): port_overlay_of gives the overlay (1 or 2)
+ * whose code and data the ROM holds from rom_start to rom_end, the range of an entry of the overlay table D_80036E30,
+ * and stops the program on any other range; port_overlay_load starts that overlay's variables afresh
+ * (game_vars_load). func_80000700 and func_8000082C, the N64's loader and the call of an overlay's entry, use them on
+ * PC. */
+int32_t port_overlay_of(uint32_t rom_start, uint32_t rom_end);
+void port_overlay_load(int32_t overlay);
+
 /* The game's frame hand-offs (func_80002BC0, func_80002C0C, func_80002C74) call this on PC with what they ask for
  * (src/game_sdk.c; port.h's PORT_PRESENT_FRAME, _IDLE and _SYNC are the same numbers). */
 #define GAME_PRESENT_FRAME 0

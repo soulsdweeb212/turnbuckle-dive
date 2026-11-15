@@ -41,6 +41,12 @@ void game_sdk_set_idle_randoms(int count);
 /* How many times the game has handed over a frame (GAME_PRESENT_FRAME) since the program started. */
 uint32_t game_sdk_frames(void);
 
+/* The save memory, the cartridge's SRAM as the game reads and writes it: GAME_SDK_SRAM_SIZE bytes, all zeros at the
+ * start. *writes (when not NULL) gets how many times the game has written to it so far, so a program can tell when to
+ * save it to a file; it may also fill it from one before the game starts. */
+#define GAME_SDK_SRAM_SIZE 0x8000u
+uint8_t *game_sdk_sram(uint32_t *writes);
+
 /* The display list of the last frame the game handed over: the commands of every task the frame's render work
  * submitted, one task after another, ending with G_ENDDL; *count is the number of commands (0 when the hand-off drew
  * nothing) and *tasks the number of tasks. The list stays valid, and what it points to unchanged, until the game

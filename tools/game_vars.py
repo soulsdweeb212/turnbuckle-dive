@@ -7,7 +7,11 @@ MAP is the decompilation's port/game_vars.tsv, which its tools/port_data.py writ
 with its N64 address, its N64 section, its storage, its size and its swap pattern. This tool writes:
 
 - OUT.c, compiled with the port's code:
-  - one array per N64 section ("block" storage): the variables that hold no address sit in it at their N64 offsets.
+  - one array per N64 section of main, and one for all the overlays' sections ("block" storage): the variables that
+    hold no address sit in it at their N64 addresses. The two overlays share addresses on the N64 (overlay 1's BSS
+    lies where overlay 2's data lies), and only one is loaded at a time, so their sections share one area by N64
+    address, as the N64's memory does. A name that both overlays use there (as an s32 of overlay 1, an f64 of overlay
+    2) is one name for one address in that area; each overlay's section has its own swap pattern for it.
     Each such variable is a name for an address inside the array, set in assembly (".set NAME, block + offset"),
     because C cannot give a name to the middle of an array;
   - an array of its own for each variable that holds an address ("own" storage), and for the few the port provides
@@ -16,6 +20,10 @@ with its N64 address, its N64 section, its storage, its size and its swap patter
     N64 memory, and each variable's swap pattern.
   - the address tables: for each variable that holds addresses and that the N64 starts from the ROM (and each array
     or record its addresses reach), how to build its PC layout from its N64 bytes (src/game_vars.h, GameVarFill);
+  - the display lists of the ROM's data ("gfx" in the map): an array of 16 bytes per command for each, which
+    src/game_vars.c fills with its PC copy (src/game_vars.h, GameVarGfx), and a name inside it for each of its entry
+    points ("gfxentry": a list that starts in the middle of another, D_800C5D48 in D_800C5D10) at the PC command of the
+    same number;
   - the swap-only ranges ("data" in the map): data that the tables' addresses point at;
   - the list of every object's N64 address and PC address, which turns an address the ROM holds into a PC address.
   It holds no byte of the game: the sections start as zeros and are filled from the user's ROM at start-up.
@@ -48,20 +56,33 @@ PORT = {
 # those bytes belong to other variables, on PC they are this guard, one record of zeros (0x3B8, sizeof(Wrestler)).
 GUARD_BEFORE = {"D_800F9D10": 0x3B8}
 
-SECTION_ORDER = ["main.data", "main.bss", "ovl1.data", "ovl2.data", "ovl2.bss"]
+SECTION_ORDER = ["main.data", "main.bss", "ovl1.data", "ovl1.bss", "ovl2.data", "ovl2.bss"]
 # Each section's N64 address range, its ROM offset (None: zeros) and which overlay it belongs to (0: main). The same
 # values as SECTIONS in the decompilation's tools/port_data.py, which says where they come from.
 SECTIONS = {
     "main.data": (0x8002BE30, 0x8003BAD0, 0x2CA30, 0),
     "main.bss": (0x8003BAD0, 0x8007FCE0, None, 0),
     "ovl1.data": (0x800C5AD0, 0x800D6D30, 0x72240, 1),
+    "ovl1.bss": (0x800D6D30, 0x800EA350, None, 1),
     "ovl2.data": (0x800E2B10, 0x800E77B0, 0xD5FB0, 2),
     "ovl2.bss": (0x800E77B0, 0x800FAFA0, None, 2),
 }
 
 
+# The overlays' sections share one area of PC memory, from the lowest to the highest N64 address of any of them.
+OVERLAY_AREA = "td_overlays"
+AREA_LO = min(lo for lo, _hi, _rom, ovl in SECTIONS.values() if ovl)
+AREA_HI = max(hi for _lo, hi, _rom, ovl in SECTIONS.values() if ovl)
+
+
 def c_name(section: str) -> str:
     return "td_" + section.replace(".", "_")
+
+
+def block_of(section: str) -> tuple[str, int]:
+    """The array that holds a section's bytes, and the N64 address of the array's first byte."""
+    lo, _hi, _rom, ovl = SECTIONS[section]
+    return (OVERLAY_AREA, AREA_LO) if ovl else (c_name(section), lo)
 
 
 def main() -> int:
@@ -101,18 +122,24 @@ def main() -> int:
          "#endif",
          ""]
 
-    c.append("/* The N64 sections, each as one block of PC memory (\"block\" storage). */")
+    c.append("/* The N64 sections of main, each as one block of PC memory, and the overlays' area, which holds all of")
+    c.append(" * the overlays' sections at their N64 addresses (\"block\" storage). */")
     for s in SECTION_ORDER:
-        lo, hi, _rom, _ovl = SECTIONS[s]
-        c.append(f"_Alignas(16) uint8_t {c_name(s)}[{hi - lo:#x}];")
+        lo, hi, _rom, ovl = SECTIONS[s]
+        if not ovl:
+            c.append(f"_Alignas(16) uint8_t {c_name(s)}[{hi - lo:#x}];")
+    c.append(f"_Alignas(16) uint8_t {OVERLAY_AREA}[{AREA_HI - AREA_LO:#x}];")
     c.append("")
 
     owns: dict[str, list] = {s: [] for s in SECTION_ORDER}
     swaps: list[tuple[int, int]] = []
     var_rows: dict[str, list[str]] = {s: [] for s in SECTION_ORDER}
     fills: dict[str, list[str]] = {s: [] for s in SECTION_ORDER}
+    gfx: dict[str, list[str]] = {s: [] for s in SECTION_ORDER}
+    gfx_size: dict[str, int] = {}  # each display list's PC bytes, by name
     fields: list[str] = []
-    targets: list[tuple[int, str]] = []
+    targets: list[tuple[int, int, str]] = []
+    placed: dict[str, int] = {}  # block names already given an address, by N64 address
     entries: list[tuple[int, str]] = []
     links = []
 
@@ -125,11 +152,20 @@ def main() -> int:
             swaps.append((int(o, 16), int(w)))
         var_rows[sec].append(f'    {{ "{name}", {addr - lo:#x}, {size}, {int(period, 16):#x}, {first}, '
                              f"{len(swaps) - first} }},")
+    def overlay_of(sec):
+        return SECTIONS[sec][3] if sec in SECTIONS else 0
+
     c.append("/* The variables, in N64 address order. */")
     for name, addr, sec, storage, size, swap in rows:
         if storage == "block":
-            lo = SECTIONS[sec][0]
-            c.append(f"TD_AT({name}, {c_name(sec)}, {addr - lo:#x}, {int(size, 16):#x});")
+            block, base = block_of(sec)
+            if name in placed:
+                # The other overlay's row for the same name: the same address in the same area.
+                if placed[name] != addr or not SECTIONS[sec][3]:
+                    sys.exit(f"{src}: {name} has two rows that are not one address in the overlays' area")
+            else:
+                placed[name] = addr
+                c.append(f"TD_AT({name}, {block}, {addr - base:#x}, {int(size, 16):#x});")
             if swap != "-":
                 add_swaps(name, sec, addr, size, swap)
         elif storage == "data":
@@ -145,7 +181,7 @@ def main() -> int:
             else:
                 c.append(f"{static}_Alignas(16) uint8_t {name}[{max(n, 1):#x}];")
             owns[sec].append((name, max(n, 1), swap != "-"))
-            targets.append((addr, name))
+            targets.append((addr, overlay_of(sec), name))
             if swap != "-":
                 count, n64size, pcsize, spec = swap.split(":")
                 first = len(fields)
@@ -154,6 +190,22 @@ def main() -> int:
                     fields.append(f"    {{ {int(o4, 16):#x}, {int(o8, 16):#x}, '{kind}' }},")
                 fills[sec].append(f'    {{ "{name}", {name}, {addr:#x}, {int(count, 16)}, {int(n64size, 16):#x}, '
                                   f"{int(pcsize, 16):#x}, {first}, {len(fields) - first} }},")
+        elif storage == "gfx":
+            n = int(size, 16)
+            if n != int(swap, 16) * 16:
+                sys.exit(f"{src}: {name}: {size} bytes for {swap} commands; a PC command is 16 bytes")
+            c.append(f"_Alignas(16) uint8_t {name}[{n:#x}];")
+            gfx[sec].append(f'    {{ "{name}", {name}, {addr:#x}, {int(swap, 16)} }},')
+            gfx_size[name] = n
+            targets.append((addr, overlay_of(sec), name))
+        elif storage == "gfxentry":
+            # size names the display list it lies in, swap its offset there in bytes on PC
+            if size not in gfx_size:
+                sys.exit(f"{src}: {name}: an entry of {size}, which is not a display list of an earlier line")
+            offset = int(swap, 16)
+            c.append(f"TD_AT({name}, {size}, {offset:#x}, {gfx_size[size] - offset:#x});")
+            c.append(f"extern uint8_t {name}[];")
+            targets.append((addr, overlay_of(sec), name))
         elif storage == "entry":
             entries.append((addr, size))
         elif storage == "alias":
@@ -166,7 +218,7 @@ def main() -> int:
                 c.append(f"_Alignas(16) uint8_t {name}[{n:#x}];")
             else:
                 c.append(f"int32_t {name} = {value};")
-            targets.append((addr, name))
+            targets.append((addr, 0, name))
         elif storage == "function":
             links.append(f"LINKER:--defsym={name}={size}")
         else:
@@ -187,7 +239,7 @@ def main() -> int:
     c.append("/* Every object's N64 address and PC address, by N64 address: an address that the ROM holds becomes the PC")
     c.append(" * address of what it names. */")
     c.append(f"const GameVarTarget game_var_targets[{max(len(targets), 1)}] = {{")
-    c += [f"    {{ {a:#x}, &{n} }}," for a, n in sorted(targets)] or ["    { 0, 0 },"]
+    c += [f"    {{ {a:#x}, {o}, &{n} }}," for a, o, n in sorted(targets)] or ["    { 0, 0, 0 },"]
     c.append("};")
     c.append(f"const uint32_t game_var_target_count = {len(targets)};")
     c.append("")
@@ -204,6 +256,10 @@ def main() -> int:
             c.append(f"static const GameVarOwn {c_name(s)}_own[] = {{")
             c += [f'    {{ "{n}", {n}, {size:#x}, {int(rom)} }},' for n, size, rom in owns[s]]
             c.append("};")
+        if gfx[s]:
+            c.append(f"static const GameVarGfx {c_name(s)}_gfx[] = {{")
+            c += gfx[s]
+            c.append("};")
     c.append("")
     c.append("const GameVarSection game_var_sections[GAME_VAR_SECTIONS] = {")
     for s in SECTION_ORDER:
@@ -211,8 +267,10 @@ def main() -> int:
         vars_ = f"{c_name(s)}_vars, {len(var_rows[s])}" if var_rows[s] else "0, 0"
         own = f"{c_name(s)}_own, {len(owns[s])}" if owns[s] else "0, 0"
         fill = f"{c_name(s)}_fills, {len(fills[s])}" if fills[s] else "0, 0"
-        c.append(f'    {{ "{s}", {c_name(s)}, {lo:#x}, {hi - lo:#x}, '
-                 f"{'GAME_VAR_NO_ROM' if rom is None else hex(rom)}, {ovl}, {vars_}, {own}, {fill} }},")
+        gfx_ = f"{c_name(s)}_gfx, {len(gfx[s])}" if gfx[s] else "0, 0"
+        block, base = block_of(s)
+        c.append(f'    {{ "{s}", {block} + {lo - base:#x}, {lo:#x}, {hi - lo:#x}, '
+                 f"{'GAME_VAR_NO_ROM' if rom is None else hex(rom)}, {ovl}, {vars_}, {own}, {fill}, {gfx_} }},")
     c.append("};")
     text = "\n".join(c) + "\n"
     if not out.exists() or out.read_text(encoding="utf-8") != text:

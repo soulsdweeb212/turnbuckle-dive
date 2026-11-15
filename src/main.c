@@ -9,6 +9,7 @@
 #include "resources.h"
 #endif
 #ifdef TD_DEV_MATCH
+#include "dev/dev_boot.h"
 #include "dev/dev_match.h"
 #endif
 #ifdef TD_INSPECTOR
@@ -92,6 +93,7 @@ int main(int argc, char **argv) {
     const char *path;
     uint32_t res_id = 0;
     int dev_match = 0;
+    unsigned dev_boot = 0; /* --dev-boot FRAMES: frames to run from the boot */
     int headless = 0;
     const char *screenshot = NULL;
     unsigned screenshot_frame = 300;
@@ -118,6 +120,13 @@ int main(int argc, char **argv) {
             }
 #ifndef TD_GAME_CODE
             fprintf(stderr, "--res: this build has no game code (README.md, Building, says how to build it)\n");
+            return 1;
+#endif
+        } else if (strcmp(argv[i], "--dev-boot") == 0 && i + 1 < argc) {
+            dev_boot = (unsigned)strtoul(argv[++i], NULL, 0);
+#ifndef TD_DEV_MATCH
+            fprintf(stderr, "--dev-boot: this build does not link the game's files "
+                            "(docs/GAME_CODE.md, \"Every file of the developer program\")\n");
             return 1;
 #endif
         } else if (strcmp(argv[i], "--dev-match") == 0) {
@@ -181,7 +190,7 @@ int main(int argc, char **argv) {
             match_options.seed = (uint32_t)strtoul(argv[++i], NULL, 0);
 #endif
         } else if (strncmp(argv[i], "--", 2) == 0 || rom_arg != NULL) {
-            fprintf(stderr, "Usage: turnbuckle-dive [--res ID | --dev-match [--headless] [--wr-log FILE] [--res-log FILE] [--seed N] "
+            fprintf(stderr, "Usage: turnbuckle-dive [--res ID | --dev-boot FRAMES | --dev-match [--headless] [--wr-log FILE] [--res-log FILE] [--seed N] "
                             "[--no-watchdog] "
                             "[--hide-group N]... [--screenshot FILE [--screenshot-frame N | --screenshot-every N]] [--dump-frame N FILE] [--no-idle-randoms] [--capture-match-frames N,N,... DIR] [--players 0|1] [--time-limit MINUTES] [--matches N] [--record-pads FILE] [--replay-pads FILE] [--pad-script FILE] [--pad-bot SEED]] [ROM]\n");
             return 1;
@@ -214,6 +223,29 @@ int main(int argc, char **argv) {
     }
     printf("Status: supported ROM\n");
 #ifdef TD_DEV_MATCH
+    if (dev_boot != 0) {
+        int result;
+        void (*on_frame)(void *) = NULL;
+
+#ifdef TD_INSPECTOR
+        /* The Match Inspector's window draws the frames, unless --headless (with no screen, the boot runs without). */
+        if (!headless && dev_inspector_start() == 0) {
+            on_frame = dev_inspector_frame;
+            dev_inspector_frames_from(dev_boot_frames);
+            if (screenshot != NULL && screenshot_every != 0) {
+                dev_inspector_screenshots(screenshot, screenshot_every);
+            } else if (screenshot != NULL) {
+                dev_inspector_screenshot(screenshot, screenshot_frame);
+            }
+            if (dump != NULL) {
+                dev_inspector_dump(dump, dump_frame);
+            }
+        }
+#endif
+        result = dev_boot_run(&rom, dev_boot, on_frame, NULL);
+        rom_free(&rom);
+        return result;
+    }
     if (dev_match) {
         int result;
 
@@ -247,6 +279,7 @@ int main(int argc, char **argv) {
     }
 #endif
     (void)dev_match;
+    (void)dev_boot;
     (void)headless;
     (void)screenshot;
     (void)screenshot_frame;
