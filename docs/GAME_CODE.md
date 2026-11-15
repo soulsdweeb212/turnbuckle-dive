@@ -275,6 +275,13 @@ So far that is the three resources of each character, which sit in the resource 
 ability bits), its move table (32-bit words) and its animation list (16-bit ids); and resource 0x126, the move table
 every wrestler shares (32-bit words). `src/res_convert.c` says where each layout was read from. `tools/res_digest.py` makes the same conversion, so the `rom_loader` test checks it.
 
+The menus' packs stay in the N64's order too. A pack is one resource that holds several pictures or pieces of a mesh:
+a 32-bit count, a 32-bit offset for each entry, then the entries. The menus reach every entry through one function,
+`func_800B64EC`, so instead of a conversion by resource id, that function reads the offset big-endian on PC, and so
+does the code that copies a mesh's vertices out of a pack (`func_800936DC`), field by field. The N64 builds a pack's
+count from its four bytes in reverse order, which makes 0x28 entries count as 0x28000000; leaving the pack as it is
+keeps that number the same on PC.
+
 ## The developer match
 
 `turnbuckle-dive --dev-match` starts the game straight into a match, without the menus (`src/dev/dev_match.c`). It does
