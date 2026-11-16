@@ -556,6 +556,24 @@ with the original game in Project64, whose idle thread's random calls are turned
 the same presses the title screen, the Rumble Pak notice and the main menu then have the original's display lists,
 command for command.
 
+### The splash screen
+
+Before the boot, the window shows the port's splash screen for about four seconds: a cube turning above the port's
+name, "A NATIVE PORT" and the version. Pressing any button on any controller ends it early (a button already held when
+it starts counts once it has been let go). It is not part of the game: the boot's frames start after it.
+
+The cube's six sides carry Sting's three painted faces, two sides each. They are made from the user's ROM when the
+program starts (`src/splash_faces.c`): the game's loader reads the face and hair textures of Sting's three head
+records (docs/VIEWER.md, "Where a model's texture comes from") and their palettes, and each face is put in the middle
+of a 64x64 picture with its own hair down both sides. `src/splash.cpp` draws each frame as a display list that
+LibUltraShip's renderer runs, as it runs the game's: a background in bands, the cube in perspective with a depth buffer
+and each side shaded by how much it faces a light, and the text in a 5x7 pixel font of the port's own, one filled
+rectangle per dot. It fades in from black and out to black.
+
+The splash is left out when the run cannot be watched or must be the same every time: with `--headless`, a pad script
+or file to replay, `--screenshot` or `--dump-frame`. `--no-splash` leaves it out of any run. If the textures are not
+what the splash expects, it prints why and the boot starts without it.
+
 ## Every file of the game: td_game_all
 
 The game's files are the ones its boot reaches: the boot loop, the menus (overlay 1) and the match (overlay 2), which

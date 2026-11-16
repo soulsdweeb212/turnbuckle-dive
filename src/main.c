@@ -14,6 +14,7 @@
 #endif
 #ifdef TD_INSPECTOR
 #include "dev/inspector.h"
+#include "splash_faces.h"
 #endif
 
 #ifndef TD_VERSION
@@ -95,6 +96,7 @@ int main(int argc, char **argv) {
     int dev_match = 0;
     unsigned dev_boot = 0; /* --dev-boot FRAMES: frames to run from the boot */
     int headless = 0;
+    int no_splash = 0;
     const char *screenshot = NULL;
     unsigned screenshot_frame = 300;
     unsigned screenshot_every = 0;
@@ -143,6 +145,8 @@ int main(int argc, char **argv) {
             match_options.res_log = argv[++i];
         } else if (strcmp(argv[i], "--headless") == 0) {
             headless = 1;
+        } else if (strcmp(argv[i], "--no-splash") == 0) {
+            no_splash = 1;
         } else if (strcmp(argv[i], "--screenshot") == 0 && i + 1 < argc) {
             screenshot = argv[++i];
         } else if (strcmp(argv[i], "--screenshot-frame") == 0 && i + 1 < argc) {
@@ -190,7 +194,7 @@ int main(int argc, char **argv) {
             match_options.seed = (uint32_t)strtoul(argv[++i], NULL, 0);
 #endif
         } else if (strncmp(argv[i], "--", 2) == 0 || rom_arg != NULL) {
-            fprintf(stderr, "Usage: turnbuckle-dive [--res ID | --dev-boot FRAMES [--pad-script FILE] [--record-pads FILE] [--replay-pads FILE] [--no-idle-randoms] | --dev-match [--headless] [--wr-log FILE] [--res-log FILE] [--seed N] "
+            fprintf(stderr, "Usage: turnbuckle-dive [--res ID | --dev-boot FRAMES [--no-splash] [--pad-script FILE] [--record-pads FILE] [--replay-pads FILE] [--no-idle-randoms] | --dev-match [--headless] [--wr-log FILE] [--res-log FILE] [--seed N] "
                             "[--no-watchdog] "
                             "[--hide-group N]... [--screenshot FILE [--screenshot-frame N | --screenshot-every N]] [--dump-frame N FILE] [--no-idle-randoms] [--capture-match-frames N,N,... DIR] [--players 0|1] [--time-limit MINUTES] [--matches N] [--record-pads FILE] [--replay-pads FILE] [--pad-script FILE] [--pad-bot SEED]] [ROM]\n");
             return 1;
@@ -240,6 +244,16 @@ int main(int argc, char **argv) {
             if (dump != NULL) {
                 dev_inspector_dump(dump, dump_frame);
             }
+            /* The splash screen, before the boot, unless the run is scripted or saves pictures. The faces are made from
+             * the ROM; when they cannot be, the boot goes on without the splash. */
+            if (!no_splash && match_options.pad_script == NULL && match_options.replay_pads == NULL &&
+                screenshot == NULL && dump == NULL) {
+                static uint8_t faces[SPLASH_FACES * SPLASH_FACE_BYTES];
+
+                if (splash_faces_load(&rom, faces) == 0) {
+                    dev_inspector_splash(faces, TD_VERSION);
+                }
+            }
         }
 #endif
         dev_boot_pads(match_options.replay_pads, match_options.record_pads, match_options.pad_script);
@@ -283,6 +297,7 @@ int main(int argc, char **argv) {
     (void)dev_match;
     (void)dev_boot;
     (void)headless;
+    (void)no_splash;
     (void)screenshot;
     (void)screenshot_frame;
     (void)screenshot_every;

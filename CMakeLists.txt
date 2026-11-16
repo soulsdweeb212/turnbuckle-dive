@@ -332,7 +332,8 @@ if(TARGET td_game_all)
     td_game_code(td_dev_records)
     target_include_directories(td_dev_records PRIVATE src/dev)
     target_compile_options(td_dev_records PRIVATE -Wall -Wextra)
-    target_sources(turnbuckle-dive PRIVATE src/resources.c src/dev/dev_match.c src/dev/dev_boot.c src/dev/dev_pads.c $<TARGET_OBJECTS:td_dev_records>
+    target_sources(turnbuckle-dive PRIVATE src/resources.c src/splash_faces.c src/dev/dev_match.c src/dev/dev_boot.c
+                   src/dev/dev_pads.c $<TARGET_OBJECTS:td_dev_records>
                    $<TARGET_OBJECTS:td_game_all>)
     target_link_libraries(turnbuckle-dive PRIVATE td_game_functions td_game_sdk $<$<PLATFORM_ID:Linux>:m>)
     target_link_options(turnbuckle-dive PRIVATE ${TD_VARS_LINK_OPTIONS})
@@ -542,8 +543,9 @@ if(TD_BUILD_HELLO)
 
     if(TARGET td_game_all)
         # The developer match's window, the Match Inspector (src/dev/inspector.cpp): turnbuckle-dive --dev-match opens
-        # it unless --headless is given. It needs LibUltraShip, so it comes with td_window.
-        target_sources(turnbuckle-dive PRIVATE src/dev/inspector.cpp)
+        # it unless --headless is given, and the splash screen before the developer boot (src/splash.cpp). They need
+        # LibUltraShip, so they come with td_window.
+        target_sources(turnbuckle-dive PRIVATE src/dev/inspector.cpp src/splash.cpp)
         target_link_libraries(turnbuckle-dive PRIVATE td_window)
         target_compile_definitions(turnbuckle-dive PRIVATE TD_INSPECTOR)
     endif()

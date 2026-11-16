@@ -36,6 +36,7 @@
 #include "libultraship/controller/controldeck/ControlDeck.h"
 #include "libultraship/libultraship.h"
 #include "libultraship/window/gui/InputEditorWindow.h"
+#include "splash.h"
 #include "ship/config/ConsoleVariable.h"
 #include "ship/core/Context.h"
 #include "ship/debug/Console.h"
@@ -462,6 +463,34 @@ extern "C" void dev_inspector_frame(void* user) {
         gControl.step--;
     }
     ReadPads();
+}
+
+extern "C" void dev_inspector_splash(const uint8_t* faces, const char* version) {
+    if (gLus.window == nullptr) {
+        return;
+    }
+    // The splash turns its cube at 60 frames a second; the game's frames go at 30.
+    gLus.window->SetTargetFps(60);
+    bool open = td::RunSplash(gLus.window, faces, version, [] {
+        auto deck = gLus.ctx->GetChildren().GetFirst<LUS::ControlDeck>();
+        OSContPad pads[MAXCONTROLLERS] = {};
+
+        if (deck != nullptr) {
+            deck->WriteToPad(pads);
+        }
+        for (int i = 0; i < MAXCONTROLLERS; i++) {
+            if (pads[i].button != 0) {
+                return true;
+            }
+        }
+        return false;
+    });
+    if (!open) {
+        std::printf("dev-boot: the window was closed\n");
+        dev_inspector_stop();
+        std::exit(0);
+    }
+    gLus.window->SetTargetFps(30);
 }
 
 extern "C" void dev_inspector_stop(void) {

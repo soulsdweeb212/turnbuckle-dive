@@ -16,6 +16,11 @@ int dev_inspector_start(void);
  * holds the game while the inspector is paused. Ends the program when the window is closed. */
 void dev_inspector_frame(void *user);
 
+/* Shows the splash screen (src/splash.h) in the window before the game boots: the cube with the faces that
+ * splash_faces_load made (src/splash_faces.h), and the version. Returns when it is over; ends the program when the
+ * window is closed. */
+void dev_inspector_splash(const uint8_t *faces, const char *version);
+
 /* Closes the window. */
 void dev_inspector_stop(void);
 /* The game frame count that the screenshots below go by: by default the developer match's (dev_match_frames); the
