@@ -102,6 +102,8 @@ def unpack(stream, size):
 CHAR_FIRST, CHAR_LAST = 0x13F, 0x20E
 # The move table every wrestler shares, read as 32-bit words like the characters' move tables.
 SHARED_MOVES = 0x126
+# And the menus' pictures, by content: a resource that is a picture, or a pack's entries that are pictures, has the
+# three 16-bit values of its header turned around (src/res_convert.c).
 
 
 def swapped(data, width):
@@ -109,8 +111,45 @@ def swapped(data, width):
     return b''.join(data[i:i + width][::-1] for i in range(0, len(data), width))
 
 
+def is_picture(data, at):
+    """True when the bytes of data at at start with a menu picture's 16-byte header: "TEX\\0", 16-bit width, height,
+    a byte of bits per texel (4 or 8), a byte, a 16-bit colour count (16 or 256), four zero bytes."""
+    if len(data) - at < 16 or data[at:at + 4] != b'TEX\0':
+        return False
+    width, height = struct.unpack_from('>HH', data, at + 4)
+    colours = struct.unpack_from('>H', data, at + 10)[0]
+    return width != 0 and height != 0 and data[at + 8] in (4, 8) and colours in (16, 256)
+
+
+def picture_converted(data, at):
+    """data with the picture header at at turned around: its width, height and colour count, 16 bits each."""
+    out = bytearray(data)
+    for k in (4, 6, 0xA):
+        out[at + k], out[at + k + 1] = out[at + k + 1], out[at + k]
+    return bytes(out)
+
+
+def pack_entries(data):
+    """The offsets of a pack's entries (a big-endian count, then that many big-endian offsets, each inside the
+    resource), or [] when data is not a pack."""
+    if len(data) < 8:
+        return []
+    n = struct.unpack_from('>I', data, 0)[0]
+    if n == 0 or n > (len(data) - 4) // 4:
+        return []
+    offsets = struct.unpack_from('>%di' % n, data, 4)
+    if any(not 4 + 4 * n <= at < len(data) for at in offsets):
+        return []
+    return offsets
+
+
 def convert(rid, data):
     """A resource's bytes as the port leaves them after port_res_loaded."""
+    if is_picture(data, 0):
+        return picture_converted(data, 0)
+    for at in pack_entries(data):
+        if is_picture(data, at):
+            data = picture_converted(data, at)
     if rid == SHARED_MOVES:
         return swapped(data, 4)
     if not CHAR_FIRST <= rid <= CHAR_LAST:

@@ -85,8 +85,12 @@ int viewer_check_id(const char *where, uint32_t id) {
     return 1;
 }
 
-static uint32_t be16(const uint8_t *p) {
-    return ((uint32_t)p[0] << 8) | p[1];
+/* A 16-bit number of a TEX picture's header, which the game's loader has turned into the PC's byte order. */
+static uint32_t header16(const uint8_t *p) {
+    uint16_t v;
+
+    memcpy(&v, p, 2);
+    return v;
 }
 
 /* func_8000498C's mesh header: byte 1 holds the number of vertices (its top bit is a flag), byte 2 the number of
@@ -171,10 +175,11 @@ static int texture_ok(uint32_t id, const uint8_t *raw, uint32_t size, int ci8) {
     return 1;
 }
 
-/* A TEX picture starts with a 16-byte header: "TEX" and a zero byte, the width and the height (big-endian 16-bit
- * numbers), the bits per texel (byte 8) and the number of palette entries (16-bit, at byte 10). The palette follows,
- * 2 bytes per entry, then the texels row by row (the overlay-1 functions func_800B6F88 and func_8009EC58 read it this
- * way). */
+/* A TEX picture starts with a 16-byte header: "TEX" and a zero byte, the width and the height (16-bit numbers), the
+ * bits per texel (byte 8) and the number of palette entries (16-bit, at byte 10). The palette follows, 2 bytes per
+ * entry, then the texels row by row (the overlay-1 functions func_800B6F88 and func_8009EC58 read it this way). The
+ * game's loader has turned the three 16-bit numbers into the PC's byte order (src/res_convert.c), so they are read as
+ * plain numbers; the palette and the texels stay in the N64's order. */
 static int picture_ok(uint32_t id, const uint8_t *raw, uint32_t size) {
     uint32_t width, height, bits, entries;
     uint64_t need;
@@ -183,10 +188,10 @@ static int picture_ok(uint32_t id, const uint8_t *raw, uint32_t size) {
         fprintf(stderr, "resource 0x%X is not a TEX picture: it does not start with \"TEX\" and a zero byte\n", id);
         return 0;
     }
-    width = be16(raw + 4);
-    height = be16(raw + 6);
+    width = header16(raw + 4);
+    height = header16(raw + 6);
     bits = raw[8];
-    entries = be16(raw + 10);
+    entries = header16(raw + 10);
     if (!((bits == 4 && entries == 16) || (bits == 8 && entries == 256)) || width == 0 || height == 0 ||
         (bits == 4 && width % 2 != 0)) {
         fprintf(stderr,

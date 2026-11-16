@@ -1,0 +1,31 @@
+Point the crash window at the logs
+
+When the program crashes, LibUltraShip's crash handler shows a window that asks the user to upload the logs to "the
+support channel in discord", the wording of the project it comes from. A game built on LibUltraShip has no such
+channel unless it sets one up, so the window sends its users somewhere that does not exist.
+
+The window now says only to check the logs: LibUltraShip writes the crash report (the signal, the registers and the
+stack) to logs/<name>.log in the folder the program was started from (Context::InitLogging).
+
+diff --git a/src/ship/debug/CrashHandler.cpp b/src/ship/debug/CrashHandler.cpp
+index 63d5b071..8ec9014f 100644
+--- a/src/ship/debug/CrashHandler.cpp
++++ b/src/ship/debug/CrashHandler.cpp
+@@ -204,7 +204,7 @@ static void ErrorHandler(int sig, siginfo_t* sigInfo, void* data) {
+     }
+     SDL_ShowSimpleMessageBox(
+         SDL_MESSAGEBOX_ERROR, (GetCrashAppName() + " has crashed").c_str(),
+-        (GetCrashAppName() + " has crashed. Please upload the logs to the support channel in discord.").c_str(),
++        (GetCrashAppName() + " has crashed. Please check the logs.").c_str(),
+         nullptr);
+     free(symbols);
+     crashHandler->PrintCommon();
+@@ -425,7 +425,7 @@ extern "C" LONG WINAPI seh_filter(PEXCEPTION_POINTERS ex) {
+     WRITE_VAR_LINE(crashHandler, "Exception: ", exceptionString);
+     crashHandler->PrintStack(ex->ContextRecord);
+     MessageBoxA(nullptr,
+-                (GetCrashAppName() + " has crashed. Please upload the logs to the support channel in discord.").c_str(),
++                (GetCrashAppName() + " has crashed. Please check the logs.").c_str(),
+                 "Crash", MB_OK | MB_ICONERROR);
+ 
+     return EXCEPTION_EXECUTE_HANDLER;

@@ -146,7 +146,8 @@ LibUltraShip read every palette as RGBA16, whatever the palette type, until the 
 ## How it draws a picture
 
 A TEX picture is a 16-byte header (its size, its bits per texel and its number of colours), its palette, and its
-texels. The game loads one with `func_80004E08`, loads its palette, and draws it with `func_80096D8C`, which cuts it
+texels. The game's loader turns the header's 16-bit numbers into the PC's byte order, as the menus read them
+(GAME_CODE.md, "Resources in the PC's byte order"), so the viewer reads them as plain numbers. The game loads one with `func_80004E08`, loads its palette, and draws it with `func_80096D8C`, which cuts it
 into tiles of 64 texels by 48 rows (24 for 8-bit pictures) and draws each with a texture rectangle; `func_80096A6C`
 writes the commands that load each tile. The viewer calls the same functions. The palette load and the render state
 come from overlay-1 code that the port cannot compile yet, so the viewer writes them itself: the palette load with the

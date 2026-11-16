@@ -13,7 +13,9 @@ Each cache entry now also keeps a fingerprint of the bytes the texture was decod
 its texels, read as the decoders read them, and for a CI texture the palette entries it uses, from Fast3D's own copy
 of the palette. A lookup that finds the entry with another fingerprint decodes the texture again, into the same
 texture. N64 textures are at most a few kilobytes, so working out the fingerprint at each use costs far less than
-decoding. Replacement textures and textures from resource files cannot change and keep a fingerprint of 0.
+decoding. The fingerprint reads only the bytes the load covers: its lines, a full image line apart, whether the
+image's lines are wider than the load's or narrower (a game can load 128 bytes of each 120-byte line, and a
+fingerprint of the load's size from its start would then read past the image). Replacement textures and textures from resource files cannot change and keep a fingerprint of 0.
 
 diff --git a/include/fast/interpreter.h b/include/fast/interpreter.h
 --- a/include/fast/interpreter.h
@@ -110,7 +112,7 @@ diff --git a/src/fast/interpreter.cpp b/src/fast/interpreter.cpp
 +    if (addr == nullptr || size == 0) {
 +        return 0;
 +    }
-+    if (line != 0 && stride > line && size > line) {
++    if (line != 0 && stride != 0 && stride != line && size > line) {
 +        span = (size_t)stride * (size / line - 1) + line;
 +    }
 +    h = FingerprintBytes(h, addr, span);

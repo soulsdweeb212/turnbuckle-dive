@@ -11,9 +11,12 @@
  * So on PC the two game functions hand the work to these, on top of calloc and free:
  * - port_heap_alloc returns a block of at least `bytes` bytes, aligned for any type like the game's 16-byte heap
  *   units, and filled with zeros: the N64 clears its whole heap the first time it allocates, so the first use of each
- *   block finds zeros there. It allocates exactly `bytes`, without the game's rounding up to 16, so that
- *   AddressSanitizer (the asan preset) reports even a one-byte write past what the game asked for. It has no size limit
- *   like the N64's 2 MiB heap; if the PC itself runs out of memory, it stops the program.
+ *   block finds zeros there. It rounds `bytes` up to a whole number of 16-byte units, as the game's allocateHeap does,
+ *   because the game reads into that rounding: the menus' text pictures are drawn in strips that load 128 bytes of each
+ *   row from rows 120 bytes wide, so the last strip's load ends 8 bytes past the picture (a picture of 10200 bytes, in
+ *   a block of 10208). Read past a PC allocation of exactly 10200 bytes, those bytes could be memory the program does
+ *   not own. AddressSanitizer (the asan preset) reports an access past the rounded block. It has no size limit like
+ *   the N64's 2 MiB heap; if the PC itself runs out of memory, it stops the program.
  * - port_heap_free frees a block of port_heap_alloc; the game's releaseHeapBlock has already ignored NULL. */
 #include <stdlib.h>
 
@@ -21,12 +24,13 @@
 #include "dev/order_check.h"
 
 void *port_heap_alloc(uint32_t bytes) {
-    void *block = calloc(1, bytes != 0 ? bytes : 1);
+    size_t rounded = ((size_t)bytes + 15) & ~(size_t)15; /* the game's 16-byte units */
+    void *block = calloc(1, rounded != 0 ? rounded : 16);
 
     if (block == NULL) {
         port_fatal("allocateHeap: no memory for 0x%X bytes", bytes);
     }
-    ORDER_CHECK_FORGET(block, bytes);
+    ORDER_CHECK_FORGET(block, rounded);
     return block;
 }
 

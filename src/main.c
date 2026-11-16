@@ -190,7 +190,7 @@ int main(int argc, char **argv) {
             match_options.seed = (uint32_t)strtoul(argv[++i], NULL, 0);
 #endif
         } else if (strncmp(argv[i], "--", 2) == 0 || rom_arg != NULL) {
-            fprintf(stderr, "Usage: turnbuckle-dive [--res ID | --dev-boot FRAMES | --dev-match [--headless] [--wr-log FILE] [--res-log FILE] [--seed N] "
+            fprintf(stderr, "Usage: turnbuckle-dive [--res ID | --dev-boot FRAMES [--pad-script FILE] [--record-pads FILE] [--replay-pads FILE] [--no-idle-randoms] | --dev-match [--headless] [--wr-log FILE] [--res-log FILE] [--seed N] "
                             "[--no-watchdog] "
                             "[--hide-group N]... [--screenshot FILE [--screenshot-frame N | --screenshot-every N]] [--dump-frame N FILE] [--no-idle-randoms] [--capture-match-frames N,N,... DIR] [--players 0|1] [--time-limit MINUTES] [--matches N] [--record-pads FILE] [--replay-pads FILE] [--pad-script FILE] [--pad-bot SEED]] [ROM]\n");
             return 1;
@@ -242,6 +242,8 @@ int main(int argc, char **argv) {
             }
         }
 #endif
+        dev_boot_pads(match_options.replay_pads, match_options.record_pads, match_options.pad_script);
+        dev_boot_idle_randoms(match_options.no_idle_randoms);
         result = dev_boot_run(&rom, dev_boot, on_frame, NULL);
         rom_free(&rom);
         return result;

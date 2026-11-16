@@ -190,10 +190,12 @@ void viewer_picture_load(uint32_t id, ViewerPicture *picture) {
 
     picture->id = id;
     picture->record = record;
-    picture->width = READ_BE16(data + 4);
-    picture->height = READ_BE16(data + 6);
+    /* The header's 16-bit numbers are in the PC's byte order: the game's loader turns them around (src/res_convert.c),
+     * as the menus read them. */
+    picture->width = *(const u16 *)(data + 4);
+    picture->height = *(const u16 *)(data + 6);
     picture->bits = data[8];
-    picture->palette_entries = READ_BE16(data + 10);
+    picture->palette_entries = *(const u16 *)(data + 10);
     picture->palette = data + 0x10;
     picture->texels = picture->palette + picture->palette_entries * 2;
 }

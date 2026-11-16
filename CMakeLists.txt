@@ -332,7 +332,7 @@ if(TARGET td_game_all)
     td_game_code(td_dev_records)
     target_include_directories(td_dev_records PRIVATE src/dev)
     target_compile_options(td_dev_records PRIVATE -Wall -Wextra)
-    target_sources(turnbuckle-dive PRIVATE src/resources.c src/dev/dev_match.c src/dev/dev_boot.c $<TARGET_OBJECTS:td_dev_records>
+    target_sources(turnbuckle-dive PRIVATE src/resources.c src/dev/dev_match.c src/dev/dev_boot.c src/dev/dev_pads.c $<TARGET_OBJECTS:td_dev_records>
                    $<TARGET_OBJECTS:td_game_all>)
     target_link_libraries(turnbuckle-dive PRIVATE td_game_functions td_game_sdk $<$<PLATFORM_ID:Linux>:m>)
     target_link_options(turnbuckle-dive PRIVATE ${TD_VARS_LINK_OPTIONS})
@@ -411,6 +411,14 @@ if(BUILD_TESTING)
             set_tests_properties(dev_match_repeatable dev_match_detects_change PROPERTIES
                 SKIP_RETURN_CODE 77 FIXTURES_REQUIRED dev_match_logs)
             set_tests_properties(dev_match_detects_change PROPERTIES PASS_REGULAR_EXPRESSION "differs")
+
+            # G9 (docs/GAME_CODE.md, "The developer boot"): the game from its boot loop to the main menu, with Start
+            # pressed by a pad script, and no frame drawn (the menus build their display lists all the same).
+            add_test(NAME dev_boot_menu
+                COMMAND turnbuckle-dive --dev-boot 1100 --headless --pad-script
+                        ${PROJECT_SOURCE_DIR}/tests/pads/boot_menu.txt)
+            set_tests_properties(dev_boot_menu PROPERTIES SKIP_RETURN_CODE 77
+                                 PASS_REGULAR_EXPRESSION "dev-boot: passed after 1100 frames")
 
             # G8 (docs/GAME_CODE.md, "Playing the match"): Sting played on controller 1 by the pad bot, every pad read
             # recorded, then replayed into a second run whose wrestler log must equal the first's; two matches in a

@@ -1,0 +1,6 @@
+# From the boot to the main menu (docs/GAME_CODE.md, "The developer boot"): controller 1 presses Start on the title
+# screen, again for the Rumble Pak notice, and once more at the main menu. FRAME BUTTONS [FRAMES]; the frames count
+# from the boot's first frame hand-off.
+300 START 2
+600 START 2
+900 START 2

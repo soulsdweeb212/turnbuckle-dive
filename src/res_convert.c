@@ -17,7 +17,16 @@
  * - Animation list: 16-bit animation ids (D_8007C5B8, one row per player).
  * And one more move table: resource 0x126, the moves that every wrestler shares, which resetMatchState loads to
  * D_8007BD64 + 0x14 and func_800A7D1C reads (32-bit words). Resources 0x127 to 0x12A, loaded next to it, are read as
- * bytes (func_800A8D14) and stay as they are. */
+ * bytes (func_800A8D14) and stay as they are.
+ *
+ * And the menus' pictures, by their content rather than their id. A picture starts with a 16-byte header: "TEX\0", the
+ * width (+4) and height (+6) as 16-bit values, the bits per texel (+8, a byte: 4 or 8), a byte (+9), the palette's
+ * colour count (+0xA, 16-bit: 16 or 256) and four zero bytes; the palette and the texels follow, and stay as they are.
+ * The menus read the three 16-bit values as plain integers (func_80097E1C the size, func_800B6F88 the colour count,
+ * and some thirty more), so those three are converted. A picture is a resource of its own (0x3 to 0x125), or an entry
+ * of a pack (a big-endian count, then that many big-endian offsets from the pack's start): the pack's count and
+ * offsets stay in the N64's order (func_800B64EC reads them so), and each entry that is a picture has its header
+ * converted. In the ROM every "TEX\0" inside a resource is at a pack's entry. */
 #include <stdint.h>
 
 #include "game.h"
@@ -50,9 +59,63 @@ static void swap_all(uint8_t *buf, int32_t size, unsigned width, uint32_t id, co
     }
 }
 
+/* 1 when the `room` bytes at p start with a picture's header (above). */
+static int is_picture(const uint8_t *p, int64_t room) {
+    unsigned width, height, colours;
+
+    if (room < 16 || p[0] != 'T' || p[1] != 'E' || p[2] != 'X' || p[3] != 0) {
+        return 0;
+    }
+    width = (unsigned)p[4] << 8 | p[5];
+    height = (unsigned)p[6] << 8 | p[7];
+    colours = (unsigned)p[10] << 8 | p[11];
+    return width != 0 && height != 0 && (p[8] == 4 || p[8] == 8) && (colours == 16 || colours == 256);
+}
+
+static void convert_picture(uint8_t *p) {
+    swap(p + 4, 2);
+    swap(p + 6, 2);
+    swap(p + 0xA, 2);
+}
+
+/* The pictures among a pack's entries; a resource that is not a pack (its count and offsets do not fit in it) has
+ * none. */
+static void convert_pack_pictures(uint8_t *buf, int32_t size) {
+    uint32_t n, i;
+
+    if (size < 8) {
+        return;
+    }
+    n = (uint32_t)buf[0] << 24 | (uint32_t)buf[1] << 16 | (uint32_t)buf[2] << 8 | buf[3];
+    if (n == 0 || n > (uint32_t)(size - 4) / 4) {
+        return;
+    }
+    for (i = 0; i < n; i++) {
+        const uint8_t *o = buf + 4 + 4 * i;
+        int32_t at = (int32_t)((uint32_t)o[0] << 24 | (uint32_t)o[1] << 16 | (uint32_t)o[2] << 8 | o[3]);
+
+        if (at < (int32_t)(4 + 4 * n) || at >= size) {
+            return;
+        }
+    }
+    for (i = 0; i < n; i++) {
+        const uint8_t *o = buf + 4 + 4 * i;
+        int32_t at = (int32_t)((uint32_t)o[0] << 24 | (uint32_t)o[1] << 16 | (uint32_t)o[2] << 8 | o[3]);
+
+        if (is_picture(buf + at, (int64_t)size - at)) {
+            convert_picture(buf + at);
+        }
+    }
+}
+
 void res_convert(uint32_t id, uint8_t *buf, int32_t size) {
     unsigned i;
 
+    if (is_picture(buf, size)) {
+        convert_picture(buf);
+        return;
+    }
+    convert_pack_pictures(buf, size);
     if (id == SHARED_MOVES) {
         swap_all(buf, size, 4, id, "move table");
         return;

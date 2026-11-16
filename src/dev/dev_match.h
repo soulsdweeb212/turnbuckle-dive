@@ -33,8 +33,9 @@ typedef struct {
     /* 1: wrestler slot 0 (Sting) is played on controller 1, against the CPU; 0: CPU against CPU. */
     int players;
     /* Where a player's controller comes from: the pads of a file that --record-pads wrote (replay_pads), else the pad
-     * script below, else the pad bot when has_pad_bot (button presses and stick moves drawn from pad_bot_seed, never Start), else the window's
-     * controllers (dev_match_set_pad). record_pads, when not NULL, saves every pad read, for a replay. */
+     * script below, else the pad bot when has_pad_bot (button presses and stick moves drawn from pad_bot_seed, never
+     * Start), else the window's controllers (dev_pads_set_window, src/dev/dev_pads.h). record_pads, when not NULL,
+     * saves every pad read, for a replay. */
     const char *replay_pads;
     const char *record_pads;
     int has_pad_bot;
@@ -64,11 +65,6 @@ void dev_match_alive(void);
  * hidden now. Only the picture changes: the game's code never sees it. */
 void dev_match_hide_groups(uint32_t mask);
 uint32_t dev_match_hidden_groups(void);
-
-/* The state of controller `channel` (0 to 3) for the game's next pad reads: N64 button bits (A 0x8000, B 0x4000, Z
- * 0x2000, Start 0x1000, the d-pad 0x0F00, L 0x20, R 0x10, the C buttons 0x0F) and the stick, -80 to 80 each way. The
- * Match Inspector's window sets it from LibUltraShip's controllers at every frame. */
-void dev_match_set_pad(int channel, uint16_t buttons, int8_t stick_x, int8_t stick_y);
 
 /* How many frames the game has handed over since the match started. */
 uint32_t dev_match_frames(void);

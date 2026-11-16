@@ -155,9 +155,10 @@ game's side; this repository's `src/game.h` declares the same functions for the 
 
 - `port_heap_alloc` and `port_heap_free` (`src/game_heap.c`) are the game's heap on PC: `allocateHeap` and
   `releaseHeapBlock` call them. The game's own heap cannot run on a 64-bit PC, because its block header grows from 16
-  to 24 bytes while its code counts 16-byte units; the file explains it. A block is allocated with `calloc` at exactly
-  the size asked for, so it starts as zeros, as the N64's heap does, and AddressSanitizer catches a write one byte
-  past it.
+  to 24 bytes while its code counts 16-byte units; the file explains it. A block is allocated with `calloc`, so it
+  starts as zeros, as the N64's heap does, and its size is rounded up to whole 16-byte units, as the game rounds it:
+  the menus draw their text pictures in strips that read a few bytes into that rounding. AddressSanitizer catches an
+  access past the rounded block.
 
 The N64 SDK functions that the developer program's files call are in `src/game_sdk.c` (its comment explains each
 group). The game runs on one thread, its own: the N64's render thread, audio thread and scheduler do not run. The
@@ -281,6 +282,14 @@ a 32-bit count, a 32-bit offset for each entry, then the entries. The menus reac
 does the code that copies a mesh's vertices out of a pack (`func_800936DC`), field by field. The N64 builds a pack's
 count from its four bytes in reverse order, which makes 0x28 entries count as 0x28000000; leaving the pack as it is
 keeps that number the same on PC.
+
+The menus' pictures are converted by their content rather than their id. A picture starts with a 16-byte header:
+"TEX" and a zero byte, its width and height (16-bit), its bits per texel (a byte, 4 or 8), a byte, its number of
+colours (16-bit, 16 or 256) and four zero bytes; its palette and texels follow and stay as they are. The menus read
+the three 16-bit numbers as plain integers in some thirty functions, so `res_convert` turns those three around in a
+resource that is a picture (resources 0x3 to 0x125) and in each entry of a pack that is a picture. The pack's own
+count and offsets stay in the N64's order. Read the other way, a picture 128 texels wide counts as 32768, and the
+menus build display lists that make the renderer read far past the picture.
 
 ## The developer match
 
@@ -519,8 +528,8 @@ the four wrestler records, and for a list of match frames the display lists and 
 (`src/dev/dev_boot.c`). The game's variables of main start from the ROM; then the boot loop (`func_80013108`) starts
 the graphics, sound and controllers, loads overlay 1 (the menus) and runs it. On PC the game's loader
 (`func_80000700`) starts the loaded overlay's variables afresh and `func_8000082C` calls its entry (above, "The
-game's variables"). No controller is pressed. The Match Inspector's window draws the frames, and takes its
-screenshots by the boot's frame count; `--headless` runs without a window:
+game's variables"). The Match Inspector's window draws the frames, and takes its screenshots by the boot's frame
+count; `--headless` runs without a window:
 
 ```
 ./build/debug/turnbuckle-dive --dev-boot 600 --headless
@@ -530,6 +539,22 @@ screenshots by the boot's frame count; `--headless` runs without a window:
 It ends with exit code 0 at the FRAMES-th frame. The game's boot loop never returns, so the program ends there
 (`_Exit`, which leaves out the exit handlers: the game's heap is still in use). Like the developer match's, the
 pictures are made from the user's ROM: keep them out of the repository.
+
+Controller 1 is plugged in. Its pads come from the same sources as the developer match's (`src/dev/dev_pads.c`,
+which both use): a pad file to replay (`--replay-pads`), else a pad script (`--pad-script`, whose frames count from
+the boot's first frame), else the window's controllers, mapped as in the match (F1, Debug, Input Editor changes the
+mapping); with none of them, as with `--headless` and no file, the controller reads as released. `--record-pads`
+saves every read. `tests/pads/boot_menu.txt` presses Start on the title screen, again for the Rumble Pak notice and
+once more at the main menu, and the `dev_boot_menu` test runs it:
+
+```
+./build/debug/turnbuckle-dive --dev-boot 1100 --pad-script tests/pads/boot_menu.txt
+```
+
+`--no-idle-randoms` works as in the developer match: the menus' stage lights take random numbers, so a comparison
+with the original game in Project64, whose idle thread's random calls are turned off the same way, needs it. With
+the same presses the title screen, the Rumble Pak notice and the main menu then have the original's display lists,
+command for command.
 
 ## Every file of the game: td_game_all
 

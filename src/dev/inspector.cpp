@@ -27,6 +27,7 @@
 #include "context.h"
 #include "debug.h"
 #include "dev_match.h"
+#include "dev_pads.h"
 #include "dev_records.h"
 #include "fast/Fast3dWindow.h"
 #include "fast/interpreter.h"
@@ -442,7 +443,7 @@ void ReadPads() {
         deck->WriteToPad(pads);
     }
     for (int i = 0; i < 4 && i < MAXCONTROLLERS; i++) {
-        dev_match_set_pad(i, static_cast<uint16_t>(pads[i].button & 0xFFFF), pads[i].stick_x, pads[i].stick_y);
+        dev_pads_set_window(i, static_cast<uint16_t>(pads[i].button & 0xFFFF), pads[i].stick_x, pads[i].stick_y);
     }
 }
 

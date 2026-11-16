@@ -31,6 +31,7 @@
 #include <time.h>
 
 #include "dev_match.h"
+#include "dev_pads.h"
 #include "dev_records.h"
 #include "game.h"
 #include "game_sdk.h"
@@ -224,7 +225,6 @@ static void *watchdog(void *arg) {
 /* ---- What the developer match does at each hand-off ---- */
 
 static void bot_frame(void);    /* the pad bot (the pads, below) */
-static void script_frame(void); /* the pad script (the pads, below) */
 static int g_last_phase;
 
 static void on_present(int kind) {
@@ -284,7 +284,7 @@ static void on_present(int kind) {
         port_fatal("dev-match: the match has not ended after %u frames (phase %d)", g_frames, (int)m.phase);
     }
     if (g_options->pad_script != NULL) {
-        script_frame();
+        dev_pads_script_frame(g_frames);
     } else if (g_options->has_pad_bot) {
         bot_frame();
     }
@@ -294,101 +294,10 @@ static void on_present(int kind) {
 }
 
 /* ---- The pads ----
- * A pad file (--record-pads, --replay-pads): "TDPADS02", then one 10-byte entry per pad read, in the order the game
- * reads, little-endian: u32 frame of the match (dev_match_frames), u8 channel, u8 0, u16 buttons, s8 stick x, s8 stick
- * y. Replaying the reads in order gives the game the same pads at the same moments, whatever the timing of the run;
- * the frame lets a tool give the original game the same pads at the same frames (Project64's td_lockstep.js). */
-static GamePad g_window_pads[4];
+ * The pad files, the pad script and the window's controllers are dev_pads.c's; the pad bot is the match's own. */
 static GamePad g_bot_pad;
 static uint32_t g_bot_state, g_bot_hold;
-static FILE *g_record;
-static FILE *g_replay;
 static int g_replay_ended;
-
-/* The pad script: each line's first frame, frame count and buttons, and controller 1's pad for this frame. */
-typedef struct {
-    uint32_t frame, frames;
-    uint16_t buttons;
-} ScriptPress;
-static ScriptPress *g_script;
-static size_t g_script_count;
-static GamePad g_script_pad;
-
-static void script_load(const char *path) {
-    static const struct {
-        const char *name;
-        uint16_t bits;
-    } names[] = { { "A", 0x8000 },     { "B", 0x4000 },     { "Z", 0x2000 },     { "START", 0x1000 },
-                  { "DUP", 0x0800 },   { "DDOWN", 0x0400 }, { "DLEFT", 0x0200 }, { "DRIGHT", 0x0100 },
-                  { "L", 0x0020 },     { "R", 0x0010 },     { "CUP", 0x0008 },   { "CDOWN", 0x0004 },
-                  { "CLEFT", 0x0002 }, { "CRIGHT", 0x0001 } };
-    FILE *f = fopen(path, "r");
-    char line[256];
-    int n = 0;
-
-    if (f == NULL) {
-        port_fatal("dev-match: cannot read the pad script %s", path);
-    }
-    while (fgets(line, sizeof(line), f) != NULL) {
-        char buttons[128];
-        unsigned frame, frames = 1;
-        char *hash = strchr(line, '#');
-        int got;
-        ScriptPress *grown;
-
-        n++;
-        if (hash != NULL) {
-            *hash = '\0';
-        }
-        got = sscanf(line, "%u %127s %u", &frame, buttons, &frames);
-        if (got < 0) {
-            continue;
-        }
-        if (got < 2) {
-            port_fatal("dev-match: %s, line %d: a line is FRAME BUTTONS [FRAMES]", path, n);
-        }
-        grown = realloc(g_script, (g_script_count + 1) * sizeof(*g_script));
-        if (grown == NULL) {
-            port_fatal("dev-match: no memory for the pad script");
-        }
-        g_script = grown;
-        g_script[g_script_count].frame = frame;
-        g_script[g_script_count].frames = frames;
-        g_script[g_script_count].buttons = 0;
-        for (char *name = strtok(buttons, "+"); name != NULL; name = strtok(NULL, "+")) {
-            size_t k;
-
-            for (k = 0; k < sizeof(names) / sizeof(names[0]) && strcmp(names[k].name, name) != 0; k++) {
-            }
-            if (k == sizeof(names) / sizeof(names[0])) {
-                port_fatal("dev-match: %s, line %d: no button is called %s", path, n, name);
-            }
-            g_script[g_script_count].buttons |= names[k].bits;
-        }
-        g_script_count++;
-    }
-    fclose(f);
-}
-
-/* Controller 1's pad from the script for the frame after g_frames, which the game reads next. */
-static void script_frame(void) {
-    size_t i;
-
-    g_script_pad.buttons = 0;
-    for (i = 0; i < g_script_count; i++) {
-        if (g_frames >= g_script[i].frame && g_frames < g_script[i].frame + g_script[i].frames) {
-            g_script_pad.buttons |= g_script[i].buttons;
-        }
-    }
-}
-
-void dev_match_set_pad(int channel, uint16_t buttons, int8_t stick_x, int8_t stick_y) {
-    if (channel >= 0 && channel < 4) {
-        g_window_pads[channel].buttons = buttons;
-        g_window_pads[channel].stick_x = stick_x;
-        g_window_pads[channel].stick_y = stick_y;
-    }
-}
 
 static uint32_t bot_random(void) {
     uint32_t x = g_bot_state;
@@ -423,24 +332,7 @@ static void bot_frame(void) {
 }
 
 static void pads_open(void) {
-    if (g_options->replay_pads != NULL) {
-        char magic[8];
-
-        g_replay = fopen(g_options->replay_pads, "rb");
-        if (g_replay == NULL || fread(magic, 8, 1, g_replay) != 1 || memcmp(magic, "TDPADS02", 8) != 0) {
-            port_fatal("dev-match: %s is not a pad file (--record-pads writes one)", g_options->replay_pads);
-        }
-    }
-    if (g_options->record_pads != NULL) {
-        g_record = fopen(g_options->record_pads, "wb");
-        if (g_record == NULL) {
-            port_fatal("dev-match: cannot write the pad file %s", g_options->record_pads);
-        }
-        fwrite("TDPADS02", 8, 1, g_record);
-    }
-    if (g_options->pad_script != NULL) {
-        script_load(g_options->pad_script);
-    }
+    dev_pads_open("dev-match", g_options->replay_pads, g_options->record_pads, g_options->pad_script);
     g_bot_state = g_options->pad_bot_seed != 0 ? g_options->pad_bot_seed : 1;
 }
 
@@ -448,73 +340,44 @@ static void pads_open(void) {
 static long g_replay_at_match;
 
 static void pads_mark(void) {
-    g_replay_at_match = g_replay != NULL ? ftell(g_replay) : 0;
+    g_replay_at_match = dev_pads_tell();
 }
 
 static void pads_rewind(void) {
-    if (g_replay != NULL) {
-        fseek(g_replay, g_replay_at_match, SEEK_SET);
-    }
+    dev_pads_seek(g_replay_at_match);
     g_bot_state = g_options->pad_bot_seed != 0 ? g_options->pad_bot_seed : 1;
     g_bot_hold = 0;
     memset(&g_bot_pad, 0, sizeof(g_bot_pad));
 }
 
 static void pads_close(void) {
-    if (g_record != NULL) {
-        fclose(g_record);
-        g_record = NULL;
-    }
-    if (g_replay != NULL) {
-        fclose(g_replay);
-        g_replay = NULL;
-    }
+    dev_pads_close();
 }
 
 static void read_pad(int channel, GamePad *pad) {
-    uint8_t e[10];
-
     memset(pad, 0, sizeof(*pad));
-    if (g_replay != NULL) {
-        if (fread(e, 10, 1, g_replay) != 1) {
-            if (!g_replay_ended) {
-                g_replay_ended = 1;
-                fail("the pad file ended before the game stopped reading pads");
-            }
-        } else if (e[4] != channel) {
-            port_fatal("dev-match: the pad file has a read of controller %u where the game reads controller %d: it was "
-                       "recorded with other options",
-                       e[4], channel);
-        } else {
-            pad->buttons = (uint16_t)(e[6] | e[7] << 8);
-            pad->stick_x = (int8_t)e[8];
-            pad->stick_y = (int8_t)e[9];
+    if (dev_pads_replaying()) {
+        if (!dev_pads_replay(channel, pad) && !g_replay_ended) {
+            g_replay_ended = 1;
+            fail("the pad file ended before the game stopped reading pads");
         }
     } else if (g_options->players > 0 && g_options->pad_script == NULL && !g_options->has_pad_bot) {
-        *pad = g_window_pads[channel & 3];
+        dev_pads_window(channel, pad);
     } else if (channel == 0) {
         /* The script or the bot plays controller 1 (nobody plays CPU against CPU), and the results screen gets its A
          * as a player would press it. */
         if (g_options->players > 0) {
-            *pad = g_options->pad_script != NULL ? g_script_pad : g_bot_pad;
+            if (g_options->pad_script != NULL) {
+                dev_pads_script(pad);
+            } else {
+                *pad = g_bot_pad;
+            }
         }
         if (g_press_a) {
             pad->buttons |= 0x8000; /* A */
         }
     }
-    if (g_record != NULL) {
-        e[0] = (uint8_t)(g_frames & 0xFF);
-        e[1] = (uint8_t)(g_frames >> 8 & 0xFF);
-        e[2] = (uint8_t)(g_frames >> 16 & 0xFF);
-        e[3] = (uint8_t)(g_frames >> 24);
-        e[4] = (uint8_t)channel;
-        e[5] = 0;
-        e[6] = (uint8_t)(pad->buttons & 0xFF);
-        e[7] = (uint8_t)(pad->buttons >> 8);
-        e[8] = (uint8_t)pad->stick_x;
-        e[9] = (uint8_t)pad->stick_y;
-        fwrite(e, 10, 1, g_record);
-    }
+    dev_pads_record(g_frames, channel, pad);
 }
 
 /* The resource log (--res-log): "frame N: resource 0xID" for each resource the game loads, frame 0 being boot. */

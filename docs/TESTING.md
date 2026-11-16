@@ -57,6 +57,7 @@ different after any change; a digest is such a fingerprint taken over many piece
 | `dev_match_other_seed` | The same with the random seed started elsewhere, a different match, into a third log. |
 | `dev_match_repeatable` | `tools/wr_log.py` compares the first two logs, every wrestler at every frame: they must be the same. |
 | `dev_match_detects_change` | The same comparison of the first log with the other seed's. This test passes when the tool reports where they differ, which shows that the comparison sees a different match. |
+| `dev_boot_menu` | The game from its boot loop, as the N64 starts it, to the main menu: a pad script presses Start on the title screen, the Rumble Pak notice and the main menu, and the boot runs 1100 frames without a window ([GAME_CODE.md](GAME_CODE.md), "The developer boot"). |
 | `dev_match_pads_record` | Sting played by the pad bot (seed 7), every pad read saved to a pad file, and the wrestler log written ([GAME_CODE.md](GAME_CODE.md), "Playing the match"). |
 | `dev_match_pads_replay` | The same match from the pad file, into a second log. |
 | `dev_match_pads_replay_same` | The two logs must be the same, frame for frame. |
@@ -73,7 +74,7 @@ different after any change; a digest is such a fingerprint taken over many piece
 | `viewer_reference` | `tools/viewer_ref.py` works out from your ROM, without the game's code, what the asset viewer must build and draw, and writes it to `build/debug/viewer_ref.json`: the reference. |
 | `viewer_check` | The asset viewer builds its three subjects (a wrestler's head from its three parts, an effect sprite and a 2D picture) with the game's code and compares them with the reference: first the vertices and triangles of each of the head's parts, and the camera placed over them, then every pixel of each picture. Between the head's two sides Fast3D draws at another resolution, as when someone stretches the window. Last, the picture's palette is changed in memory, and the picture must be drawn in the new colours. Its window opens, draws and closes by itself. |
 
-Near the end, CTest prints how many passed, `100% tests passed, 0 tests failed out of 26` (27 in the asan and order presets), and
+Near the end, CTest prints how many passed, `100% tests passed, 0 tests failed out of 27` (28 in the asan and order presets), and
 then the time the tests took. The tests from `rom_loader` on, but for the two gdb tests, need your ROM. When they find none, CTest marks them `***Skipped` instead of `Passed`, still
 counts them in that line, and names them at the very end, under `The following tests did not run:`.
 
