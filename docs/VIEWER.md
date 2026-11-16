@@ -31,7 +31,7 @@ cd build/debug
 
 It looks for the ROM as `turnbuckle-dive` does: the path given as the last argument, else the file named by `TD_ROM`,
 else `baserom.z64` in the current folder, else in the decompilation's folder. It writes `logs/viewer.log`,
-`viewer.cfg.json` and `imgui.ini` in the folder it is started from.
+`viewer.cfg.json` and `imgui.ini` beside itself, in its build folder.
 
 | Command | What it does |
 |---|---|

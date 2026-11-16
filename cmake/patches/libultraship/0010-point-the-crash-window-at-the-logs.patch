@@ -5,7 +5,7 @@ support channel in discord", the wording of the project it comes from. A game bu
 channel unless it sets one up, so the window sends its users somewhere that does not exist.
 
 The window now says only to check the logs: LibUltraShip writes the crash report (the signal, the registers and the
-stack) to logs/<name>.log in the folder the program was started from (Context::InitLogging).
+stack) to logs/<name>.log beside the program (Context::InitLogging; patch 0011).
 
 diff --git a/src/ship/debug/CrashHandler.cpp b/src/ship/debug/CrashHandler.cpp
 index 63d5b071..8ec9014f 100644

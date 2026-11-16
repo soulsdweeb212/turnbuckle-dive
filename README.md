@@ -120,7 +120,8 @@ the game loads its 2D pictures: each is drawn once with palettes on, when the N6
 and once with palettes off. Each shape must fill exactly its box and each square must have the colours its texels and
 palette type give; the triangle, the sprite and the squares rely on fixes 0003, 0004, 0005 and 0006 in
 `cmake/patches/libultraship`. `hello --frames 600` draws 600 frames and prints how long they took. hello writes
-`logs/`, `hello.cfg.json` and `imgui.ini` in the folder it is started from. Under WSL it draws with the GPU through
+`logs/`, `hello.cfg.json` and `imgui.ini` beside itself, in its build folder, wherever it is started from (fix 0011;
+the `SHIP_HOME` environment variable names another folder). Under WSL it draws with the GPU through
 Direct3D 12 when it can; set `GALLIUM_DRIVER=llvmpipe` to draw on the CPU instead.
 
 **VS Code** (connected to WSL): open the folder and install the suggested C/C++ and CMake Tools extensions. Choose

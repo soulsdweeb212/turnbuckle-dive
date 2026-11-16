@@ -1,0 +1,25 @@
+Keep the program's files beside the program
+
+LibUltraShip keeps a program's settings file (<name>.cfg.json), its log (logs/<name>.log), the GUI's window layout
+(imgui.ini) and the rest in Context::GetAppDirectoryPath. On Linux and Windows that is SHIP_HOME when set, else ".",
+the folder the program was started from. Started from another folder, the program then reads and writes a second set
+of these files there: it starts with other settings (another key mapping), and its log is not where it was last time.
+
+The fallback is now the folder that holds the program (Context::GetAppBundlePath: /proc/self/exe on Linux, the
+module's path on Windows), so one set of files belongs to each build of the program wherever it is started from.
+SHIP_HOME still chooses another folder.
+
+diff --git a/src/ship/core/Context.cpp b/src/ship/core/Context.cpp
+index ea34621d..b84bbfc6 100644
+--- a/src/ship/core/Context.cpp
++++ b/src/ship/core/Context.cpp
+@@ -360,7 +360,8 @@ std::string Context::GetAppDirectoryPath(const std::string& appName) {
+     }
+ #endif
+ 
+-    return ".";
++    // The folder that holds the program, rather than the one it was started from.
++    return GetAppBundlePath();
+ }
+ 
+ std::string Context::GetPathRelativeToAppBundle(const std::string& path) {

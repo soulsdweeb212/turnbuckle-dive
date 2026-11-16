@@ -24,10 +24,11 @@ From this repository's folder, `cd build/debug` goes into the build folder, and 
 terminal stays in a folder until the next `cd`. Its prompt, the text before where you type, ends with that folder, for
 example `turnbuckle-dive/build/debug$`.
 
-hello and the viewer keep their files in the folder they are started from: their log (`logs/`), their settings
-(`hello.cfg.json`, `viewer.cfg.json`) and, once a window has been open for a few seconds, `imgui.ini`. The viewer's
-check also reads its reference, `viewer_ref.json`, from there. So they are started in `build/debug`, which keeps all of
-these with the build.
+hello, the viewer and turnbuckle-dive keep their files beside themselves, in the build folder, wherever they are
+started from: their log (`logs/`), their settings (`hello.cfg.json`, `viewer.cfg.json`, `turnbuckle-dive.cfg.json`,
+which holds the key mapping) and, once a window has been open for a few seconds, `imgui.ini`. The `SHIP_HOME`
+environment variable names another folder for them. The viewer's check reads its reference, `viewer_ref.json`, from
+the folder it is started from, so it is started in `build/debug`.
 
 ## Running all the tests
 
