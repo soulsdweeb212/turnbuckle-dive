@@ -25,6 +25,8 @@ saves/
 *.mpk
 *.eep
 *.sra
+*.sram
+*.sram.new
 *.cfg.json
 imgui.ini
 logs/

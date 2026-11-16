@@ -338,7 +338,8 @@ without a depth buffer, so that order alone decides which object covers which.
 
 - F6 pauses and resumes the match, F7 runs one frame and pauses, F8 slows it down (each frame shown 1, 2, 4 or 8 times).
   The same buttons are in the window, and the console (F1, Debug, Console) takes `pause`, `step 10` and `slowmo 4`.
-- F1 shows the menu bar. Its Settings menu opens the Input Editor (the controls); its Boot submenu chooses how the game
+- F1 shows the menu bar. Its Settings menu opens the Input Editor (the controls) and the Costume Colours (below, "The
+  Costume Colours"); its Boot submenu chooses how the game
   starts (below, "The splash screen"); and its Championship submenu sets the number of matches in a championship run for
   every title (1 to 9; the original game's 9, saved in the settings file as `gChampionshipMatches`): the game reads it
   when a run starts (`port_championship_matches`, `src/game_sdk.c`), and a shorter run leaves out the first contenders
@@ -382,6 +383,33 @@ program as `moves_0x137.json` (for profile 0x137), and "Save all as JSON" writes
 field layout (`fieldLayout`: each field's word, first bit, bit count and whether it is signed), then the tables, each
 with where its resources are in the ROM and its entries: slot, offset, the six words, the animations and the fields'
 values.
+
+### The Costume Colours
+
+The Costume Colours window (`src/dev/costume_colours.cpp`; F1, Settings, Costume Colours) gives a wrestler's costume
+any colour, picked on a colour wheel, in place of the colours the game's Costume Change menu offers. The game colours a
+costume by its palettes: each body part's palette marks some of its colours with a key, green for colour 1 and blue
+for colour 2, and `func_8000B884` replaces each marked colour with a shade of the colour the menu chose (one of 15 rows
+of 16 shades, lightest first, in the game's colour table, resource 0xA51), or leaves it as painted. So colour 1 is not
+one piece of the costume but every part the costume's artist marked green, which differs from costume to costume:
+Sting's colour 1 is his tights and colour 2 a red trim on two parts, while his face paint is not marked and keeps its
+colour; Hollywood Hogan's colour 1 is his tights and colour 2 their white lettering.
+
+On PC, `func_8000B884` first asks the port for the wrestler's own colour (`port_costume_ramp`, `src/game_sdk.c`). The
+port turns it into 16 shades shaped as the game's own rows: shade 7 is the colour itself, the lighter shades go toward
+white by 7% a step and the darker ones toward black by 1/16 a step (averages of the game's 13 coloured rows). A marked
+colour takes the shade of its key, as from the game's row. The palettes hold 15-bit colours (RGBA5551), so a picked
+colour is rounded to 5 bits a component.
+
+The window lists the wrestlers the game has loaded, in a match or a menu that shows them, by player and character id.
+For each of the costume's two colours (a colour the costume has no marks for is greyed out, as in the game's menu) it
+shows the colour as painted and a checkbox: ticked, the wrestler takes your colour, which starts as the painted one;
+click its swatch for the colour wheel. A change shows at once: the window has the wrestler's palettes coloured again
+(`dev_records_recolour`, as `func_8000BB40` does when the game's menu changes a colour), and Fast3D decodes the textures
+again because their palettes changed (LibUltraShip patch 0009). The colour is the wrestler's, in every costume and
+every match, and is kept in the settings file as `gCostumeColour1_001` and `gCostumeColour2_001` (for character
+0x001), 0xRRGGBB; unticking removes it. The game's own save is left alone, so the original game's Costume Change choice
+comes back when you untick.
 
 ### Playing the match
 
@@ -596,6 +624,22 @@ once more at the main menu, and the `dev_boot_menu` test runs it:
 with the original game in Project64, whose idle thread's random calls are turned off the same way, needs it. With
 the same presses the title screen, the Rumble Pak notice and the main menu then have the original's display lists,
 command for command.
+
+### The save file
+
+The cartridge keeps the game's saves in 32 KiB of battery-backed SRAM: the records, the score rankings, the title
+holders, the costume choices. The program keeps it in `turnbuckle-dive.sram`, beside the settings file in the build
+folder (`game_sdk_sram_file`, `src/game_sdk.c`). When the window opens the program reads the file, if there is one, and
+the game finds its saves there as on a cartridge; with none, the game starts with an empty save memory and writes a
+fresh save, as a new cartridge does. Each time the game writes to the save memory, the program writes the whole of it
+to the file at the next frame hand-off, once per save however many writes the save takes, through a second file
+(`turnbuckle-dive.sram.new`) that then takes the save file's place, so a program stopped while writing never leaves
+half a save. Delete the file to start from an empty save.
+
+The file holds the save memory as the PC's game writes it: the values in the game's save buffer (`D_800DCFB8`) are
+in the PC's byte order, so the file is not an emulator's `.sra` and cannot be swapped with one (docs/DECISIONS.md,
+D8). A run with `--headless`, a pad script or a pad file to replay uses no save file and starts with an empty save
+memory, so that it goes the same on every run; so does the developer match.
 
 ### The splash screen
 

@@ -79,6 +79,28 @@ size_t dev_records_draw_blocks(DevDrawBlock *out, size_t max);
 void dev_records_hide_groups(uint32_t mask);
 void dev_records_unhide_groups(void);
 
+/* One entity's costume, for the Costume Colours window: the four entities are the wrestlers the game has loaded,
+ * in a match or a menu. character is the wrestler's character id; colours has bit 1 set when its costume has parts
+ * that take colour 1, and bit 2 for colour 2 (func_8000B46C); original[1] and [2] are those colours as the costume
+ * was painted, 0xRRGGBB (func_8000B550); level[1] and [2] the Costume Change menu's choices, 0 to 14, or 15 for the
+ * original. */
+#define DEV_COSTUMES 4
+typedef struct {
+    uint16_t character;
+    uint8_t colours;
+    uint8_t level[3];
+    uint32_t original[3];
+} DevCostume;
+
+/* Fills out with entity n's costume and returns 1, or returns 0 when the entity shows no wrestler. Call it while the
+ * game waits in a hand-off, as every function here. */
+int dev_records_costume(int n, DevCostume *out);
+
+/* Colours again every palette of each entity that shows wrestler `character` (func_8000B884, as func_8000BB40 does
+ * when the Costume Change menu changes a colour), so that a new costume colour (game_sdk_set_costume_colour) shows at
+ * once. */
+void dev_records_recolour(unsigned character);
+
 /* A wrestler state's short name ("" for one docs/wrestler.md does not identify), and a match phase's name. */
 const char *dev_state_name(int state);
 const char *dev_phase_name(int phase);

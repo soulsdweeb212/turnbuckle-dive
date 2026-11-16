@@ -30,6 +30,10 @@ void dev_inspector_stop(void);
 #define DEV_BOOT_SCREEN_TURNBUCKLE_DIVE 1
 int dev_inspector_boot_screen(void);
 
+/* Keeps the game's save memory in turnbuckle-dive.sram beside the program (game_sdk_sram_file); call it after
+ * dev_inspector_start and before the game starts. */
+void dev_inspector_use_save_file(void);
+
 /* Leaves the game frames before `until` (by the frame count of dev_inspector_frames_from) out of the window: the game
  * runs them at once, without drawing or pacing them, and reads no controller during them. */
 void dev_inspector_skip_frames(uint32_t until);

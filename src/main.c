@@ -243,6 +243,11 @@ int main(int argc, char **argv) {
         if (!headless && dev_inspector_start() == 0) {
             on_frame = dev_inspector_frame;
             dev_inspector_frames_from(dev_boot_frames);
+            /* The game's saves in a file beside the program, as a cartridge keeps them; a scripted or replayed run
+             * starts with no save, so that it goes the same on every run. */
+            if (match_options.pad_script == NULL && match_options.replay_pads == NULL) {
+                dev_inspector_use_save_file();
+            }
             if (screenshot != NULL && screenshot_every != 0) {
                 dev_inspector_screenshots(screenshot, screenshot_every);
             } else if (screenshot != NULL) {

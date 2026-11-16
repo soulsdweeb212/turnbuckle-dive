@@ -11,7 +11,7 @@
 //
 // Keys, in the window: F5 shows and hides the inspector, F6 pauses and resumes, F7 runs one frame and pauses, F8
 // changes the slow motion (1, 2, 4, 8 window frames per game frame). F1 shows the menu bar: its Settings menu opens the
-// Input Editor, its Debug menu this window, the Move List (src/dev/move_list.cpp) and LibUltraShip's Console, Stats and
+// Input Editor and the Costume Colours (src/dev/costume_colours.cpp), its Debug menu this window, the Move List (src/dev/move_list.cpp) and LibUltraShip's Console, Stats and
 // Gfx Debugger. The console also takes
 // the commands pause, step [frames], slowmo [factor] and reset.
 #include "inspector.h"
@@ -42,6 +42,7 @@
 #include "fast/interpreter.h"
 #include "frame.h"
 #include "game_sdk.h"
+#include "costume_colours.h"
 #include "move_list.h"
 #include "libultraship/controller/controldeck/ControlDeck.h"
 #include "libultraship/libultraship.h"
@@ -521,9 +522,10 @@ extern "C" int dev_inspector_start(void) {
     gLus.window->GetGui()->AddGuiWindow(std::make_shared<LUS::InputEditorWindow>(
         "gInputEditorShown", "Input Editor", gLus.ctx->GetChildren().GetFirst<LUS::ControlDeck>(), gLus.window));
     td::AddMoveListWindow(cvars, gLus.window);
+    td::AddCostumeColoursWindow(cvars, gLus.window);
     // The game's settings, kept in the settings file: read now, and changed from the Settings menu.
     game_sdk_set_championship_matches(cvars->GetInteger(kChampionshipMatches, 9));
-    td::AddDebugMenu(gLus.window, { "Match Inspector", td::kMoveListWindow }, { "Input Editor" },
+    td::AddDebugMenu(gLus.window, { "Match Inspector", td::kMoveListWindow }, { "Input Editor", td::kCostumeColoursWindow },
                      [] { gResetAsked = true; }, DrawGameSettings);
     AddConsoleCommands();
     return 0;
@@ -615,6 +617,12 @@ extern "C" void dev_inspector_capture(const char* dir, const unsigned* frames, u
 extern "C" void dev_inspector_dump(const char* path, unsigned frame) {
     gDumpPath = path;
     gDumpFrame = frame;
+}
+
+extern "C" void dev_inspector_use_save_file(void) {
+    std::string path = Ship::Context::GetPathRelativeToAppDirectory("turnbuckle-dive.sram");
+
+    game_sdk_sram_file(path.c_str());
 }
 
 extern "C" int dev_inspector_boot_screen(void) {

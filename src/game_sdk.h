@@ -43,6 +43,14 @@ void game_sdk_set_idle_randoms(int count);
  * the title match: a shorter run leaves out the first contenders. */
 void game_sdk_set_championship_matches(int matches);
 
+/* The player's own costume colours. Each wrestler (the game's character id, bank << 8 | entry + 1) may have its own
+ * colour, 0xRRGGBB, for colour 1 and for colour 2 of its costume, in place of the colour the game's Costume Change menu
+ * chose; -1 means the game's own. The game reads them (port_costume_ramp) each time it colours a palette, so a change
+ * shows on a wrestler already on screen only once the wrestler's palettes are coloured again (dev_records_recolour).
+ * The palettes hold 15-bit colours, so a colour is rounded to 5 bits a component. */
+void game_sdk_set_costume_colour(unsigned character, int colour, int32_t rgb);
+int32_t game_sdk_costume_colour(unsigned character, int colour);
+
 /* How many times the game has handed over a frame (GAME_PRESENT_FRAME) since the program started. */
 uint32_t game_sdk_frames(void);
 
@@ -51,6 +59,13 @@ uint32_t game_sdk_frames(void);
  * save it to a file; it may also fill it from one before the game starts. */
 #define GAME_SDK_SRAM_SIZE 0x8000u
 uint8_t *game_sdk_sram(uint32_t *writes);
+
+/* Keeps the save memory in a file: fills it from the file at path when there is one (a file of another size than
+ * GAME_SDK_SRAM_SIZE is left alone, with a message), and from then on writes the whole save memory to the file after
+ * each write the game makes to it, so the game's saves (records, rankings, title holders, costume choices) outlast the
+ * program. Call it before the game starts. The file holds the save memory as the PC's game writes it. Returns 1 when
+ * it filled the save memory from the file, 0 when there was no file to read, -1 on an error. */
+int game_sdk_sram_file(const char *path);
 
 /* The display list of the last frame the game handed over: the commands of every task the frame's render work
  * submitted, one task after another, ending with G_ENDDL; *count is the number of commands (0 when the hand-off drew

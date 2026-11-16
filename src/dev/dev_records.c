@@ -258,6 +258,57 @@ void dev_records_unhide_groups(void) {
     }
 }
 
+extern u16 D_8006A2A4[]; /* each entity's character id (func_8000BB40) */
+extern u16 D_8007C318[][23];
+extern s16 D_80075440[][3];
+u16 func_8000B46C(s16 entity);
+u16 func_8000B550(s16 entity, s32 colour);
+
+/* An RGBA5551 colour as 0xRRGGBB. */
+static uint32_t rgb_of_5551(u16 c) {
+    uint32_t r = (c >> 11) & 31, g = (c >> 6) & 31, b = (c >> 1) & 31;
+
+    return (r * 255 / 31) << 16 | (g * 255 / 31) << 8 | b * 255 / 31;
+}
+
+int dev_records_costume(int n, DevCostume *out) {
+    int part;
+    int c;
+
+    memset(out, 0, sizeof(*out));
+    if (n < 0 || n >= DEV_COSTUMES) {
+        return 0;
+    }
+    for (part = 0; part < 23 && D_8007C438[n][part] == NULL; part++) {
+    }
+    if (part == 23) {
+        return 0;
+    }
+    out->character = D_8006A2A4[n];
+    out->colours = (uint8_t)func_8000B46C((s16)n);
+    for (c = 1; c < 3; c++) {
+        out->level[c] = (uint8_t)D_80075440[n][c];
+        out->original[c] = (out->colours >> c & 1) ? rgb_of_5551(func_8000B550((s16)n, c)) : 0;
+    }
+    return 1;
+}
+
+void dev_records_recolour(unsigned character) {
+    int n;
+    int part;
+
+    for (n = 0; n < DEV_COSTUMES; n++) {
+        if (D_8006A2A4[n] != character) {
+            continue;
+        }
+        for (part = 0; part < 23; part++) {
+            if (D_8007C438[n][part] != NULL) {
+                func_8000B884(D_80073EB0[n][part].f1C, (s16)n, (s16)part);
+            }
+        }
+    }
+}
+
 const char *dev_state_name(int state) {
     return state >= 0 && state < 0x92 && kStateNames[state] != NULL ? kStateNames[state] : "";
 }

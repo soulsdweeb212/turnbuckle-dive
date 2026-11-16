@@ -12,6 +12,7 @@
  *
  * Sound is not ported yet: the libmus functions do nothing and report that nothing is playing. */
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -60,6 +61,67 @@ void game_sdk_set_championship_matches(int matches) {
 
 int32_t port_championship_matches(void) {
     return g_championship_matches;
+}
+
+/* The players' own costume colours (game_sdk_set_costume_colour), by character id: bank (5 bits) and entry (5 bits),
+ * as func_8000BB40 takes the id apart; 1024 wrestlers, two colours each, 0 when the game's own colour applies and
+ * otherwise the colour with bit 24 set. */
+#define COSTUME_SET 0x1000000u
+static uint32_t g_costume[32 * 32][2];
+
+static uint32_t *costume_entry(unsigned character, int colour) {
+    if (colour != 1 && colour != 2) {
+        return NULL;
+    }
+    return &g_costume[((character >> 8) & 31) * 32 + (character & 31)][colour - 1];
+}
+
+void game_sdk_set_costume_colour(unsigned character, int colour, int32_t rgb) {
+    uint32_t *entry = costume_entry(character, colour);
+
+    if (entry != NULL) {
+        *entry = rgb < 0 ? 0 : ((uint32_t)rgb & 0xFFFFFF) | COSTUME_SET;
+    }
+}
+
+int32_t game_sdk_costume_colour(unsigned character, int colour) {
+    const uint32_t *entry = costume_entry(character, colour);
+
+    return entry != NULL && (*entry & COSTUME_SET) ? (int32_t)(*entry & 0xFFFFFF) : -1;
+}
+
+/* A colour's 16 shades, lightest first, shaped as the game's own (its colour table, resource 0xA51: rows of 16
+ * shades): shade 7 is the colour itself; the lighter shades go toward white, 7% of the way a step (49% at shade 0),
+ * and the darker ones toward black, by 1/16 a step (half the colour at shade 15). These are averages of the game's 13
+ * coloured rows. Each shade is RGBA5551, its two bytes in the N64's order, as the game's palettes hold it. */
+int32_t port_costume_ramp(uint16_t character, int32_t channel, uint16_t *ramp) {
+    int32_t rgb = game_sdk_costume_colour(character, channel);
+    int k;
+    int c;
+
+    if (rgb < 0) {
+        return 0;
+    }
+    for (k = 0; k < 16; k++) {
+        unsigned bits[3];
+        unsigned value;
+        uint8_t *out = (uint8_t *)&ramp[k];
+
+        for (c = 0; c < 3; c++) {
+            unsigned v = ((unsigned)rgb >> (16 - 8 * c)) & 0xFF;
+
+            if (k < 7) {
+                v += (255 - v) * (unsigned)(7 - k) * 7 / 100;
+            } else {
+                v = v * (unsigned)(16 - (k - 7)) / 16;
+            }
+            bits[c] = (v * 31 + 127) / 255;
+        }
+        value = bits[0] << 11 | bits[1] << 6 | bits[2] << 1 | 1;
+        out[0] = (uint8_t)(value >> 8);
+        out[1] = (uint8_t)value;
+    }
+    return 1;
 }
 
 /* ---- The frame's display list ----
@@ -133,8 +195,12 @@ const void *game_sdk_frame(uint32_t *count, uint32_t *tasks) {
     return g_frame;
 }
 
+static void sram_flush(void); /* the save memory (below) */
+
 void port_present(int32_t kind) {
     int i;
+
+    sram_flush();
 
     if (kind == GAME_PRESENT_FRAME) {
         static const FrameCmd end = { (uintptr_t)G_ENDDL_OP << 24, 0 };
@@ -385,6 +451,86 @@ static uint8_t g_cart_handle[0x74]; /* the size of the N64's OSPiHandle; the gam
 static uint8_t g_sram[GAME_SDK_SRAM_SIZE];
 static void *g_sram_handle;
 static uint32_t g_sram_writes;
+static char *g_sram_path; /* the save file (game_sdk_sram_file), or NULL: none */
+
+int game_sdk_sram_file(const char *path) {
+    FILE *in;
+    long size = -1;
+    size_t length = strlen(path);
+
+    free(g_sram_path);
+    g_sram_path = malloc(length + 1);
+    if (g_sram_path == NULL) {
+        return -1;
+    }
+    memcpy(g_sram_path, path, length + 1);
+    in = fopen(path, "rb");
+    if (in == NULL) {
+        return 0;
+    }
+    if (fseek(in, 0, SEEK_END) == 0) {
+        size = ftell(in);
+        rewind(in);
+    }
+    if (size != (long)GAME_SDK_SRAM_SIZE || fread(g_sram, 1, GAME_SDK_SRAM_SIZE, in) != GAME_SDK_SRAM_SIZE) {
+        fprintf(stderr, "save: %s is not a save of %u bytes; the game starts with no save and will not write it\n",
+                path, (unsigned)GAME_SDK_SRAM_SIZE);
+        memset(g_sram, 0, sizeof(g_sram));
+        fclose(in);
+        free(g_sram_path);
+        g_sram_path = NULL;
+        return -1;
+    }
+    fclose(in);
+    printf("save: read %s\n", path);
+    return 1;
+}
+
+/* Writes the save memory to the save file: to a file beside it first, which then takes the save file's place, so
+ * that a program stopped while writing never leaves half a save. */
+static void sram_write_file(void) {
+    char *temporary;
+    size_t length;
+    FILE *out;
+    int ok;
+
+    if (g_sram_path == NULL) {
+        return;
+    }
+    length = strlen(g_sram_path);
+    temporary = malloc(length + 5);
+    if (temporary == NULL) {
+        return;
+    }
+    memcpy(temporary, g_sram_path, length);
+    memcpy(temporary + length, ".new", 5);
+    out = fopen(temporary, "wb");
+    ok = out != NULL && fwrite(g_sram, 1, GAME_SDK_SRAM_SIZE, out) == GAME_SDK_SRAM_SIZE;
+    if (out != NULL && fclose(out) != 0) {
+        ok = 0;
+    }
+#ifdef _WIN32
+    if (ok) {
+        remove(g_sram_path); /* rename does not replace a file on Windows */
+    }
+#endif
+    if (!ok || rename(temporary, g_sram_path) != 0) {
+        fprintf(stderr, "save: could not write %s\n", g_sram_path);
+        remove(temporary);
+    }
+    free(temporary);
+}
+
+/* Writes the save file at each hand-off after the game has written to the save memory: a save, which the game may
+ * make in several writes, reaches the file once. */
+static void sram_flush(void) {
+    static uint32_t saved;
+
+    if (saved != g_sram_writes) {
+        saved = g_sram_writes;
+        sram_write_file();
+    }
+}
 
 void osEPiLinkHandle(void *handle) {
     if (((const uint8_t *)handle)[4] != 3) { /* the handle's device type (OSPiHandle.type) */
