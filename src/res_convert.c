@@ -8,8 +8,9 @@
  * so the rom_loader test's digest covers it.
  *
  * The kinds converted so far are the three resources of a character, which loadPlayerResourceSet loads for each
- * wrestler. They sit in the resource table as triples: the profile at 0x140 + 3n (n = 0 to 68), its move table at the
- * next id, its animation list at the one after; animation list 0x13F comes before the first profile.
+ * wrestler. They sit in the resource table as triples: the profile at 0x12B + 3n (n = 0 to 75), its move table at the
+ * next id, its animation list at the one after, up to 0x20E. The game's character table D_80038A64 (resource ids by
+ * character group) names all 76 profiles, from 0x12B to 0x20C.
  * - Profile, 0x40 bytes (the wrestler's +0x364): bytes up to +0x23; five 16-bit animation ids at +0x24
  *   (requestAttachmentAction reads two of them); five 16-bit character ids at +0x2E, the wrestlers that can run in
  *   (func_800BFCF0); a 64-bit set of ability bits at +0x38.
@@ -33,7 +34,7 @@
 #include "dev/order_check.h"
 
 #define SHARED_MOVES 0x126u
-#define CHAR_FIRST 0x13Fu /* the first animation list */
+#define CHAR_FIRST 0x12Bu /* the first profile */
 #define CHAR_LAST 0x20Eu  /* the last animation list */
 
 static void swap(uint8_t *p, unsigned width) {
@@ -124,10 +125,10 @@ void res_convert(uint32_t id, uint8_t *buf, int32_t size) {
         return;
     }
     switch ((id - CHAR_FIRST) % 3) {
-    case 0: /* an animation list */
+    case 2: /* an animation list */
         swap_all(buf, size, 2, id, "character's animation list");
         break;
-    case 1: /* a profile */
+    case 0: /* a profile */
         if (size != 0x40) {
             port_fatal("resource 0x%X (a character's profile) has %d bytes, not 64", id, (int)size);
         }

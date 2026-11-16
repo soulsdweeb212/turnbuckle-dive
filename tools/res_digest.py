@@ -97,9 +97,9 @@ def unpack(stream, size):
 
 
 # The characters' resources, which the port turns into the PC's byte order as they load (src/res_convert.c explains
-# the layout; this is the same conversion, written separately): triples of animation list, profile and move table from
-# id 0x13F to 0x20E.
-CHAR_FIRST, CHAR_LAST = 0x13F, 0x20E
+# the layout; this is the same conversion, written separately): triples of profile, move table and animation list from
+# id 0x12B to 0x20E.
+CHAR_FIRST, CHAR_LAST = 0x12B, 0x20E
 # The move table every wrestler shares, read as 32-bit words like the characters' move tables.
 SHARED_MOVES = 0x126
 # And the menus' pictures, by content: a resource that is a picture, or a pack's entries that are pictures, has the
@@ -155,9 +155,9 @@ def convert(rid, data):
     if not CHAR_FIRST <= rid <= CHAR_LAST:
         return data
     kind = (rid - CHAR_FIRST) % 3
-    if kind == 0:  # animation list: 16-bit ids
+    if kind == 2:  # animation list: 16-bit ids
         return swapped(data, 2)
-    if kind == 1:  # profile: bytes, then 16-bit values from +0x24 to +0x37, then a 64-bit value at +0x38
+    if kind == 0:  # profile: bytes, then 16-bit values from +0x24 to +0x37, then a 64-bit value at +0x38
         return data[:0x24] + swapped(data[0x24:0x38], 2) + data[0x38:0x40][::-1]
     return swapped(data, 4)  # move table: 32-bit words
 

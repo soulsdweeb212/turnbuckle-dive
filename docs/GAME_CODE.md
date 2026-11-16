@@ -271,7 +271,7 @@ them around (`res_convert`, `src/res_convert.c`): each value of the kinds of res
 resource arrives. Meshes, textures and palettes stay in the N64's order, because the game's display-list code and
 LibUltraShip's renderer read them so.
 
-So far that is the three resources of each character, which sit in the resource table as triples from id 0x13F to
+So far that is the three resources of each character, which sit in the resource table as triples from id 0x12B to
 0x20E: its profile (64 bytes: bytes, then five 16-bit animation ids, five 16-bit character ids and a 64-bit set of
 ability bits), its move table (32-bit words) and its animation list (16-bit ids); and resource 0x126, the move table
 every wrestler shares (32-bit words). `src/res_convert.c` says where each layout was read from. `tools/res_digest.py` makes the same conversion, so the `rom_loader` test checks it.
