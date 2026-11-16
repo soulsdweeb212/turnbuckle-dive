@@ -14,7 +14,7 @@ it. Dates are when the decision was made. Several recommendations draw on the ex
 | D6 | Licence for the port code | **decided 2026-11-06** | MIT |
 | D7 | First platforms | open | Linux x86-64, then Windows x64, then macOS |
 | D8 | Save format | open | emulator-style raw images (SRAM, controller pak `.mpk`), kept in N64 byte order |
-| D9 | Audio microcode replacement | open | keep the game's own audio command lists in a 32-bit arena and interpret them with our own CPU mixer: common commands from Starship's CC0 mixer, the rest written from measurements; never GPL code |
+| D9 | Audio microcode replacement | **decided 2026-11-16** | PC layouts, as the rest of the port: no 32-bit arena. The sound libraries (the music library libmus and the audio library n_audio, Nintendo SDK code like the other SDK libraries the port replaces) become the port's own C with host pointers, written from the decompilation's code as the reference for what they do; the sound banks are read into PC records once (`src/audio/sound_bank.c`); the RSP's audio work (ADPCM, resampling, volume and pan, reverb) runs on the CPU in the port's own mixer, written from the format and from measurements, never GPL code. Steps: the decompilation's `notes/sound_plan.md` |
 | D10 | Extras (widescreen, 60 fps, HD textures) | open | after P7; keep the original 30 fps logic first |
 | D11 | Windows compiler | open | clang-cl |
 | D12 | Storage of the two overlays' data on PC | open | a generated per-overlay reset that re-initialises the overlay's globals (portable) |

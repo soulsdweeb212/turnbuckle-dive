@@ -169,7 +169,12 @@ returns, and a controller read does the same, so a game function that waits for 
 Message queues keep the N64's 0x18 bytes and 4-byte messages; a wait on an empty queue that nothing could fill stops
 the program with a message instead of hanging. Controllers read what the program running the game gives through
 `game_sdk_set` (`src/game_sdk.h`). Sound is not ported yet: the music library's functions do nothing and report that
-nothing plays.
+nothing plays. The port's sound is being written in `src/audio/` (docs/DECISIONS.md, D9). So far it reads the game's
+two sound banks from the ROM into PC records (`sound_bank.c`: the music's 54 samples and the effects' 147, each with
+its loop, ADPCM codebook and tuning) and decodes the N64's ADPCM samples (`vadpcm.c`); the test `sound_bank` checks
+both against the ROM. `turnbuckle-dive --sound-dump DIR` writes every sample to DIR as a WAV file, at the game's output
+rate of 28800 Hz, with `samples.txt` listing them; a sample has no pitch of its own (the music library plays it at
+each note's pitch), so the files are for checking the decoding by ear, not the music.
 
 `src/game_check.c` keeps the two headers in step: it is compiled with the game's settings and includes both
 `include/port.h` and `src/game.h`, so the build stops with an error if they ever declare a function or the resource

@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "game.h"
+#include "audio/sound_dump.h"
 #include "rom.h"
 #ifdef TD_GAME_CODE
 #include "resources.h"
@@ -108,6 +109,7 @@ int main(int argc, char **argv) {
     const char *dump = NULL;
     unsigned dump_frame = 0;
     const char *capture_dir = NULL;
+    const char *sound_dump_dir = NULL; /* --sound-dump DIR: write the sound banks' samples as WAV files and stop */
     unsigned capture_frames[64];
     unsigned capture_count = 0;
 #ifdef TD_DEV_MATCH
@@ -132,6 +134,8 @@ int main(int argc, char **argv) {
             fprintf(stderr, "--res: this build has no game code (README.md, Building, says how to build it)\n");
             return 1;
 #endif
+        } else if (strcmp(argv[i], "--sound-dump") == 0 && i + 1 < argc) {
+            sound_dump_dir = argv[++i];
         } else if (strcmp(argv[i], "--dev-boot") == 0 && i + 1 < argc) {
             dev_boot = (unsigned)strtoul(argv[++i], NULL, 0);
 #ifndef TD_DEV_MATCH
@@ -202,7 +206,7 @@ int main(int argc, char **argv) {
             match_options.seed = (uint32_t)strtoul(argv[++i], NULL, 0);
 #endif
         } else if (strncmp(argv[i], "--", 2) == 0 || rom_arg != NULL) {
-            fprintf(stderr, "Usage: turnbuckle-dive [--res ID | --dev-boot FRAMES [--no-splash] [--pad-script FILE] [--record-pads FILE] [--replay-pads FILE] [--no-idle-randoms] | --dev-match [--headless] [--wr-log FILE] [--res-log FILE] [--seed N] "
+            fprintf(stderr, "Usage: turnbuckle-dive [--res ID | --sound-dump DIR | --dev-boot FRAMES [--no-splash] [--pad-script FILE] [--record-pads FILE] [--replay-pads FILE] [--no-idle-randoms] | --dev-match [--headless] [--wr-log FILE] [--res-log FILE] [--seed N] "
                             "[--no-watchdog] "
                             "[--hide-group N]... [--screenshot FILE [--screenshot-frame N | --screenshot-every N]] [--dump-frame N FILE] [--no-idle-randoms] [--capture-match-frames N,N,... DIR] [--players 0|1] [--time-limit MINUTES] [--matches N] [--record-pads FILE] [--replay-pads FILE] [--pad-script FILE] [--pad-bot SEED]] [ROM]\n");
             return 1;
@@ -234,6 +238,12 @@ int main(int argc, char **argv) {
         return 2;
     }
     printf("Status: supported ROM\n");
+    if (sound_dump_dir != NULL) {
+        int result = sound_dump(rom.data, rom.size, sound_dump_dir);
+
+        rom_free(&rom);
+        return result;
+    }
 #ifdef TD_DEV_MATCH
     if (dev_boot != 0) {
         int result;

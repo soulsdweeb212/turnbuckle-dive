@@ -165,7 +165,10 @@ add_library(td_core STATIC
     src/port.c
     src/slots.c
     src/res_convert.c
-    src/game_heap.c)
+    src/game_heap.c
+    src/audio/sound_bank.c
+    src/audio/sound_dump.c
+    src/audio/vadpcm.c)
 target_include_directories(td_core PUBLIC src)
 td_strict(td_core)
 # The handle table's lock (src/slots.c): a pthread mutex, which on Linux and macOS needs the system's thread library
@@ -366,6 +369,12 @@ if(BUILD_TESTING)
     # other tests run the same program in a way that must stop it: each passes only when the output holds the table's
     # message, which shows that a handle never given out, one beyond the table's end, and one handle too many, really
     # stop the program.
+    # The sound banks and the ADPCM decoder (tests/test_sound_bank.c says what it checks); skipped without the ROM.
+    add_executable(test_sound_bank tests/test_sound_bank.c)
+    target_link_libraries(test_sound_bank PRIVATE td_core)
+    td_strict(test_sound_bank)
+    add_test(NAME sound_bank COMMAND test_sound_bank)
+    set_tests_properties(sound_bank PROPERTIES SKIP_RETURN_CODE 77)
     add_executable(test_slots tests/test_slots.c)
     target_link_libraries(test_slots PRIVATE td_core)
     td_strict(test_slots)
