@@ -305,6 +305,7 @@ bool RunSplash(const std::shared_ptr<Fast::Fast3dWindow>& window, const uint8_t*
         window->StartFrame();
         window->GetInterpreterWeak().lock()->Run(sFrame, {});
         window->GetGui()->EndDraw();
+        window->EndFrame(); // shows the frame, and waits for the next one at the target rate
     }
     return true;
 }
