@@ -66,6 +66,7 @@ td::LibUltraShip gLus;
 int gArgc;            // the program's command line (dev_inspector_set_command), for Reset
 char** gArgv;
 bool gResetAsked;     // the F1 menu's Reset was chosen; the next window frame restarts the program
+uint32_t gSkipUntil;  // game frames before this one are not drawn (dev_inspector_skip_frames)
 std::string gShotPath; // --screenshot: the file, and the game frame to take it at
 unsigned gShotFrame;
 // The game frame count that the screenshots go by: the developer match's (dev_match_frames), or the developer boot's
@@ -323,39 +324,56 @@ void SaveScreenshot(const std::string& path) {
 
 // The settings file's name for the number of matches in a championship run (game_sdk_set_championship_matches).
 constexpr const char* kChampionshipMatches = "gChampionshipMatches";
+// The settings file's name for how the game boots (dev_inspector_boot_screen): DEV_BOOT_SCREEN_ORIGINAL or
+// DEV_BOOT_SCREEN_TURNBUCKLE_DIVE.
+constexpr const char* kBootScreen = "gBootScreen";
 
-// The game's settings in the F1 menu's Settings menu. Each takes effect at once in the port and is saved to the
-// settings file when the slider is let go. The game reads the run's length when a championship run starts.
+// The game's settings in the F1 menu's Settings menu, each group in a submenu of its own. Each takes effect at once in
+// the port and is saved to the settings file when the slider is let go. The game reads the run's length when a
+// championship run starts (every title: U.S., Cruiserweight, Tag Team, World).
 void DrawGameSettings() {
     auto cvars = gLus.ctx->GetChildren().GetFirst<Ship::ConsoleVariable>();
-    int matches = cvars->GetInteger(kChampionshipMatches, 9);
 
-    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 8);
-    if (ImGui::SliderInt("Championship matches", &matches, 1, 9)) {
-        cvars->SetInteger(kChampionshipMatches, matches);
-        game_sdk_set_championship_matches(matches);
+    // How the game starts, read when the program starts (so it applies from the next start or Reset).
+    if (ImGui::BeginMenu("Boot")) {
+        int boot = cvars->GetInteger(kBootScreen, DEV_BOOT_SCREEN_ORIGINAL);
+        bool changed = ImGui::RadioButton("Original: the legal screen", &boot, DEV_BOOT_SCREEN_ORIGINAL);
+
+        changed |= ImGui::RadioButton("Turnbuckle Dive: the spinning cube", &boot, DEV_BOOT_SCREEN_TURNBUCKLE_DIVE);
+        if (changed) {
+            cvars->SetInteger(kBootScreen, boot);
+            cvars->Save();
+        }
+        ImGui::TextDisabled("From the next start or Reset");
+        ImGui::EndMenu();
     }
-    if (ImGui::IsItemDeactivatedAfterEdit()) {
-        cvars->Save();
+    if (ImGui::BeginMenu("Championship")) {
+        int matches = cvars->GetInteger(kChampionshipMatches, 9);
+
+        ImGui::SetNextItemWidth(ImGui::GetFontSize() * 8);
+        if (ImGui::SliderInt("Matches", &matches, 1, 9)) {
+            cvars->SetInteger(kChampionshipMatches, matches);
+            game_sdk_set_championship_matches(matches);
+        }
+        if (ImGui::IsItemDeactivatedAfterEdit()) {
+            cvars->Save();
+        }
+        ImGui::SetItemTooltip("Matches in a championship run, the title match last (the original game: 9).\n"
+                              "A shorter run leaves out the first contenders. It takes effect when a run starts.");
+        ImGui::EndMenu();
     }
-    ImGui::SetItemTooltip("Matches in a championship run, the title match last (the original game: 9).\n"
-                          "A shorter run leaves out the first contenders. It takes effect when a run starts.");
 }
 
 // The F1 menu's Reset: the program starts again with its command line, as a console's reset button starts the game
 // again from its boot. The game cannot be started over inside the program: its boot loop never returns, and its
 // variables, filled from the ROM when the program starts, have changed since. The pad files are closed and the other
 // files flushed, the window closes (which saves the settings), and the new program takes this one's place (execv; on
-// Linux /proc/self/exe is the program's own file wherever it was started from). It adds --no-splash: the splash is
-// the port's, not the game's.
+// Linux /proc/self/exe is the program's own file wherever it was started from). The new program boots as the Boot
+// setting says, with or without the splash.
 [[noreturn]] void Restart() {
-    static char noSplash[] = "--no-splash";
     std::vector<char*> args(gArgv, gArgv + gArgc);
 
     std::printf("reset: starting the program again\n");
-    if (std::find_if(args.begin(), args.end(), [](char* a) { return std::strcmp(a, noSplash) == 0; }) == args.end()) {
-        args.insert(args.begin() + 1, noSplash);
-    }
     args.push_back(nullptr);
     dev_pads_close();
     std::fflush(nullptr);
@@ -527,6 +545,10 @@ extern "C" void dev_inspector_frame(void* user) {
     if (gLus.window == nullptr) {
         return;
     }
+    // Frames the window leaves out (dev_inspector_skip_frames): the game runs them at once, unseen.
+    if (gFrames != nullptr && gFrames() < gSkipUntil) {
+        return;
+    }
     for (int i = 0; i < gControl.slow; i++) {
         DrawWindowFrame();
     }
@@ -590,6 +612,18 @@ extern "C" void dev_inspector_capture(const char* dir, const unsigned* frames, u
 extern "C" void dev_inspector_dump(const char* path, unsigned frame) {
     gDumpPath = path;
     gDumpFrame = frame;
+}
+
+extern "C" int dev_inspector_boot_screen(void) {
+    auto cvars = gLus.ctx->GetChildren().GetFirst<Ship::ConsoleVariable>();
+
+    return cvars->GetInteger(kBootScreen, DEV_BOOT_SCREEN_ORIGINAL) == DEV_BOOT_SCREEN_TURNBUCKLE_DIVE
+               ? DEV_BOOT_SCREEN_TURNBUCKLE_DIVE
+               : DEV_BOOT_SCREEN_ORIGINAL;
+}
+
+extern "C" void dev_inspector_skip_frames(uint32_t until) {
+    gSkipUntil = until;
 }
 
 extern "C" void dev_inspector_frames_from(uint32_t (*frames)(void)) {

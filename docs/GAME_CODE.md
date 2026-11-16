@@ -338,19 +338,19 @@ without a depth buffer, so that order alone decides which object covers which.
 
 - F6 pauses and resumes the match, F7 runs one frame and pauses, F8 slows it down (each frame shown 1, 2, 4 or 8 times).
   The same buttons are in the window, and the console (F1, Debug, Console) takes `pause`, `step 10` and `slowmo 4`.
-- F1 shows the menu bar. Its Settings menu opens the Input Editor (the controls) and sets the number of matches in a
-  championship run (1 to 9; the original game's 9, saved in the settings file as `gChampionshipMatches`): the game
-  reads it when a run starts (`port_championship_matches`, `src/game_sdk.c`), and a shorter run leaves out the first
-  contenders and still ends with the title match. Without a window (`--headless`, the tests) a run has 9 matches. Its
-  Debug menu opens the Match Inspector and LibUltraShip's Console, Stats and Gfx Debugger.
-  At the bar's right-hand end, Quit closes the window and ends the program, and Reset starts the program again with the
-  same options and `--no-splash`, so the game boots afresh, as after a console's reset button (Ctrl+R and the console's
-  `reset` do the same). The game cannot be started over inside the program: its boot loop never returns, and its
-  variables have changed since the ROM filled them. While the bar shows, the mouse cursor stays visible; otherwise it
-  hides a few seconds after the mouse last moved, except under a debugger, where it always stays visible (stopped at a
-  breakpoint, the program runs no frames that could show it again).
-  The Gfx Debugger's Debug button holds the match on its current frame and lists the frame's commands as a tree;
-  clicking one draws the frame only up to it. Resume Game lets the match go on.
+- F1 shows the menu bar. Its Settings menu opens the Input Editor (the controls); its Boot submenu chooses how the game
+  starts (below, "The splash screen"); and its Championship submenu sets the number of matches in a championship run for
+  every title (1 to 9; the original game's 9, saved in the settings file as `gChampionshipMatches`): the game reads it
+  when a run starts (`port_championship_matches`, `src/game_sdk.c`), and a shorter run leaves out the first contenders
+  and still ends with the title match. Without a window (`--headless`, the tests) a run has 9 matches. Its Debug menu
+  opens the Match Inspector and LibUltraShip's Console, Stats and Gfx Debugger. At the bar's right-hand end, Quit closes
+  the window and ends the program, and Reset starts the program again with the same options, so the game boots afresh
+  (as the Boot setting says), as after a console's reset button (Ctrl+R and the console's `reset` do the same). The game
+  cannot be started over inside the program: its boot loop never returns, and its variables have changed since the ROM
+  filled them. While the bar shows, the mouse cursor stays visible; otherwise it hides a few seconds after the mouse
+  last moved, except under a debugger, where it always stays visible (stopped at a breakpoint, the program runs no
+  frames that could show it again). The Gfx Debugger's Debug button holds the match on its current frame and lists the
+  frame's commands as a tree; clicking one draws the frame only up to it. Resume Game lets the match go on.
 - Closing the window ends the program.
 
 The inspector only reads the game's records, through `src/dev/dev_records.c`, which is compiled with the game's
@@ -470,10 +470,10 @@ find bugs (`--seed 1`, `--seed 2` and so on).
   "Debug Turnbuckle Dive: dev match (asan preset)" does the same in the asan preset's build (choose that preset in
   CMake Tools first): AddressSanitizer and UndefinedBehaviorSanitizer then stop the program at the bad line; it is
   about 11 frames down the call stack, under the C library's and the sanitizers' own.
-- "Debug Turnbuckle Dive: dev boot" starts `--dev-boot 216000` under the debugger: the splash, the game's boot and its
-  menus, so any mode and wrestlers can be chosen there and played with your controls (216000 frames is two hours of the
-  game's time; the program then ends). Both entries run the program in its build folder, so they use that folder's
-  settings file and keys.
+- "Debug Turnbuckle Dive: dev boot" starts `--dev-boot 216000` under the debugger: the game's boot and its menus, so any
+  mode and wrestlers can be chosen there and played with your controls (216000 frames is two hours of the game's time;
+  the program then ends). Both entries run the program in its build folder, so they use that folder's settings file and
+  keys.
 - In Watch, `D_800F9D10[0]` shows a wrestler as one line (state name, health, position, who holds it) with its fields
   below: every entry loads `tools/gdb/wrestler.py`. `(enum TdWrState)D_800F9D10[1].state` and
   `(enum TdMatchPhase)D_800EB465` show names (`src/dev/wr_states.h`). In a Debug build the game's macros work too, in a
@@ -572,9 +572,16 @@ command for command.
 
 ### The splash screen
 
-Before the boot, the window shows the port's splash screen for about four seconds: a cube turning above the port's
-name, "A NATIVE PORT" and the version. Pressing any button on any controller ends it early (a button already held when
-it starts counts once it has been let go). It is not part of the game: the boot's frames start after it.
+F1, Settings, Boot chooses how the game starts; the settings file keeps the choice as `gBootScreen`, and it applies
+from the next start or Reset:
+
+- **Original** (the default, 0): as on the N64, the game's legal screen first.
+- **Turnbuckle Dive** (1): the port's splash screen in place of the legal screen and the THQ logo, for about four
+  seconds: a cube turning above the port's name, "A NATIVE PORT" and the version. Pressing any button on any controller
+  ends it early (a button already held when it starts counts once it has been let go). It is not part of the game. The
+  boot's frames start after it, and the window leaves out the first 220 (`dev_inspector_skip_frames`): the legal screen
+  (to frame 92), its cross-fade into the THQ logo (to 124), the THQ logo (to 188) and its cross-fade into the Asmik Ace
+  logo (to 220), the same on every run. The game runs them at once, so the Asmik Ace logo follows the splash.
 
 The cube's six sides carry Sting's three painted faces, two sides each. They are made from the user's ROM when the
 program starts (`src/splash_faces.c`): the game's loader reads the face and hair textures of Sting's three head
@@ -584,9 +591,9 @@ LibUltraShip's renderer runs, as it runs the game's: a background in bands, the 
 and each side shaded by how much it faces a light, and the text in a 5x7 pixel font of the port's own, one filled
 rectangle per dot. It fades in from black and out to black.
 
-The splash is left out when the run cannot be watched or must be the same every time: with `--headless`, a pad script
-or file to replay, `--screenshot` or `--dump-frame`. `--no-splash` leaves it out of any run. If the textures are not
-what the splash expects, it prints why and the boot starts without it.
+The boot is the original when the run cannot be watched or must be the same every time: with `--headless`, a pad
+script or file to replay, `--screenshot` or `--dump-frame`; `--no-splash` makes it the original in any run. If the
+textures are not what the splash expects, it prints why and the boot is the original.
 
 ## Every file of the game: td_game_all
 

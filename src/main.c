@@ -17,6 +17,10 @@
 #include "splash_faces.h"
 #endif
 
+/* The first boot frame after the game's legal screen and the THQ logo (frames 1 to 220: the legal screen to 92, its
+ * cross-fade into the THQ logo to 124, the THQ logo to 188, its cross-fade into the Asmik Ace logo to 220). */
+#define BOOT_LOGOS_END 221
+
 #ifndef TD_VERSION
 #define TD_VERSION "dev"
 #endif
@@ -247,14 +251,17 @@ int main(int argc, char **argv) {
             if (dump != NULL) {
                 dev_inspector_dump(dump, dump_frame);
             }
-            /* The splash screen, before the boot, unless the run is scripted or saves pictures. The faces are made from
-             * the ROM; when they cannot be, the boot goes on without the splash. */
-            if (!no_splash && match_options.pad_script == NULL && match_options.replay_pads == NULL &&
-                screenshot == NULL && dump == NULL) {
+            /* The Turnbuckle Dive boot (F1, Settings, Boot): the splash screen in place of the game's legal screen and
+             * THQ logo, unless the run is scripted or saves pictures. The game's first 220 frames are those two
+             * screens, the same on every run; the window leaves them out, so the Asmik Ace logo follows the splash. The faces are made from the ROM; when they cannot be, the boot is the original. */
+            if (!no_splash && dev_inspector_boot_screen() == DEV_BOOT_SCREEN_TURNBUCKLE_DIVE &&
+                match_options.pad_script == NULL && match_options.replay_pads == NULL && screenshot == NULL &&
+                dump == NULL) {
                 static uint8_t faces[SPLASH_FACES * SPLASH_FACE_BYTES];
 
                 if (splash_faces_load(&rom, faces) == 0) {
                     dev_inspector_splash(faces, TD_VERSION);
+                    dev_inspector_skip_frames(BOOT_LOGOS_END);
                 }
             }
         }

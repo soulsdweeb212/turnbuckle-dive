@@ -24,9 +24,19 @@ void dev_inspector_splash(const uint8_t *faces, const char *version);
 /* Closes the window. */
 void dev_inspector_stop(void);
 
+/* How the game boots, the F1 menu's Settings, Boot (saved in the settings file; call it after dev_inspector_start):
+ * ORIGINAL, as the N64, with the game's legal screen; TURNBUCKLE_DIVE, the splash screen in place of the legal screen. */
+#define DEV_BOOT_SCREEN_ORIGINAL 0
+#define DEV_BOOT_SCREEN_TURNBUCKLE_DIVE 1
+int dev_inspector_boot_screen(void);
+
+/* Leaves the game frames before `until` (by the frame count of dev_inspector_frames_from) out of the window: the game
+ * runs them at once, without drawing or pacing them, and reads no controller during them. */
+void dev_inspector_skip_frames(uint32_t until);
+
 /* The program's command line, which the F1 menu's Reset starts again: the window closes, and the program starts over
- * with the same options and --no-splash, from the boot as after a console's reset button (src/dev/inspector.cpp,
- * Restart). Call it first in main. */
+ * with the same options, from the boot as after a console's reset button (src/dev/inspector.cpp, Restart). Call it
+ * first in main. */
 void dev_inspector_set_command(int argc, char **argv);
 /* The game frame count that the screenshots below go by: by default the developer match's (dev_match_frames); the
  * developer boot hands over its own. */
