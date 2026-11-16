@@ -38,6 +38,13 @@ void PreferWslGpu();
 // screen to open the window on, it prints why and returns a LibUltraShip whose window is null.
 LibUltraShip StartLibUltraShip(const char* program, bool withCrashHandler, int width = 0, int height = 0);
 
+// Whether the mouse cursor stays shown all the time instead of hiding a few seconds after the mouse last moved: under a
+// debugger (stopped at a breakpoint, the program runs no frame that could show it again), and under WSL, where the
+// window's cursor did not show at all until the program used WSLg's Wayland display (StartLibUltraShip), so it is kept
+// rather than hidden and shown there. StartLibUltraShip keeps it shown from the window's first frame then, and the F1
+// menu bar (src/debug.cpp) never hides it.
+bool KeepCursorShown();
+
 // The resolution a picture that is read back is drawn at, in multiples of the window's.
 constexpr float kReadBackResolution = 2.0f;
 

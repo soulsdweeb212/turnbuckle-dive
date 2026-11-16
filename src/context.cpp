@@ -5,12 +5,18 @@
 #include <cstdio>
 #include <cstdlib>
 #include <exception>
+#include <fstream>
 #include <string>
 #include <thread>
 #include <vector>
 
 #ifdef __linux__
 #include <unistd.h>
+#endif
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
 #endif
 
 #include <SDL3/SDL.h>
@@ -149,6 +155,39 @@ std::shared_ptr<LUS::ControllerDefaultMappings> DefaultMappings() {
 
 } // namespace
 
+namespace {
+
+// Whether the program runs under WSL: /proc/sys/kernel/osrelease names WSL's kernel ("...-microsoft-standard-WSL2").
+bool OnWsl() {
+#ifdef __linux__
+    std::ifstream release("/proc/sys/kernel/osrelease");
+    std::string line;
+
+    return std::getline(release, line) && line.find("microsoft") != std::string::npos;
+#else
+    return false;
+#endif
+}
+
+} // namespace
+
+// On Linux, /proc/self/status names the program's tracer (a debugger); on Windows, IsDebuggerPresent.
+bool KeepCursorShown() {
+#ifdef _WIN32
+    return IsDebuggerPresent() != 0;
+#else
+    std::ifstream status("/proc/self/status");
+    std::string line;
+
+    while (std::getline(status, line)) {
+        if (line.rfind("TracerPid:", 0) == 0 && std::stoi(line.substr(10)) != 0) {
+            return true;
+        }
+    }
+    return OnWsl();
+#endif
+}
+
 void PreferWslGpu() {
 #ifdef __linux__
     // /dev/dxg only exists in WSL with GPU support, and an explicit GALLIUM_DRIVER always wins.
@@ -201,6 +240,14 @@ LibUltraShip StartLibUltraShip(const char* program, bool withCrashHandler, int w
     // a window. So the program starts SDL's video first. SDL counts the starts, so LibUltraShip's own start of it later
     // only counts it again. This comes before f3d.o2r is opened, after which the resource manager's parts hold on to
     // each other, so that a program that ends here leaves none of them behind.
+#ifdef __linux__
+    // Under WSL, SDL would pick WSLg's X11 display, where no mouse cursor shows over the window (SDL sets one, and
+    // WSLg does not draw it); on WSLg's Wayland display it shows. Both draw on the GPU (PreferWslGpu). An explicit
+    // SDL_VIDEO_DRIVER always wins, and X11 stays the fallback.
+    if (OnWsl() && std::getenv("SDL_VIDEO_DRIVER") == nullptr && std::getenv("WAYLAND_DISPLAY") != nullptr) {
+        SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "wayland,x11");
+    }
+#endif
     if (!SDL_InitSubSystem(SDL_INIT_VIDEO)) {
         std::fprintf(stderr, "%s: there is no screen to open a window on: %s\n", program, SDL_GetError());
         return {};
@@ -263,6 +310,10 @@ LibUltraShip StartLibUltraShip(const char* program, bool withCrashHandler, int w
         // place of a window that does not exist in the settings file.
         ctx->GetChildren().Remove(window);
         return {};
+    }
+    if (KeepCursorShown()) {
+        window->SetForceCursorVisibility(true);
+        window->SetCursorVisibility(true);
     }
     fileDrop->Init();
     audio->Init();

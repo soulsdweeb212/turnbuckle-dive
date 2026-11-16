@@ -4,7 +4,8 @@
  *
  * The decompilation's include/port.h declares the same functions for the game's side. Port code includes this file
  * instead, because port.h needs the game's own headers. src/game_check.c includes both, so a build with game code
- * stops with an error if the two ever declare a function differently. C only. */
+ * stops with an error if the two ever declare a function differently. C, and C++ inside extern "C"
+ * (src/dev/move_list.cpp). */
 #ifndef TD_GAME_H
 #define TD_GAME_H
 
@@ -15,6 +16,13 @@
 #define TD_PRINTF_FORMAT __attribute__((format(printf, 1, 2)))
 #else
 #define TD_PRINTF_FORMAT
+#endif
+
+/* A function that never returns: C11's _Noreturn, which C++ spells [[noreturn]]. */
+#ifdef __cplusplus
+#define TD_NORETURN [[noreturn]]
+#else
+#define TD_NORETURN _Noreturn
 #endif
 
 /* Resource ids run from 1 to GAME_RES_COUNT (RES_COUNT in port.h). */
@@ -52,7 +60,7 @@ void releaseHeapBlock(void *block);
 
 /* Prints the message and stops the program; the game's PC code calls it where the N64 would hang or crash
  * (src/port.c). */
-_Noreturn void port_fatal(const char *fmt, ...) TD_PRINTF_FORMAT;
+TD_NORETURN void port_fatal(const char *fmt, ...) TD_PRINTF_FORMAT;
 /* Copies size bytes of the ROM, starting at ROM address src, to dst (src/rom.c). */
 void port_rom_read(void *dst, uint32_t src, uint32_t size);
 /* func_80003684 calls this once a whole resource is in RAM (src/port.c). */

@@ -343,18 +343,45 @@ without a depth buffer, so that order alone decides which object covers which.
   every title (1 to 9; the original game's 9, saved in the settings file as `gChampionshipMatches`): the game reads it
   when a run starts (`port_championship_matches`, `src/game_sdk.c`), and a shorter run leaves out the first contenders
   and still ends with the title match. Without a window (`--headless`, the tests) a run has 9 matches. Its Debug menu
-  opens the Match Inspector and LibUltraShip's Console, Stats and Gfx Debugger. At the bar's right-hand end, Quit closes
+  opens the Match Inspector, the Move List (below, "The Move List") and LibUltraShip's Console, Stats and Gfx
+  Debugger. At the bar's right-hand end, Quit closes
   the window and ends the program, and Reset starts the program again with the same options, so the game boots afresh
   (as the Boot setting says), as after a console's reset button (Ctrl+R and the console's `reset` do the same). The game
   cannot be started over inside the program: its boot loop never returns, and its variables have changed since the ROM
   filled them. While the bar shows, the mouse cursor stays visible; otherwise it hides a few seconds after the mouse
   last moved, except under a debugger, where it always stays visible (stopped at a breakpoint, the program runs no
-  frames that could show it again). The Gfx Debugger's Debug button holds the match on its current frame and lists the
+  frames that could show it again), and under WSL. Under WSL the window opens on WSLg's Wayland display: on its X11
+  display no cursor shows over the window (`src/context.cpp`; setting `SDL_VIDEO_DRIVER=x11` chooses X11 anyway). The Gfx Debugger's Debug button holds the match on its current frame and lists the
   frame's commands as a tree; clicking one draws the frame only up to it. Resume Game lets the match go on.
 - Closing the window ends the program.
 
 The inspector only reads the game's records, through `src/dev/dev_records.c`, which is compiled with the game's
 settings. It runs inside the game's frame hand-off, on the game's thread, while the game waits, so the two never clash.
+
+### The Move List
+
+The Move List (`src/dev/move_list.cpp`; F1, Debug, Move List) shows each wrestler's moves as the game stores them, as
+data: no names, and nothing is played. A wrestler's moves are not in the game code's read-only data. They are in the
+ROM's resource archive: each wrestler has three resources in a row (a profile, a move table and an animation list,
+from 0x12B to 0x20E; `src/res_convert.c`), and the move table is LZSS-compressed in the ROM. Unpacked, it holds 279
+entries of 0x18 bytes, six 32-bit words each. When a wrestler starts a move, the game unpacks one entry into the
+wrestler's `WrMove` (`func_800A7C40` and `unpackAnimationParameters` in the decompilation; `include/wrestler.h` names the
+fields). Only the small tables that say which entry is which are in the game code's data, and the window reads them
+from the ROM: `D_80030570` (ROM 0x31170) gives each entry's first animation in the animation list, and `D_800E3C20` (ROM
+0xD70C0) the entries of the twelve grapple moves (`func_800D00FC` picks one by the grapple's strength, the A button
+and the pad's direction bits).
+
+The window loads the tables with the game's own loader (`res_load`), so it works once the game has booted. Choose a
+wrestler by profile; the list beside each profile is the character ids that use it (`D_80038A64`: bank, then entry plus
+one; Benoit is profile 0x137, character 0x0009), and the last choice is the table of 60 entries that is no one
+wrestler's (resource 0x126). Each entry shows its number, its offset in the unpacked table, its first animation and,
+for the grapple moves, which grapple. Open an entry for its six words, then each field: its word and bits, and its
+value (the game's animation id is the list's value plus 0x110B). "Save as JSON" writes the chosen table beside the
+program as `moves_0x137.json` (for profile 0x137), and "Save all as JSON" writes every table as `moves_all.json`
+(about 15 MB); the console's `moves 0x137`, `moves shared` and `moves all` do the same. Each file starts with the
+field layout (`fieldLayout`: each field's word, first bit, bit count and whether it is signed), then the tables, each
+with where its resources are in the ROM and its entries: slot, offset, the six words, the animations and the fields'
+values.
 
 ### Playing the match
 

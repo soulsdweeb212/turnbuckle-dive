@@ -2,14 +2,9 @@
 
 #include <imgui.h>
 
-#include <fstream>
 #include <string>
-#ifdef _WIN32
-#define WIN32_LEAN_AND_MEAN
-#define NOMINMAX
-#include <windows.h>
-#endif
 
+#include "context.h"
 #include "fast/Fast3dWindow.h"
 #include "fast/debug/GfxDebugger.h"
 #include "ship/config/ConsoleVariable.h"
@@ -21,23 +16,6 @@
 namespace td {
 
 namespace {
-
-// Whether a debugger runs the program (on Linux, /proc/self/status names its tracer; on Windows, IsDebuggerPresent).
-bool UnderDebugger() {
-#ifdef _WIN32
-    return IsDebuggerPresent() != 0;
-#else
-    std::ifstream status("/proc/self/status");
-    std::string line;
-
-    while (std::getline(status, line)) {
-        if (line.rfind("TracerPid:", 0) == 0) {
-            return std::stoi(line.substr(10)) != 0;
-        }
-    }
-    return false;
-#endif
-}
 
 // The menu bar. LibUltraShip shows and hides it on F1 (Gui::DrawMenu), and draws it inside its full-window "Main -
 // Deck" window, which it opens with a menu bar of its own when this one is showing; so DrawElement fills that window's
@@ -56,11 +34,10 @@ class DebugMenuBar : public Ship::GuiMenuBar {
   protected:
     // LibUltraShip calls this every frame, with the bar showing or not. While the bar shows, the mouse cursor stays
     // visible; otherwise LibUltraShip hides it a few seconds after the mouse last moved (MouseStateManager), and when
-    // the bar closes that countdown starts again. Under a debugger the cursor always stays visible: LibUltraShip shows
-    // a hidden cursor again only in a frame where the mouse moved, and while the debugger holds the program at a
-    // breakpoint no frame runs, so a cursor hidden before it stopped would stay hidden over the window.
+    // the bar closes that countdown starts again. Under a debugger and under WSL the cursor always stays visible
+    // (KeepCursorShown, src/context.h).
     void UpdateElement() override {
-        bool showing = IsVisible() || mUnderDebugger;
+        bool showing = IsVisible() || mAlwaysShown;
 
         if (showing == mCursorKept) {
             return;
@@ -135,8 +112,8 @@ class DebugMenuBar : public Ship::GuiMenuBar {
     std::vector<std::string> mNames;    // the Debug menu's: the program's windows, then LibUltraShip's three
     std::function<void()> mOnReset;  // empty: no Reset item
     std::function<void()> mDrawSettings; // the Settings menu's own items, after its windows
-    bool mCursorKept = false;        // the cursor is being kept visible (the bar shows, or a debugger runs us)
-    bool mUnderDebugger = UnderDebugger();
+    bool mCursorKept = false;        // the cursor is being kept visible (the bar shows, or KeepCursorShown)
+    bool mAlwaysShown = KeepCursorShown();
 };
 
 } // namespace
