@@ -1,0 +1,112 @@
+Wrap a masked texture as the RDP does
+
+A tile's mask makes the RDP wrap that axis every 2^mask texels. It does so whatever the tile's size: a tile bigger
+than its mask repeats the masked part across the tile. Fast3D trims a texture to its mask only when the mask is at
+least as big as the tile, and otherwise takes the mask for stale tile state and wraps at the texture's whole size.
+
+WCW/nWo Revenge draws the Option menu's steel plate from a 64x64 texture with a 64x64 tile and a mask of 32 texels on
+both axes, so the N64 repeats the texture's top-left 32x32 corner. Fast3D repeated the whole 64x64 texture, whose
+other three corners have their light and dark patches in other places, so the plate's shading did not match the
+original's as it scrolled. Fast3D now always honours the mask, in the four texture imports and in the draw that
+works out the texture's wrap period.
+
+Patch 0009 keeps the masks in the texture cache's key, so a texture drawn with and without a mask has an entry for
+each.
+
+diff --git a/src/fast/interpreter.cpp b/src/fast/interpreter.cpp
+--- a/src/fast/interpreter.cpp
++++ b/src/fast/interpreter.cpp
+@@ -687,14 +687,14 @@
+         renderedPixels > 0 && loadedPixels > renderedPixels && loadedPixels * 8 < renderedPixels * 13; // < 1.625x
+     bool clampS = (mRdp->texture_tile[tile].cms & G_TX_CLAMP) != 0;
+     bool clampT = (mRdp->texture_tile[tile].cmt & G_TX_CLAMP) != 0;
+-    // A masked axis wraps every 2^mask texels, so trim an over-loaded texture back to that.
+-    // Skip a mask smaller than the tile region though - that's stale tile state, not a real load.
++    // A masked axis wraps every 2^mask texels, so trim an over-loaded texture back to that. The RDP does so whatever
++    // the tile's size, also when the tile is bigger than the mask (it then repeats the masked part across the tile).
+     uint32_t maskW = mRdp->texture_tile[tile].masks;
+     uint32_t maskH = mRdp->texture_tile[tile].maskt;
+-    if (maskW != 0 && (1u << maskW) >= tile_w && (1u << maskW) < width) {
++    if (maskW != 0 && (1u << maskW) < width) {
+         width = 1u << maskW;
+     }
+-    if (maskH != 0 && (1u << maskH) >= tile_h && (1u << maskH) < height) {
++    if (maskH != 0 && (1u << maskH) < height) {
+         height = 1u << maskH;
+     }
+     // HD replacement textures must still clamp to the rendered tile region
+@@ -767,14 +767,14 @@
+     bool pyramidLike = renderedPixels > 0 && loadedPixels > renderedPixels && loadedPixels * 8 < renderedPixels * 13;
+     bool clampS = (mRdp->texture_tile[tile].cms & G_TX_CLAMP) != 0;
+     bool clampT = (mRdp->texture_tile[tile].cmt & G_TX_CLAMP) != 0;
+-    // A masked axis wraps every 2^mask texels, so trim an over-loaded texture back to that.
+-    // Skip a mask smaller than the tile region though - that's stale tile state, not a real load.
++    // A masked axis wraps every 2^mask texels, so trim an over-loaded texture back to that. The RDP does so whatever
++    // the tile's size, also when the tile is bigger than the mask (it then repeats the masked part across the tile).
+     uint32_t maskW = mRdp->texture_tile[tile].masks;
+     uint32_t maskH = mRdp->texture_tile[tile].maskt;
+-    if (maskW != 0 && (1u << maskW) >= tile_w && (1u << maskW) < width) {
++    if (maskW != 0 && (1u << maskW) < width) {
+         width = 1u << maskW;
+     }
+-    if (maskH != 0 && (1u << maskH) >= tile_h && (1u << maskH) < height) {
++    if (maskH != 0 && (1u << maskH) < height) {
+         height = 1u << maskH;
+     }
+     // HD replacement textures must still clamp to the rendered tile region
+@@ -1114,14 +1114,14 @@
+     bool pyramidLike = renderedPixels > 0 && loadedPixels > renderedPixels && loadedPixels * 8 < renderedPixels * 13;
+     bool clampS = (mRdp->texture_tile[tile].cms & G_TX_CLAMP) != 0;
+     bool clampT = (mRdp->texture_tile[tile].cmt & G_TX_CLAMP) != 0;
+-    // A masked axis wraps every 2^mask texels, so trim an over-loaded texture back to that.
+-    // Skip a mask smaller than the tile region though - that's stale tile state, not a real load.
++    // A masked axis wraps every 2^mask texels, so trim an over-loaded texture back to that. The RDP does so whatever
++    // the tile's size, also when the tile is bigger than the mask (it then repeats the masked part across the tile).
+     uint32_t maskW = mRdp->texture_tile[tile].masks;
+     uint32_t maskH = mRdp->texture_tile[tile].maskt;
+-    if (maskW != 0 && (1u << maskW) >= tile_w && (1u << maskW) < width) {
++    if (maskW != 0 && (1u << maskW) < width) {
+         width = 1u << maskW;
+     }
+-    if (maskH != 0 && (1u << maskH) >= tile_h && (1u << maskH) < height) {
++    if (maskH != 0 && (1u << maskH) < height) {
+         height = 1u << maskH;
+     }
+     // HD replacement textures must still clamp to the rendered tile region
+@@ -1206,14 +1206,14 @@
+     bool pyramidLike = renderedPixels > 0 && loadedPixels > renderedPixels && loadedPixels * 8 < renderedPixels * 13;
+     bool clampS = (mRdp->texture_tile[tile].cms & G_TX_CLAMP) != 0;
+     bool clampT = (mRdp->texture_tile[tile].cmt & G_TX_CLAMP) != 0;
+-    // A masked axis wraps every 2^mask texels, so trim an over-loaded texture back to that.
+-    // Skip a mask smaller than the tile region though - that's stale tile state, not a real load.
++    // A masked axis wraps every 2^mask texels, so trim an over-loaded texture back to that. The RDP does so whatever
++    // the tile's size, also when the tile is bigger than the mask (it then repeats the masked part across the tile).
+     uint32_t maskW = mRdp->texture_tile[tile].masks;
+     uint32_t maskH = mRdp->texture_tile[tile].maskt;
+-    if (maskW != 0 && (1u << maskW) >= tile_w && (1u << maskW) < width) {
++    if (maskW != 0 && (1u << maskW) < width) {
+         width = 1u << maskW;
+     }
+-    if (maskH != 0 && (1u << maskH) >= tile_h && (1u << maskH) < height) {
++    if (maskH != 0 && (1u << maskH) < height) {
+         height = 1u << maskH;
+     }
+     // HD replacement textures must still clamp to the rendered tile region
+@@ -2198,14 +2198,13 @@
+             uint32_t loadedPx = tex_width[i] * tex_height[i];
+             uint32_t renderedPx = tex_width2[i] * tex_height2[i];
+             bool pyrLike = renderedPx > 0 && loadedPx > renderedPx && loadedPx * 8 < renderedPx * 13;
+-            // Same wrap-period trim as the import paths. The >= tex_width2 guard skips a stale
+-            // mask left by an FB blit (the pause background), which would otherwise tile the FB.
++            // Same wrap-period trim as the import paths, whatever the tile's size, as the RDP does.
+             uint32_t maskW = mRdp->texture_tile[tile].masks;
+             uint32_t maskH = mRdp->texture_tile[tile].maskt;
+-            if (maskW != 0 && (1u << maskW) >= tex_width2[i] && (1u << maskW) < tex_width[i]) {
++            if (maskW != 0 && (1u << maskW) < tex_width[i]) {
+                 tex_width[i] = 1u << maskW;
+             }
+-            if (maskH != 0 && (1u << maskH) >= tex_height2[i] && (1u << maskH) < tex_height[i]) {
++            if (maskH != 0 && (1u << maskH) < tex_height[i]) {
+                 tex_height[i] = 1u << maskH;
+             }
+             // HD replacements must clamp to the tile region

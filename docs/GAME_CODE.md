@@ -442,7 +442,7 @@ a restart.
 | `--screenshot FILE` | saves the window at frame 300 (`--screenshot-frame N` for another) as a PNG; OpenGL only |
 | `--screenshot-every N` | with `--screenshot PREFIX`: saves the window every N frames, as PREFIX-NNNNN.png |
 | `--hide-group N` | does not draw draw group N (as the inspector's switches); may be given more than once |
-| `--dump-frame N FILE` | writes every drawing command of frame N to FILE |
+| `--dump-frame N FILE` | writes every drawing command of frame N to FILE, with the vertices each `G_VTX` loads (position, texture coordinates S and T, colour) |
 | `--players 1` | Sting is played on controller 1 ("Playing the match"); 0, the default, is CPU against CPU |
 | `--record-pads FILE`, `--replay-pads FILE` | save every pad read, or give the game the reads of such a file |
 | `--pad-script FILE`, `--pad-bot SEED` | controller 1 from a script of presses, or from the pad bot |

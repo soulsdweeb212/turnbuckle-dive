@@ -295,6 +295,19 @@ uint32_t DumpDisplayList(const Gfx* list, std::FILE* out) {
         std::fprintf(out, "%*s%p  %08X %016llX  %s%s\n", (int)(step.depth * 4), "", (const void*)step.cmd,
                      (uint32_t)step.cmd->words.w0, (unsigned long long)step.cmd->words.w1,
                      name != nullptr ? name : "(unknown command)", note);
+        // The vertices a G_VTX loads (F3DEX2: their count in bits 12..19 of the first word), one line each: position,
+        // texture coordinates (S and T, 10.5 fixed point: 32 to a texel) and colour or normal.
+        if (!step.partOfPrevious && opcode == G_VTX && (step.cmd->words.w1 & 1) == 0) {
+            const Vtx* v = (const Vtx*)step.cmd->words.w1;
+            uint32_t n = (step.cmd->words.w0 >> 12) & 0xFF;
+
+            for (uint32_t i = 0; v != nullptr && i < n; i++) {
+                const Vtx_t& t = v[i].v;
+                std::fprintf(out, "%*s    vtx %2u  x %6d y %6d z %6d  s %6d t %6d  %02X%02X%02X%02X\n",
+                             (int)(step.depth * 4), "", i, t.ob[0], t.ob[1], t.ob[2], t.tc[0], t.tc[1], t.cn[0],
+                             t.cn[1], t.cn[2], t.cn[3]);
+            }
+        }
     });
     return count;
 }

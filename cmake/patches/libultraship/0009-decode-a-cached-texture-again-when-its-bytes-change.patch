@@ -17,10 +17,28 @@ decoding. The fingerprint reads only the bytes the load covers: its lines, a ful
 image's lines are wider than the load's or narrower (a game can load 128 bytes of each 120-byte line, and a
 fingerprint of the load's size from its start would then read past the image). Replacement textures and textures from resource files cannot change and keep a fingerprint of 0.
 
+The key also holds the tile's masks. A mask can make the import keep only part of the loaded texture (patch 0012: a
+64x64 texture drawn with a 32-texel mask is a 32x32 texture), so the same texels drawn with other masks are another
+texture. WCW/nWo Revenge draws the Option menu's steel plate once without a mask and then with one, and without the
+masks in the key the masked draws took the unmasked 64x64 texture from the cache and mapped it as a 32x32 one.
+
 diff --git a/include/fast/interpreter.h b/include/fast/interpreter.h
 --- a/include/fast/interpreter.h
 +++ b/include/fast/interpreter.h
-@@ -212,6 +212,9 @@
+@@ -197,6 +197,12 @@
+ 
+     bool operator==(const TextureCacheKey&) const noexcept = default;
+ 
++    // The tile's masks (S in the high 4 bits, T in the low 4) when it was imported: a mask can make the import keep
++    // only part of the loaded texture (a 64x64 texture drawn with a 32-texel mask is a 32x32 texture), so the same
++    // texels drawn with other masks need an entry of their own. Keys built without it get 0. (It comes after
++    // operator==, but it is still the last field, so the comparison and the brace initialisers cover it.)
++    uint8_t masks;
++
+     struct Hasher {
+         size_t operator()(const TextureCacheKey& key) const noexcept {
+             uintptr_t addr = (uintptr_t)key.texture_addr;
+@@ -212,6 +218,9 @@
      uint32_t texture_id;
      uint8_t cms, cmt;
      bool linear_filter;
@@ -30,7 +48,7 @@ diff --git a/include/fast/interpreter.h b/include/fast/interpreter.h
  
      std::list<struct TextureCacheMapIter>::iterator lru_location;
  };
-@@ -439,7 +442,8 @@
+@@ -439,7 +448,8 @@
      void ShaderCacheClear();
      void TextureCacheClear();
      std::shared_ptr<Ship::IResource> ResolveResourceCached(const char* path);
@@ -136,9 +154,11 @@ diff --git a/src/fast/interpreter.cpp b/src/fast/interpreter.cpp
  // Pick the per-line byte width for texture decode. Prefer the DRAM stride from
  // loaded_texture when it looks like real per-line info (differs from total size).
  // Fall back to the TMEM tile stride when loaded sizes match total (LoadBlock with
-@@ -1358,7 +1419,10 @@
+@@ -1357,8 +1418,12 @@
+     } else {
          key = { origAddr, {}, fmt, siz, paletteIndex, origSizeBytes };
      }
++    key.masks = (uint8_t)((mRdp->texture_tile[tile].masks & 0xF) << 4 | (mRdp->texture_tile[tile].maskt & 0xF));
  
 -    if (TextureCacheLookup(i, key)) {
 +    // Textures from the game's memory can change; replacements and textures from resource files cannot.
