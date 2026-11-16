@@ -34,6 +34,9 @@ int dev_inspector_boot_screen(void);
  * dev_inspector_start and before the game starts. */
 void dev_inspector_use_save_file(void);
 
+/* Hands the sound (src/audio/sound.h, started) to the window's sound device. Returns 0, or -1 when there is none. */
+int dev_inspector_open_sound(void);
+
 /* Leaves the game frames before `until` (by the frame count of dev_inspector_frames_from) out of the window: the game
  * runs them at once, without drawing or pacing them, and reads no controller during them. */
 void dev_inspector_skip_frames(uint32_t until);

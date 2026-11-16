@@ -21,6 +21,9 @@
 
 #include <SDL3/SDL.h>
 
+extern "C" {
+#include "audio/synth.h"
+}
 #include "fast/Fast3dWindow.h"
 #include "frame.h"
 #include "libultraship/bridge/UltraBridge.h"
@@ -291,7 +294,10 @@ LibUltraShip StartLibUltraShip(const char* program, bool withCrashHandler, int w
                                                    window, cvars);
     ctx->GetChildren().Add(deck);
 
-    auto audio = std::make_shared<Ship::Audio>(Ship::AudioSettings{}, config);
+    // The sound device is opened at the game's own rate (the synthesizer's, src/audio/synth.h); the device converts it.
+    Ship::AudioSettings audioSettings;
+    audioSettings.SampleRate = SYNTH_RATE;
+    auto audio = std::make_shared<Ship::Audio>(audioSettings, config);
     ctx->GetChildren().Add(audio);
     ctx->GetChildren().Add(std::make_shared<Ship::Events>());
     auto fileDrop = std::make_shared<Ship::FileDrop>(window);

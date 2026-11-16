@@ -166,8 +166,10 @@ add_library(td_core STATIC
     src/slots.c
     src/res_convert.c
     src/game_heap.c
+    src/audio/sound.c
     src/audio/sound_bank.c
     src/audio/sound_dump.c
+    src/audio/synth.c
     src/audio/vadpcm.c)
 target_include_directories(td_core PUBLIC src)
 td_strict(td_core)
@@ -375,6 +377,15 @@ if(BUILD_TESTING)
     td_strict(test_sound_bank)
     add_test(NAME sound_bank COMMAND test_sound_bank)
     set_tests_properties(sound_bank PROPERTIES SKIP_RETURN_CODE 77)
+    # The synthesizer, with the game's banks and reverb (tests/test_synth.c says what it checks); skipped without the ROM.
+    add_executable(test_synth tests/test_synth.c)
+    target_link_libraries(test_synth PRIVATE td_core)
+    if(NOT MSVC)
+        target_link_libraries(test_synth PRIVATE m)
+    endif()
+    td_strict(test_synth)
+    add_test(NAME synth COMMAND test_synth)
+    set_tests_properties(synth PROPERTIES SKIP_RETURN_CODE 77)
     add_executable(test_slots tests/test_slots.c)
     target_link_libraries(test_slots PRIVATE td_core)
     td_strict(test_slots)
@@ -565,7 +576,8 @@ if(TD_BUILD_HELLO)
         # The developer match's window, the Match Inspector (src/dev/inspector.cpp): turnbuckle-dive --dev-match opens
         # it unless --headless is given, and the splash screen before the developer boot (src/splash.cpp). They need
         # LibUltraShip, so they come with td_window.
-        target_sources(turnbuckle-dive PRIVATE src/dev/inspector.cpp src/dev/move_list.cpp src/dev/costume_colours.cpp src/splash.cpp)
+        target_sources(turnbuckle-dive PRIVATE src/dev/inspector.cpp src/dev/move_list.cpp src/dev/costume_colours.cpp
+            src/dev/sound_test.cpp src/audio/sound_output.cpp src/splash.cpp)
         target_link_libraries(turnbuckle-dive PRIVATE td_window)
         target_compile_definitions(turnbuckle-dive PRIVATE TD_INSPECTOR)
     endif()

@@ -176,6 +176,21 @@ both against the ROM. `turnbuckle-dive --sound-dump DIR` writes every sample to 
 rate of 28800 Hz, with `samples.txt` listing them; a sample has no pitch of its own (the music library plays it at
 each note's pitch), so the files are for checking the decoding by ear, not the music.
 
+The synthesizer (`src/audio/synth.c`) does on the CPU what the N64's audio library and its audio microcode do: 24
+voices, each streaming one sample from the ROM a frame at a time and round its loop, at a pitch (a four-point cubic
+curve reads between the samples), with a volume that moves to a new value over a given time, a pan and a reverb send.
+The pan and send gains are the game's own table, and the reverb is the game's "big room", both read from the ROM when
+sound starts (`src/audio/sound.c`): one delay line that the sound sent to the reverb is written into, read and written
+back at two places by each of four sections (two all-pass filters, one with output, and a comb with a low-pass filter
+feeding back into the start). It makes stereo sound at 28800 Hz in sub-frames of 184 samples, as the N64's library
+does, and calls the music player (when there is one) at the start of the sub-frame in which its time falls. At each
+game frame `port_present` hands the sound device as much as it wants (`src/audio/sound_output.cpp`, through
+LibUltraShip's audio player, opened at 28800 Hz). Where a loop starts, the sample keeps the decoded frame that holds the
+loop's start, so the stream goes on from inside that frame. The test `synth` checks it against the decoded samples:
+exact at pitch 1, no seam at a loop, the right length at other pitches, the pan, the reverb and the player's timing.
+The F1 menu's Debug, Sound Test window plays any sample at a note, volume, pan and reverb send; until the music player
+is ported, nothing else plays.
+
 `src/game_check.c` keeps the two headers in step: it is compiled with the game's settings and includes both
 `include/port.h` and `src/game.h`, so the build stops with an error if they ever declare a function or the resource
 descriptor differently. `td_game` depends on it, so this also holds when only one program is built.

@@ -16,6 +16,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "audio/sound.h"
 #include "game.h"
 #include "game_sdk.h"
 
@@ -201,6 +202,7 @@ void port_present(int32_t kind) {
     int i;
 
     sram_flush();
+    sound_present(); /* the sound device is handed what it wants (src/audio/sound.h) */
 
     if (kind == GAME_PRESENT_FRAME) {
         static const FrameCmd end = { (uintptr_t)G_ENDDL_OP << 24, 0 };

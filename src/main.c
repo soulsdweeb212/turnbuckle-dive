@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "game.h"
+#include "audio/sound.h"
 #include "audio/sound_dump.h"
 #include "rom.h"
 #ifdef TD_GAME_CODE
@@ -254,6 +255,10 @@ int main(int argc, char **argv) {
         if (!headless && dev_inspector_start() == 0) {
             on_frame = dev_inspector_frame;
             dev_inspector_frames_from(dev_boot_frames);
+            /* The sound: the synthesizer, heard through the window's sound device. */
+            if (sound_start(rom.data, rom.size) == 0) {
+                dev_inspector_open_sound();
+            }
             /* The game's saves in a file beside the program, as a cartridge keeps them; a scripted or replayed run
              * starts with no save, so that it goes the same on every run. */
             if (match_options.pad_script == NULL && match_options.replay_pads == NULL) {
@@ -285,6 +290,7 @@ int main(int argc, char **argv) {
         dev_boot_pads(match_options.replay_pads, match_options.record_pads, match_options.pad_script);
         dev_boot_idle_randoms(match_options.no_idle_randoms);
         result = dev_boot_run(&rom, dev_boot, on_frame, NULL);
+        sound_end();
         rom_free(&rom);
         return result;
     }

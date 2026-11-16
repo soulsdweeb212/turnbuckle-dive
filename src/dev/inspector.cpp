@@ -44,6 +44,8 @@
 #include "game_sdk.h"
 #include "costume_colours.h"
 #include "move_list.h"
+#include "audio/sound_output.h"
+#include "sound_test.h"
 #include "libultraship/controller/controldeck/ControlDeck.h"
 #include "libultraship/libultraship.h"
 #include "libultraship/window/gui/InputEditorWindow.h"
@@ -523,9 +525,10 @@ extern "C" int dev_inspector_start(void) {
         "gInputEditorShown", "Input Editor", gLus.ctx->GetChildren().GetFirst<LUS::ControlDeck>(), gLus.window));
     td::AddMoveListWindow(cvars, gLus.window);
     td::AddCostumeColoursWindow(cvars, gLus.window);
+    td::AddSoundTestWindow(cvars, gLus.window);
     // The game's settings, kept in the settings file: read now, and changed from the Settings menu.
     game_sdk_set_championship_matches(cvars->GetInteger(kChampionshipMatches, 9));
-    td::AddDebugMenu(gLus.window, { "Match Inspector", td::kMoveListWindow }, { "Input Editor", td::kCostumeColoursWindow },
+    td::AddDebugMenu(gLus.window, { "Match Inspector", td::kMoveListWindow, td::kSoundTestWindow }, { "Input Editor", td::kCostumeColoursWindow },
                      [] { gResetAsked = true; }, DrawGameSettings);
     AddConsoleCommands();
     return 0;
@@ -600,6 +603,7 @@ extern "C" void dev_inspector_set_command(int argc, char** argv) {
 }
 
 extern "C" void dev_inspector_stop(void) {
+    sound_output_close(); // the sound device goes with the context
     td::StopLibUltraShip(&gLus);
 }
 
@@ -617,6 +621,10 @@ extern "C" void dev_inspector_capture(const char* dir, const unsigned* frames, u
 extern "C" void dev_inspector_dump(const char* path, unsigned frame) {
     gDumpPath = path;
     gDumpFrame = frame;
+}
+
+extern "C" int dev_inspector_open_sound(void) {
+    return td::OpenSoundOutput(gLus.ctx);
 }
 
 extern "C" void dev_inspector_use_save_file(void) {
