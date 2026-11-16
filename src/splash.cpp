@@ -285,7 +285,7 @@ bool RunSplash(const std::shared_ptr<Fast::Fast3dWindow>& window, const uint8_t*
     int end = kFrames;       // the frame the fade out ends at
     char label[64];
 
-    std::snprintf(label, sizeof(label), "VERSION %s", version);
+    std::snprintf(label, sizeof(label), "BUILD %s", version);
     for (int frame = 0; frame < end; frame++) {
         float fade = std::min(1.0f, static_cast<float>(frame) / kFade);
 

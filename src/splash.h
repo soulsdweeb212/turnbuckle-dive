@@ -15,8 +15,8 @@ namespace td {
 
 // Shows the splash for about four seconds, or until a button is pressed (pressed() says whether one is down; a button
 // already down when the splash starts counts only once it has been let go). faces: the cube's pictures, as
-// splash_faces_load makes them (src/splash_faces.h). version: shown small under the name. Returns false if the window
-// was closed.
+// splash_faces_load makes them (src/splash_faces.h). version: shown small under the name, after "BUILD" (the program's
+// commit, TD_COMMIT). Returns false if the window was closed.
 bool RunSplash(const std::shared_ptr<Fast::Fast3dWindow>& window, const uint8_t* faces, const char* version,
                const std::function<bool()>& pressed);
 

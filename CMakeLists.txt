@@ -322,6 +322,17 @@ add_executable(turnbuckle-dive src/main.c)
 target_link_libraries(turnbuckle-dive PRIVATE td_core)
 td_strict(turnbuckle-dive)
 target_compile_definitions(turnbuckle-dive PRIVATE TD_VERSION="${PROJECT_VERSION}")
+# The commit the program is built from (TD_COMMIT, in td_commit.h), worked out again at every build
+# (cmake/commit.cmake), so the program and its splash screen always name the commit they were built from.
+find_package(Git QUIET)
+set(TD_COMMIT_HEADER ${CMAKE_CURRENT_BINARY_DIR}/commit/td_commit.h)
+add_custom_target(td_commit
+                  COMMAND ${CMAKE_COMMAND} -DGIT=${GIT_EXECUTABLE} -DSOURCE=${CMAKE_CURRENT_SOURCE_DIR}
+                          -DOUT=${TD_COMMIT_HEADER} -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/commit.cmake
+                  BYPRODUCTS ${TD_COMMIT_HEADER}
+                  COMMENT "Reading the commit the program is built from")
+add_dependencies(turnbuckle-dive td_commit)
+target_include_directories(turnbuckle-dive PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/commit)
 if(TARGET td_game_all)
     # With every game file of the developer program, the program runs the game's ROM loader after the ROM check, and
     # with --dev-match runs a match (src/dev/dev_match.c). It links those files themselves rather than td_resources,

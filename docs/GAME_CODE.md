@@ -648,8 +648,9 @@ from the next start or Reset:
 
 - **Original** (the default, 0): as on the N64, the game's legal screen first.
 - **Turnbuckle Dive** (1): the port's splash screen in place of the legal screen and the THQ logo, for about four
-  seconds: a cube turning above the port's name, "A NATIVE PORT" and the version. Pressing any button on any controller
-  ends it early (a button already held when it starts counts once it has been let go). It is not part of the game. The
+  seconds: a cube turning above the port's name, "A NATIVE PORT" and the build, the commit the program was built from,
+  such as "BUILD AD9DDB0" (`TD_COMMIT`, which `cmake/commit.cmake` works out at every build; the program's first line
+  prints it too). Pressing any button on any controller ends it early (a button already held when it starts counts once it has been let go). It is not part of the game. The
   boot's frames start after it, and the window leaves out the first 220 (`dev_inspector_skip_frames`): the legal screen
   (to frame 92), its cross-fade into the THQ logo (to 124), the THQ logo (to 188) and its cross-fade into the Asmik Ace
   logo (to 220), the same on every run. The game runs them at once, so the Asmik Ace logo follows the splash.

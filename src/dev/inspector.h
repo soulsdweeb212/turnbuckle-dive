@@ -17,7 +17,7 @@ int dev_inspector_start(void);
 void dev_inspector_frame(void *user);
 
 /* Shows the splash screen (src/splash.h) in the window before the game boots: the cube with the faces that
- * splash_faces_load made (src/splash_faces.h), and the version. Returns when it is over; ends the program when the
+ * splash_faces_load made (src/splash_faces.h), and the build (the commit). Returns when it is over; ends the program when the
  * window is closed. */
 void dev_inspector_splash(const uint8_t *faces, const char *version);
 

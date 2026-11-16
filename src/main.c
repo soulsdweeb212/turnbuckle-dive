@@ -24,6 +24,7 @@
 #ifndef TD_VERSION
 #define TD_VERSION "dev"
 #endif
+#include "td_commit.h" /* TD_COMMIT, the commit the program is built from (cmake/commit.cmake) */
 
 /* Reads a resource id written in hex with 0x (0x1DE9) or in decimal (7657). Returns 0 if the text is not one. */
 static uint32_t parse_res_id(const char *text) {
@@ -211,7 +212,7 @@ int main(int argc, char **argv) {
     }
     path = rom_find(rom_arg);
 
-    printf("Turnbuckle Dive %s\n", TD_VERSION);
+    printf("Turnbuckle Dive %s, commit %s\n", TD_VERSION, TD_COMMIT);
     status = rom_load(path, &rom);
     if (status != ROM_OK && status != ROM_WRONG_HASH) {
         /* stdout is buffered when it is not a terminal; flush it so messages keep their order. */
@@ -265,7 +266,7 @@ int main(int argc, char **argv) {
                 static uint8_t faces[SPLASH_FACES * SPLASH_FACE_BYTES];
 
                 if (splash_faces_load(&rom, faces) == 0) {
-                    dev_inspector_splash(faces, TD_VERSION);
+                    dev_inspector_splash(faces, TD_COMMIT);
                     dev_inspector_skip_frames(BOOT_LOGOS_END);
                 }
             }
