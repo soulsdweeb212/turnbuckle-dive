@@ -49,6 +49,19 @@ void game_sdk_set_idle_randoms(int count) {
 
 uint32_t guRandom(void); /* the game's own (src/main/guRandom.c) */
 
+/* ---- The port's settings ----
+ * The game's code reads these through port.h. A championship run has 9 matches in the original game; the window's
+ * Settings menu can make it shorter (game_sdk_set_championship_matches). */
+static int g_championship_matches = 9;
+
+void game_sdk_set_championship_matches(int matches) {
+    g_championship_matches = matches < 1 ? 1 : matches > 9 ? 9 : matches;
+}
+
+int32_t port_championship_matches(void) {
+    return g_championship_matches;
+}
+
 /* ---- The frame's display list ----
  * port_render_frame (game code) builds the frame's graphics tasks; each reaches port_gfx_submit, which copies its
  * commands at once, because the game builds its tasks in four records that it reuses in turn. The commands of all the

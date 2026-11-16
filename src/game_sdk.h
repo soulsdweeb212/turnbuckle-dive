@@ -38,6 +38,11 @@ void game_sdk_set(const GameSdkHooks *hooks, unsigned plugged);
  * "Comparing with the original game"). */
 void game_sdk_set_idle_randoms(int count);
 
+/* How many matches a championship run has, 1 to 9 (other values are clamped); 9, the original game's, by default. The
+ * game reads it (port_championship_matches) when a run starts, and starts the run that many matches before its last,
+ * the title match: a shorter run leaves out the first contenders. */
+void game_sdk_set_championship_matches(int matches);
+
 /* How many times the game has handed over a frame (GAME_PRESENT_FRAME) since the program started. */
 uint32_t game_sdk_frames(void);
 

@@ -10,8 +10,9 @@
 // reads them.
 //
 // Keys, in the window: F5 shows and hides the inspector, F6 pauses and resumes, F7 runs one frame and pauses, F8
-// changes the slow motion (1, 2, 4, 8 window frames per game frame). F1 shows the menu bar, whose Debug menu opens this window and LibUltraShip's Console,
-// Stats and Gfx Debugger. The console also takes the commands pause, step [frames] and slowmo [factor].
+// changes the slow motion (1, 2, 4, 8 window frames per game frame). F1 shows the menu bar: its Settings menu opens the
+// Input Editor, its Debug menu this window and LibUltraShip's Console, Stats and Gfx Debugger. The console also takes
+// the commands pause, step [frames], slowmo [factor] and reset.
 #include "inspector.h"
 
 #include <algorithm>
@@ -320,6 +321,27 @@ void SaveScreenshot(const std::string& path) {
     }
 }
 
+// The settings file's name for the number of matches in a championship run (game_sdk_set_championship_matches).
+constexpr const char* kChampionshipMatches = "gChampionshipMatches";
+
+// The game's settings in the F1 menu's Settings menu. Each takes effect at once in the port and is saved to the
+// settings file when the slider is let go. The game reads the run's length when a championship run starts.
+void DrawGameSettings() {
+    auto cvars = gLus.ctx->GetChildren().GetFirst<Ship::ConsoleVariable>();
+    int matches = cvars->GetInteger(kChampionshipMatches, 9);
+
+    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 8);
+    if (ImGui::SliderInt("Championship matches", &matches, 1, 9)) {
+        cvars->SetInteger(kChampionshipMatches, matches);
+        game_sdk_set_championship_matches(matches);
+    }
+    if (ImGui::IsItemDeactivatedAfterEdit()) {
+        cvars->Save();
+    }
+    ImGui::SetItemTooltip("Matches in a championship run, the title match last (the original game: 9).\n"
+                          "A shorter run leaves out the first contenders. It takes effect when a run starts.");
+}
+
 // The F1 menu's Reset: the program starts again with its command line, as a console's reset button starts the game
 // again from its boot. The game cannot be started over inside the program: its boot loop never returns, and its
 // variables, filled from the ROM when the program starts, have changed since. The pad files are closed and the other
@@ -478,12 +500,15 @@ extern "C" int dev_inspector_start(void) {
         cvars, gLus.window, "gMatchInspectorShown", false, "Match Inspector", ImVec2(560, 520), ImGuiWindowFlags_None));
     gLus.window->GetGui()->AddGuiWindow(std::make_shared<LUS::InputEditorWindow>(
         "gInputEditorShown", "Input Editor", gLus.ctx->GetChildren().GetFirst<LUS::ControlDeck>(), gLus.window));
-    td::AddDebugMenu(gLus.window, { "Match Inspector", "Input Editor" }, [] { gResetAsked = true; });
+    // The game's settings, kept in the settings file: read now, and changed from the Settings menu.
+    game_sdk_set_championship_matches(cvars->GetInteger(kChampionshipMatches, 9));
+    td::AddDebugMenu(gLus.window, { "Match Inspector" }, { "Input Editor" }, [] { gResetAsked = true; },
+                     DrawGameSettings);
     AddConsoleCommands();
     return 0;
 }
 
-// The controllers, as LibUltraShip's control deck maps them (keyboard or gamepad; F1, Debug, Input Editor changes the
+// The controllers, as LibUltraShip's control deck maps them (keyboard or gamepad; F1, Settings, Input Editor changes the
 // mapping), read once a frame just before the game goes on, so the game's pad reads of the next frame see them.
 void ReadPads() {
     auto deck = gLus.ctx->GetChildren().GetFirst<LUS::ControlDeck>();

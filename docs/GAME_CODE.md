@@ -338,12 +338,17 @@ without a depth buffer, so that order alone decides which object covers which.
 
 - F6 pauses and resumes the match, F7 runs one frame and pauses, F8 slows it down (each frame shown 1, 2, 4 or 8 times).
   The same buttons are in the window, and the console (F1, Debug, Console) takes `pause`, `step 10` and `slowmo 4`.
-- F1 shows the menu bar, whose Debug menu opens the Match Inspector and LibUltraShip's Console, Stats and Gfx Debugger.
+- F1 shows the menu bar. Its Settings menu opens the Input Editor (the controls) and sets the number of matches in a
+  championship run (1 to 9; the original game's 9, saved in the settings file as `gChampionshipMatches`): the game
+  reads it when a run starts (`port_championship_matches`, `src/game_sdk.c`), and a shorter run leaves out the first
+  contenders and still ends with the title match. Without a window (`--headless`, the tests) a run has 9 matches. Its
+  Debug menu opens the Match Inspector and LibUltraShip's Console, Stats and Gfx Debugger.
   At the bar's right-hand end, Quit closes the window and ends the program, and Reset starts the program again with the
   same options and `--no-splash`, so the game boots afresh, as after a console's reset button (Ctrl+R and the console's
   `reset` do the same). The game cannot be started over inside the program: its boot loop never returns, and its
   variables have changed since the ROM filled them. While the bar shows, the mouse cursor stays visible; otherwise it
-  hides a few seconds after the mouse last moved.
+  hides a few seconds after the mouse last moved, except under a debugger, where it always stays visible (stopped at a
+  breakpoint, the program runs no frames that could show it again).
   The Gfx Debugger's Debug button holds the match on its current frame and lists the frame's commands as a tree;
   clicking one draws the frame only up to it. Resume Game lets the match go on.
 - Closing the window ends the program.
@@ -372,7 +377,7 @@ Controller 1 starts with Turnbuckle Dive's own defaults (`src/context.cpp`), whi
 | Start | space bar | Menu |
 
 LibUltraShip uses the defaults while the settings file (`turnbuckle-dive.cfg.json` in the build folder) holds no
-mapping of its own, and when its input editor resets a controller; F1, Debug, Input Editor changes the mapping, and
+mapping of its own, and when its input editor resets a controller; F1, Settings, Input Editor changes the mapping, and
 the settings file then keeps the change.
 
 The match can also be played without anyone at the keyboard, and the same way every time:
@@ -551,7 +556,7 @@ pictures are made from the user's ROM: keep them out of the repository.
 
 Controller 1 is plugged in. Its pads come from the same sources as the developer match's (`src/dev/dev_pads.c`,
 which both use): a pad file to replay (`--replay-pads`), else a pad script (`--pad-script`, whose frames count from
-the boot's first frame), else the window's controllers, mapped as in the match (F1, Debug, Input Editor changes the
+the boot's first frame), else the window's controllers, mapped as in the match (F1, Settings, Input Editor changes the
 mapping); with none of them, as with `--headless` and no file, the controller reads as released. `--record-pads`
 saves every read. `tests/pads/boot_menu.txt` presses Start on the title screen, again for the Rumble Pak notice and
 once more at the main menu, and the `dev_boot_menu` test runs it:
