@@ -74,6 +74,31 @@
             ]
         },
         {
+            "name": "Debug Turnbuckle Dive: dev boot",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${input:turnbuckleDivePath}",
+            "args": [
+                "--dev-boot",
+                "216000"
+            ],
+            "cwd": "${input:turnbuckleDiveDirectory}",
+            "environment": [],
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                },
+                {
+                    "description": "Show wrestler records as one line (tools/gdb/wrestler.py)",
+                    "text": "source ${workspaceFolder}/tools/gdb/wrestler.py",
+                    "ignoreFailures": true
+                }
+            ]
+        },
+        {
             "name": "Debug Turnbuckle Dive: dev match (asan preset)",
             "type": "cppdbg",
             "request": "launch",

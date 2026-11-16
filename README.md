@@ -130,6 +130,7 @@ To step through the game's own code, open one of its files with File, Open File,
 `src/main/func_800037F4.c` (the game's decompressor), click left of a line number to set a breakpoint, and start "Debug
 Turnbuckle Dive": it stops there with the game's variables in the Variables view. "Debug Turnbuckle Dive: one resource"
 asks for a resource id and loads only that one. "Debug Turnbuckle Dive: dev match" plays the developer match under the
+debugger, and "Debug Turnbuckle Dive: dev boot" boots the game to its menus, so a match chosen there runs under the
 debugger.
 
 **Visual Studio 2022**: install the "Linux and embedded development with C++" workload, run

@@ -465,6 +465,10 @@ find bugs (`--seed 1`, `--seed 2` and so on).
   "Debug Turnbuckle Dive: dev match (asan preset)" does the same in the asan preset's build (choose that preset in
   CMake Tools first): AddressSanitizer and UndefinedBehaviorSanitizer then stop the program at the bad line; it is
   about 11 frames down the call stack, under the C library's and the sanitizers' own.
+- "Debug Turnbuckle Dive: dev boot" starts `--dev-boot 216000` under the debugger: the splash, the game's boot and its
+  menus, so any mode and wrestlers can be chosen there and played with your controls (216000 frames is two hours of the
+  game's time; the program then ends). Both entries run the program in its build folder, so they use that folder's
+  settings file and keys.
 - In Watch, `D_800F9D10[0]` shows a wrestler as one line (state name, health, position, who holds it) with its fields
   below: every entry loads `tools/gdb/wrestler.py`. `(enum TdWrState)D_800F9D10[1].state` and
   `(enum TdMatchPhase)D_800EB465` show names (`src/dev/wr_states.h`). In a Debug build the game's macros work too, in a
