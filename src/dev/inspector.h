@@ -23,6 +23,11 @@ void dev_inspector_splash(const uint8_t *faces, const char *version);
 
 /* Closes the window. */
 void dev_inspector_stop(void);
+
+/* The program's command line, which the F1 menu's Reset starts again: the window closes, and the program starts over
+ * with the same options and --no-splash, from the boot as after a console's reset button (src/dev/inspector.cpp,
+ * Restart). Call it first in main. */
+void dev_inspector_set_command(int argc, char **argv);
 /* The game frame count that the screenshots below go by: by default the developer match's (dev_match_frames); the
  * developer boot hands over its own. */
 void dev_inspector_frames_from(uint32_t (*frames)(void));

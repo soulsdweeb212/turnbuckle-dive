@@ -112,6 +112,9 @@ int main(int argc, char **argv) {
     Rom rom;
     int i;
 
+#ifdef TD_INSPECTOR
+    dev_inspector_set_command(argc, argv); /* the F1 menu's Reset starts the program again with these */
+#endif
     for (i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--res") == 0 && i + 1 < argc) {
             res_id = parse_res_id(argv[++i]);

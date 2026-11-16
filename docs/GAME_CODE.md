@@ -339,6 +339,11 @@ without a depth buffer, so that order alone decides which object covers which.
 - F6 pauses and resumes the match, F7 runs one frame and pauses, F8 slows it down (each frame shown 1, 2, 4 or 8 times).
   The same buttons are in the window, and the console (F1, Debug, Console) takes `pause`, `step 10` and `slowmo 4`.
 - F1 shows the menu bar, whose Debug menu opens the Match Inspector and LibUltraShip's Console, Stats and Gfx Debugger.
+  At the bar's right-hand end, Quit closes the window and ends the program, and Reset starts the program again with the
+  same options and `--no-splash`, so the game boots afresh, as after a console's reset button (Ctrl+R and the console's
+  `reset` do the same). The game cannot be started over inside the program: its boot loop never returns, and its
+  variables have changed since the ROM filled them. While the bar shows, the mouse cursor stays visible; otherwise it
+  hides a few seconds after the mouse last moved.
   The Gfx Debugger's Debug button holds the match on its current frame and lists the frame's commands as a tree;
   clicking one draws the frame only up to it. Resume Game lets the match go on.
 - Closing the window ends the program.

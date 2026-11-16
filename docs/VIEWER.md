@@ -252,7 +252,8 @@ exactly the commands Fast3D runs.
 
 ## The debug menu and the Gfx Debugger
 
-In the viewer's window, F1 shows or hides a menu bar. Its Debug menu opens and closes three of LibUltraShip's windows:
+In the viewer's window, F1 shows or hides a menu bar. Quit, at its right-hand end, closes the viewer, and while the bar
+shows the mouse cursor stays visible. Its Debug menu opens and closes three of LibUltraShip's windows:
 
 - **Console**: LibUltraShip's command console.
 - **Stats**: the time each frame takes, and the frames per second.

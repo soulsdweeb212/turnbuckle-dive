@@ -15,11 +15,18 @@
 #include "inspector.h"
 
 #include <algorithm>
+#include <cerrno>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <string>
 #include <vector>
+#ifdef _WIN32
+#include <process.h>
+#else
+#include <unistd.h>
+#endif
 
 #include <GL/gl.h>
 #include <imgui.h>
@@ -55,6 +62,9 @@ struct Control {
 
 Control gControl;
 td::LibUltraShip gLus;
+int gArgc;            // the program's command line (dev_inspector_set_command), for Reset
+char** gArgv;
+bool gResetAsked;     // the F1 menu's Reset was chosen; the next window frame restarts the program
 std::string gShotPath; // --screenshot: the file, and the game frame to take it at
 unsigned gShotFrame;
 // The game frame count that the screenshots go by: the developer match's (dev_match_frames), or the developer boot's
@@ -310,6 +320,35 @@ void SaveScreenshot(const std::string& path) {
     }
 }
 
+// The F1 menu's Reset: the program starts again with its command line, as a console's reset button starts the game
+// again from its boot. The game cannot be started over inside the program: its boot loop never returns, and its
+// variables, filled from the ROM when the program starts, have changed since. The pad files are closed and the other
+// files flushed, the window closes (which saves the settings), and the new program takes this one's place (execv; on
+// Linux /proc/self/exe is the program's own file wherever it was started from). It adds --no-splash: the splash is
+// the port's, not the game's.
+[[noreturn]] void Restart() {
+    static char noSplash[] = "--no-splash";
+    std::vector<char*> args(gArgv, gArgv + gArgc);
+
+    std::printf("reset: starting the program again\n");
+    if (std::find_if(args.begin(), args.end(), [](char* a) { return std::strcmp(a, noSplash) == 0; }) == args.end()) {
+        args.insert(args.begin() + 1, noSplash);
+    }
+    args.push_back(nullptr);
+    dev_pads_close();
+    std::fflush(nullptr);
+    dev_inspector_stop();
+#if defined(_WIN32)
+    _execv(args[0], args.data());
+#elif defined(__linux__)
+    execv("/proc/self/exe", args.data());
+#else
+    execvp(args[0], args.data());
+#endif
+    std::fprintf(stderr, "reset: could not start the program again (%s)\n", std::strerror(errno));
+    std::_Exit(1);
+}
+
 // One window frame: the game's last frame, drawn by Fast3D from the frame's display list (game_sdk_frame), with the
 // GUI on top; or the GUI alone when the hand-off drew nothing (RunGuiOnly). EndFrame waits for the next frame at the
 // target rate. Textures the game changes in place are decoded again by Fast3D itself (LibUltraShip patch 0009).
@@ -324,6 +363,9 @@ void DrawWindowFrame() {
         std::printf("dev-match: the window was closed\n");
         dev_inspector_stop();
         std::exit(0);
+    }
+    if (gResetAsked) {
+        Restart();
     }
     // The steps of LibUltraShip's own frame (Fast3dWindow::DrawAndRunGraphicsCommands), so that a screenshot can read the
     // window after the GUI is drawn and before EndFrame shows it.
@@ -390,6 +432,13 @@ void AddConsoleCommands() {
     if (console == nullptr) {
         return;
     }
+    // LibUltraShip sends Ctrl+R to the console as "reset" (Gui::DrawMenu), so Ctrl+R resets too.
+    console->AddCommand("reset", { [](std::shared_ptr<Ship::Console>, std::vector<std::string>, std::string*) {
+                                      gResetAsked = true;
+                                      return 0;
+                                  },
+                                   "Start the game again from its boot, as the F1 menu's Reset does",
+                                   {} });
     console->AddCommand("pause", { [](std::shared_ptr<Ship::Console>, std::vector<std::string>, std::string*) {
                                       TogglePause();
                                       return 0;
@@ -429,7 +478,7 @@ extern "C" int dev_inspector_start(void) {
         cvars, gLus.window, "gMatchInspectorShown", false, "Match Inspector", ImVec2(560, 520), ImGuiWindowFlags_None));
     gLus.window->GetGui()->AddGuiWindow(std::make_shared<LUS::InputEditorWindow>(
         "gInputEditorShown", "Input Editor", gLus.ctx->GetChildren().GetFirst<LUS::ControlDeck>(), gLus.window));
-    td::AddDebugMenu(gLus.window, { "Match Inspector", "Input Editor" });
+    td::AddDebugMenu(gLus.window, { "Match Inspector", "Input Editor" }, [] { gResetAsked = true; });
     AddConsoleCommands();
     return 0;
 }
@@ -491,6 +540,11 @@ extern "C" void dev_inspector_splash(const uint8_t* faces, const char* version) 
         std::exit(0);
     }
     gLus.window->SetTargetFps(30);
+}
+
+extern "C" void dev_inspector_set_command(int argc, char** argv) {
+    gArgc = argc;
+    gArgv = argv;
 }
 
 extern "C" void dev_inspector_stop(void) {
