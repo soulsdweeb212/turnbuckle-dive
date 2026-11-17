@@ -345,8 +345,9 @@ if(TARGET td_game_all)
     # with --dev-match runs a match (src/dev/dev_match.c). It links those files themselves rather than td_resources,
     # whose td_game holds some of the same files, so src/resources.c is compiled into it directly. The linker options
     # give some functions their old names (game_vars_link.txt); Linux keeps sqrtf in libm.
-    # src/dev/dev_records.c reads the game's records by their types, so it is compiled with the game's settings.
-    add_library(td_dev_records OBJECT src/dev/dev_records.c)
+    # src/dev/dev_records.c reads the game's records by their types, and src/dev/sound_player_game.c calls the game's
+    # sound functions for the Sound Player, so they are compiled with the game's settings.
+    add_library(td_dev_records OBJECT src/dev/dev_records.c src/dev/sound_player_game.c)
     td_game_code(td_dev_records)
     target_include_directories(td_dev_records PRIVATE src/dev)
     target_compile_options(td_dev_records PRIVATE -Wall -Wextra)
@@ -589,7 +590,7 @@ if(TD_BUILD_HELLO)
         # it unless --headless is given, and the splash screen before the developer boot (src/splash.cpp). They need
         # LibUltraShip, so they come with td_window.
         target_sources(turnbuckle-dive PRIVATE src/dev/inspector.cpp src/dev/move_list.cpp src/dev/costume_colours.cpp
-            src/dev/sound_test.cpp src/audio/sound_output.cpp src/splash.cpp)
+            src/dev/sound_test.cpp src/dev/sound_player.cpp src/audio/sound_output.cpp src/splash.cpp)
         target_link_libraries(turnbuckle-dive PRIVATE td_window)
         target_compile_definitions(turnbuckle-dive PRIVATE TD_INSPECTOR)
     endif()

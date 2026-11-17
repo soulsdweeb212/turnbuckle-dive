@@ -11,7 +11,7 @@
 //
 // Keys, in the window: F5 shows and hides the inspector, F6 pauses and resumes, F7 runs one frame and pauses, F8
 // changes the slow motion (1, 2, 4, 8 window frames per game frame). F1 shows the menu bar: its Settings menu opens the
-// Input Editor and the Costume Colours (src/dev/costume_colours.cpp), its Debug menu this window, the Move List (src/dev/move_list.cpp) and LibUltraShip's Console, Stats and
+// Input Editor and the Costume Colours (src/dev/costume_colours.cpp), its Debug menu this window, the Move List (src/dev/move_list.cpp), the Sound Player (src/dev/sound_player.cpp), the Sound Test and LibUltraShip's Console, Stats and
 // Gfx Debugger. The console also takes
 // the commands pause, step [frames], slowmo [factor] and reset.
 #include "inspector.h"
@@ -45,6 +45,7 @@
 #include "costume_colours.h"
 #include "move_list.h"
 #include "audio/sound_output.h"
+#include "sound_player.h"
 #include "sound_test.h"
 #include "libultraship/controller/controldeck/ControlDeck.h"
 #include "libultraship/libultraship.h"
@@ -526,9 +527,10 @@ extern "C" int dev_inspector_start(void) {
     td::AddMoveListWindow(cvars, gLus.window);
     td::AddCostumeColoursWindow(cvars, gLus.window);
     td::AddSoundTestWindow(cvars, gLus.window);
+    td::AddSoundPlayerWindow(cvars, gLus.window);
     // The game's settings, kept in the settings file: read now, and changed from the Settings menu.
     game_sdk_set_championship_matches(cvars->GetInteger(kChampionshipMatches, 9));
-    td::AddDebugMenu(gLus.window, { "Match Inspector", td::kMoveListWindow, td::kSoundTestWindow }, { "Input Editor", td::kCostumeColoursWindow },
+    td::AddDebugMenu(gLus.window, { "Match Inspector", td::kMoveListWindow, td::kSoundPlayerWindow, td::kSoundTestWindow }, { "Input Editor", td::kCostumeColoursWindow },
                      [] { gResetAsked = true; }, DrawGameSettings);
     AddConsoleCommands();
     return 0;

@@ -393,8 +393,8 @@ without a depth buffer, so that order alone decides which object covers which.
   every title (1 to 9; the original game's 9, saved in the settings file as `gChampionshipMatches`): the game reads it
   when a run starts (`port_championship_matches`, `src/game_sdk.c`), and a shorter run leaves out the first contenders
   and still ends with the title match. Without a window (`--headless`, the tests) a run has 9 matches. Its Debug menu
-  opens the Match Inspector, the Move List (below, "The Move List") and LibUltraShip's Console, Stats and Gfx
-  Debugger. At the bar's right-hand end, Quit closes
+  opens the Match Inspector, the Move List (below, "The Move List"), the Sound Player (below, "The Sound Player"),
+  the Sound Test and LibUltraShip's Console, Stats and Gfx Debugger. At the bar's right-hand end, Quit closes
   the window and ends the program, and Reset starts the program again with the same options, so the game boots afresh
   (as the Boot setting says), as after a console's reset button (Ctrl+R and the console's `reset` do the same). The game
   cannot be started over inside the program: its boot loop never returns, and its variables have changed since the ROM
@@ -407,6 +407,32 @@ without a depth buffer, so that order alone decides which object covers which.
 
 The inspector only reads the game's records, through `src/dev/dev_records.c`, which is compiled with the game's
 settings. It runs inside the game's frame hand-off, on the game's thread, while the game waits, so the two never clash.
+
+### The Sound Player
+
+The Sound Player (`src/dev/sound_player.cpp`; F1, Debug, Sound Player) plays any of the game's songs, sound effects and
+menu sounds while the game runs, each with a Play button in one of three tabs. It plays them with the game's own sound
+functions, those its screens call (`src/dev/sound_player_game.c`, compiled with the game's settings), so they go
+through the game's code and then the port's music player just as the game's own do:
+
+- Songs, by the game's song number (1 to 21, with the resource each is kept in, from the song table `D_80030D0C`):
+  started with `func_8000E55C`, the function the menus and the match call at every frame with the song they want. It
+  fades out the song playing (over the frames the Fade slider sets), and once that is quiet the next call loads the new
+  song into the game's song buffer and starts it.
+- Sound effects, by number in the effect table (those the table has), with `func_800032A4` at a volume (128 plays the
+  effect as written), as a match starts them (`playEntitySound`).
+- Menu sounds, by the ids the menus use (0x401 to 0x42B, each with the effect it plays), with `func_8000DEE4`, as the
+  menus play them.
+
+The game's screens ask for their own song at every frame, so a song started for the player would be faded out at once.
+While the player has a song, the game's own song calls therefore wait (`game_sdk_hold_songs`, `src/game_sdk.c`): its
+calls that would start a song or stop the player's are let through and do nothing. When the player's song is stopped
+or comes to its end, the songs go back to the game, and the screen starts its own again at its next call. The Music
+volume slider is the game's own music volume (`func_80003418`; the game sets 127 at boot).
+
+Sound is on only in the developer boot's window (`--dev-boot`) without a pad script or a pad file to replay (above,
+"What the port provides to the game"); in other runs the window says so. The Sound Test beside it plays the sound
+banks' raw samples on the synthesizer alone, at a chosen note.
 
 ### The Move List
 

@@ -1,6 +1,6 @@
 // The Sound Test window (F1, Debug, Sound Test): plays any sample of the game's two sound banks on the port's
-// synthesizer, at a note, volume, pan and reverb send of one's choosing. It is there to hear the synthesizer while the
-// music player is not yet ported. C++ only.
+// synthesizer, at a note, volume, pan and reverb send of one's choosing, to hear the synthesizer by itself. (The Sound
+// Player plays the game's songs and effects.) C++ only.
 #ifndef TD_SOUND_TEST_H
 #define TD_SOUND_TEST_H
 

@@ -653,16 +653,49 @@ void osWritebackDCacheAll(void) {
  * or replayed run, src/main.c) nothing plays: a song or an effect gets handle 0, and every question about what plays
  * answers 0 (nothing), so such runs go the same every time. The game passes the effects' sample bank to the effect
  * functions; the player knows it already. Each call is shown to whoever watches them (sound_watch_call, the
- * comparison's --sound-lockstep) before it is made, and each question's answer after. */
+ * comparison's --sound-lockstep) before it is made, and each question's answer after. While the Sound Player holds the
+ * songs (game_sdk_hold_songs), the game's calls that would start or stop a song are let through as if made and do
+ * nothing. */
 
 /* The game loads every song into one buffer of this size (D_800487F0) before it starts it. */
 #define SONG_BUFFER 0x8000
 
+/* The Sound Player's hold on the songs (game_sdk_hold_songs). */
+static int g_hold_songs;
+static int g_player_calls;
+static uint32_t g_held_song;
+
+void game_sdk_hold_songs(int hold) {
+    g_hold_songs = hold;
+    g_held_song = 0;
+}
+
+void game_sdk_player_calls(int on) {
+    g_player_calls = on;
+}
+
+uint32_t game_sdk_held_song(void) {
+    return g_held_song;
+}
+
+/* Whether a call of the game's is held back. */
+static int held_back(void) {
+    return g_hold_songs && !g_player_calls;
+}
+
 uint32_t MusStartSong(void *song) {
     Music *music = sound_music();
+    uint32_t handle;
 
     sound_watch_call("MusStartSong", 0, NULL, song);
-    return music != NULL ? music_start_song(music, song, SONG_BUFFER) : 0;
+    if (music == NULL || held_back()) {
+        return 0;
+    }
+    handle = music_start_song(music, song, SONG_BUFFER);
+    if (g_hold_songs && g_held_song == 0) {
+        g_held_song = handle;
+    }
+    return handle;
 }
 
 void MusStop(int32_t flags, int32_t speed) {
@@ -671,7 +704,7 @@ void MusStop(int32_t flags, int32_t speed) {
 
     sound_watch_call("MusStop", 2, args, NULL);
     if (music != NULL) {
-        music_stop(music, flags, speed);
+        music_stop(music, held_back() ? flags & ~MUSIC_SONGS_CLASS : flags, speed);
     }
 }
 
@@ -728,6 +761,9 @@ int32_t MusHandleStop(uint32_t handle, int32_t speed) {
     int32_t args[2] = { (int32_t)handle, speed };
 
     sound_watch_call("MusHandleStop", 2, args, NULL);
+    if (held_back() && handle == g_held_song) {
+        return 0;
+    }
     return music != NULL ? music_handle_stop(music, handle, speed) : 0;
 }
 

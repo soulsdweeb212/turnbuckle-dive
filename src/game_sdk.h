@@ -43,6 +43,15 @@ void game_sdk_set_idle_randoms(int count);
  * the title match: a shorter run leaves out the first contenders. */
 void game_sdk_set_championship_matches(int matches);
 
+/* The Sound Player (src/dev/sound_player.h) taking the songs from the game. While game_sdk_hold_songs(1) is in force,
+ * the game's own calls cannot start a song (MusStartSong gives it handle 0, nothing) or stop the held one (MusHandleStop
+ * of game_sdk_held_song(), and MusStop's song class), so the song the player starts keeps playing while the screens go
+ * on asking for theirs; game_sdk_hold_songs(0) gives the songs back. The player's own calls are made between
+ * game_sdk_player_calls(1) and (0), and the first song they start is the held one. */
+void game_sdk_hold_songs(int hold);
+void game_sdk_player_calls(int on);
+uint32_t game_sdk_held_song(void);
+
 /* The player's own costume colours. Each wrestler (the game's character id, bank << 8 | entry + 1) may have its own
  * colour, 0xRRGGBB, for colour 1 and for colour 2 of its costume, in place of the colour the game's Costume Change menu
  * chose; -1 means the game's own. The game reads them (port_costume_ramp) each time it colours a palette, so a change
