@@ -166,6 +166,7 @@ add_library(td_core STATIC
     src/slots.c
     src/res_convert.c
     src/game_heap.c
+    src/audio/music.c
     src/audio/sound.c
     src/audio/sound_bank.c
     src/audio/sound_dump.c
@@ -348,7 +349,8 @@ if(TARGET td_game_all)
     td_game_code(td_dev_records)
     target_include_directories(td_dev_records PRIVATE src/dev)
     target_compile_options(td_dev_records PRIVATE -Wall -Wextra)
-    target_sources(turnbuckle-dive PRIVATE src/resources.c src/splash_faces.c src/dev/dev_match.c src/dev/dev_boot.c
+    target_sources(turnbuckle-dive PRIVATE src/resources.c src/splash_faces.c src/audio/music_dump.c src/dev/dev_match.c
+                   src/dev/dev_boot.c
                    src/dev/dev_pads.c $<TARGET_OBJECTS:td_dev_records>
                    $<TARGET_OBJECTS:td_game_all>)
     target_link_libraries(turnbuckle-dive PRIVATE td_game_functions td_game_sdk $<$<PLATFORM_ID:Linux>:m>)
@@ -386,6 +388,15 @@ if(BUILD_TESTING)
     td_strict(test_synth)
     add_test(NAME synth COMMAND test_synth)
     set_tests_properties(synth PROPERTIES SKIP_RETURN_CODE 77)
+    # The music player (tests/test_music.c says what it checks); skipped without the ROM.
+    add_executable(test_music tests/test_music.c)
+    target_link_libraries(test_music PRIVATE td_core)
+    if(NOT MSVC)
+        target_link_libraries(test_music PRIVATE m)
+    endif()
+    td_strict(test_music)
+    add_test(NAME music COMMAND test_music)
+    set_tests_properties(music PROPERTIES SKIP_RETURN_CODE 77)
     add_executable(test_slots tests/test_slots.c)
     target_link_libraries(test_slots PRIVATE td_core)
     td_strict(test_slots)

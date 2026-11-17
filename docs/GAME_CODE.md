@@ -168,8 +168,7 @@ finishes at once: a cartridge read (`osEPiStartDma`) copies the bytes from the R
 returns, and a controller read does the same, so a game function that waits for such a message always finds it.
 Message queues keep the N64's 0x18 bytes and 4-byte messages; a wait on an empty queue that nothing could fill stops
 the program with a message instead of hanging. Controllers read what the program running the game gives through
-`game_sdk_set` (`src/game_sdk.h`). Sound is not ported yet: the music library's functions do nothing and report that
-nothing plays. The port's sound is being written in `src/audio/` (docs/DECISIONS.md, D9). So far it reads the game's
+`game_sdk_set` (`src/game_sdk.h`). Sound is the port's own, in `src/audio/` (docs/DECISIONS.md, D9). It reads the game's
 two sound banks from the ROM into PC records (`sound_bank.c`: the music's 54 samples and the effects' 147, each with
 its loop, ADPCM codebook and tuning) and decodes the N64's ADPCM samples (`vadpcm.c`); the test `sound_bank` checks
 both against the ROM. `turnbuckle-dive --sound-dump DIR` writes every sample to DIR as a WAV file, at the game's output
@@ -188,8 +187,21 @@ game frame `port_present` hands the sound device as much as it wants (`src/audio
 LibUltraShip's audio player, opened at 28800 Hz). Where a loop starts, the sample keeps the decoded frame that holds the
 loop's start, so the stream goes on from inside that frame. The test `synth` checks it against the decoded samples:
 exact at pitch 1, no seam at a loop, the right length at other pitches, the pan, the reverb and the player's timing.
-The F1 menu's Debug, Sound Test window plays any sample at a note, volume, pan and reverb send; until the music player
-is ported, nothing else plays.
+The F1 menu's Debug, Sound Test window plays any sample at a note, volume, pan and reverb send. As on the N64, a
+voice's gain is its volume squared, and starting a sample on a voice keeps the voice's pitch, volume, pan and send.
+
+The music player (`src/audio/music.c`) does what the game's music library (libmus) does, and the game's calls to that
+library (`src/game_sdk.c`: MusStartSong, MusBankStartEffect2, MusHandleStop and the rest) go to it. The synthesizer
+calls it 60 times a second. It has 24 channels, channel i playing on voice i; a song takes one for each of its lines, an
+effect one (and an effect may start a second half of itself, which answers to the first's handle). Each frame every
+channel's clock moves on by its tempo, the channel reads the notes and commands that have come due, and its envelope,
+vibrato, wobble, pan sweep, portamento and pitch bend set the voice's pitch, volume and pan. Songs are read where the
+game loaded them (big-endian, as in the ROM), and effects from the game's effect table in the ROM. How each part
+behaves is written up in the decompilation's notes (`notes/sound_player_sequencer.md`, `notes/sound_player_voices.md`).
+In a run without a window, or with a pad script or a replay, sound is off and the library's functions answer as if
+nothing played, so that such runs go the same every time (the game asks whether its music still plays before it
+starts the next song). The test `music` checks the player; `turnbuckle-dive --music-dump DIR` writes each song, played
+by it, to DIR as a WAV file, for listening and for comparing with the original.
 
 `src/game_check.c` keeps the two headers in step: it is compiled with the game's settings and includes both
 `include/port.h` and `src/game.h`, so the build stops with an error if they ever declare a function or the resource

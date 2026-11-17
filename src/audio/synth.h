@@ -72,7 +72,7 @@ typedef struct {
     float history[4];
     float phase;
     float pitch;
-    /* The volume (0 to 32767) and where it is moving: by step a sample, for ramp more samples. */
+    /* The gain (the volume squared, 0 to 32766) and where it is moving: by step a sample, for ramp more samples. */
     float volume;
     float volume_target;
     float volume_step;
@@ -91,7 +91,8 @@ typedef struct {
     int16_t *line;
     uint32_t line_at;
     float lowpass_last[SYNTH_REVERB_SECTIONS];
-    /* The player, and the time of its next call in samples from the start of the sub-frame being made. */
+    /* The player, and the time of its next call in samples from the start of the sub-frame being made (each call's time
+     * rounded to whole samples). */
     SynthPlayer player;
     void *player_context;
     double player_due;
@@ -108,8 +109,12 @@ void synth_free(Synth *synth);
 
 void synth_set_player(Synth *synth, SynthPlayer player, void *context);
 
-/* The voices, by number (0 to SYNTH_VOICES - 1). A voice starts with its volume at 0 and moves to volume over
- * ramp_us microseconds, as n_audio's do (n_alSynStartVoiceParams). Volume is 0 to 32767, pan and fxmix 0 to 127. */
+/* The voices, by number (0 to SYNTH_VOICES - 1). Volume is 0 to 32767, and the gain is its square (32767 is 1, 16384
+ * a quarter), as n_audio's; pan and fxmix are 0 to 127.
+ * synth_voice_play starts a wave from its beginning and keeps the voice's pitch, volume, pan and send, as n_audio's
+ * start does (the music player sets them apart). synth_voice_start also sets them, its volume moving from 0 over
+ * ramp_us microseconds (n_alSynStartVoiceParams). */
+void synth_voice_play(Synth *synth, int voice, const SoundWave *wave);
 void synth_voice_start(Synth *synth, int voice, const SoundWave *wave, float pitch, int16_t volume, int pan, int fxmix,
                        int32_t ramp_us);
 void synth_voice_stop(Synth *synth, int voice);

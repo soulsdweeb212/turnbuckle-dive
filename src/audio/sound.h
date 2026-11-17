@@ -1,14 +1,13 @@
-/* The port's sound: the game's two sound banks and the synthesizer that plays them, set up from the ROM, and the
- * hand-off of its output to the sound device (src/audio/sound.c). C and C++.
- *
- * The music player (libmus on the N64) will drive the synthesizer; until it is ported, the developer's Sound Test window
- * (F1) plays single samples on it. */
+/* The port's sound: the game's two sound banks, the synthesizer that plays them and the music player that drives it,
+ * set up from the ROM, and the hand-off of the synthesizer's output to the sound device (src/audio/sound.c). C and C++.
+ * The game's calls to its music library (src/game_sdk.c) go to the music player. */
 #ifndef TD_SOUND_H
 #define TD_SOUND_H
 
 #include <stddef.h>
 #include <stdint.h>
 
+#include "music.h"
 #include "sound_bank.h"
 #include "synth.h"
 
@@ -27,6 +26,7 @@ void sound_end(void);
 /* NULL before sound_start. */
 const SoundBank *sound_bank(int which);
 Synth *sound_synth(void);
+Music *sound_music(void);
 
 /* The sound device's side: `feed` is called at each of the game's frames (port_present), to hand the device as much
  * output as it wants (src/audio/sound_output.cpp). */

@@ -12,6 +12,7 @@
 
 static SoundBank g_banks[2];
 static Synth g_synth;
+static Music g_music;
 static int g_started;
 static void (*g_feed)(void);
 
@@ -87,7 +88,9 @@ int sound_start(const uint8_t *rom, size_t rom_size) {
     }
     if (sound_bank_load(&g_banks[SOUND_BANK_EFFECTS], rom, rom_size, SOUND_BANK_EFFECT_START, SOUND_BANK_EFFECT_END,
                         SOUND_BANK_EFFECT_WAVES) != 0 ||
-        synth_init(&g_synth, rom, rom_size, eqpower, &reverb) != 0) {
+        synth_init(&g_synth, rom, rom_size, eqpower, &reverb) != 0 ||
+        music_init(&g_music, &g_synth, &g_banks[SOUND_BANK_MUSIC], &g_banks[SOUND_BANK_EFFECTS], rom, rom_size) != 0) {
+        synth_free(&g_synth);
         sound_bank_free(&g_banks[SOUND_BANK_MUSIC]);
         sound_bank_free(&g_banks[SOUND_BANK_EFFECTS]);
         return -1;
@@ -112,6 +115,10 @@ const SoundBank *sound_bank(int which) {
 
 Synth *sound_synth(void) {
     return g_started ? &g_synth : NULL;
+}
+
+Music *sound_music(void) {
+    return g_started ? &g_music : NULL;
 }
 
 void sound_set_output(void (*feed)(void)) {

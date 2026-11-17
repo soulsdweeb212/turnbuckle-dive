@@ -7,7 +7,8 @@
  * - the pan: all to the left leaves the right silent, and the middle gives both sides the same;
  * - the reverb: a sound sent all to it comes out the same on both sides, and fuller once its delays have gone by (its
  *   all-pass sections let a little through at once);
- * - a player asking to be called every millisecond is called 1000 times in a second of output.
+ * - a player asking to be called every 16666 microseconds (the music player, 480 samples) is called 60 times in a
+ *   second of output.
  * Without the ROM it reports the test as skipped (77). */
 #include <math.h>
 #include <stdio.h>
@@ -81,8 +82,9 @@ static void check_exact(const Rom *rom, const SoundWave *wave) {
     synth_voice_start(synth, 0, wave, 1.0f, 32767, 0, 0, 0);
     out = play(synth, (int)n, &frames);
     for (i = 0; i < (uint32_t)frames; i++) {
-        /* Full volume, all to the left and dry is the sample times (32767 / 32768) cubed: up to 3 less. */
-        if (abs(out[2 * i] - decoded[i]) > 3 || out[2 * i + 1] != 0) {
+        /* Full volume (its square, 32766), all to the left and dry is the sample times 32766 / 32768 and (32767 /
+         * 32768) squared: up to 4 less. */
+        if (abs(out[2 * i] - decoded[i]) > 4 || out[2 * i + 1] != 0) {
             bad++;
         }
     }
@@ -105,7 +107,7 @@ static void check_loop(const Rom *rom, const SoundWave *wave) {
     out = play(synth, (int)(wave->loop_end + 2 * length), &frames);
     CHECK(frames == (int)(wave->loop_end + 2 * length), "a looping sample stopped after %d samples", frames);
     for (i = wave->loop_end; i < (uint32_t)frames; i++) {
-        if (abs(out[2 * i] - decoded[wave->loop_start + (i - wave->loop_end) % length]) > 3) {
+        if (abs(out[2 * i] - decoded[wave->loop_start + (i - wave->loop_end) % length]) > 4) {
             bad++;
         }
     }
@@ -188,10 +190,10 @@ static void check_reverb(const SoundWave *wave) {
 
 static int g_calls;
 
-static int32_t every_millisecond(void *context) {
+static int32_t every_frame(void *context) {
     (void)context;
     g_calls++;
-    return 1000;
+    return 16666;
 }
 
 static void check_player(void) {
@@ -199,11 +201,11 @@ static void check_player(void) {
     int16_t *out = malloc(SYNTH_RATE * 2 * sizeof(int16_t));
 
     g_calls = 0;
-    synth_set_player(synth, every_millisecond, NULL);
+    synth_set_player(synth, every_frame, NULL);
     synth_render(synth, out, SYNTH_RATE);
     synth_set_player(synth, NULL, NULL);
-    /* Calls run a sub-frame ahead, so up to one sub-frame's worth (6.4 ms) more than a second's. */
-    CHECK(g_calls >= 1000 && g_calls <= 1007, "player: called %d times in a second, expected 1000", g_calls);
+    /* Each call's time is rounded to whole samples (480), and calls run up to a sub-frame ahead, so one more may come. */
+    CHECK(g_calls >= 60 && g_calls <= 61, "player: called %d times in a second, expected 60", g_calls);
     free(out);
 }
 

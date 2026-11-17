@@ -10,7 +10,7 @@
  * read. So a game function that waits for such a message always finds it in its queue. A wait on an empty queue that
  * nothing will ever fill stops the program with a message, instead of hanging.
  *
- * Sound is not ported yet: the libmus functions do nothing and report that nothing is playing. */
+ * Sound: the libmus functions go to the port's music player (src/audio/music.c). */
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -605,7 +605,7 @@ void osScAddClient(void *sc, void *client, uint32_t queue) {
 }
 
 /* The render thread and the audio thread are created but never started: on PC the game's thread does their part
- * through port_present, and sound is not ported yet. */
+ * through port_present (the sound through src/audio/sound.h). */
 void osCreateThread(void *thread, int32_t id, void (*entry)(void *), void *arg, void *stack, int32_t pri) {
     (void)thread;
     (void)id;
@@ -645,69 +645,87 @@ void osWritebackDCache(void *p, int32_t size) {
 void osWritebackDCacheAll(void) {
 }
 
-/* ---- Music and sound effects (libmus): not ported yet ----
- * Nothing plays: a song or an effect gets handle 0, and every question about what plays answers 0 (nothing). */
+/* ---- Music and sound effects (libmus) ----
+ * The port's music player (src/audio/music.c) does what the N64's library does. Without sound (no window, or a scripted
+ * or replayed run, src/main.c) nothing plays: a song or an effect gets handle 0, and every question about what plays
+ * answers 0 (nothing), so such runs go the same every time. The game passes the effects' sample bank to the effect
+ * functions; the player knows it already. */
+
+/* The game loads every song into one buffer of this size (D_800487F0) before it starts it. */
+#define SONG_BUFFER 0x8000
+
 uint32_t MusStartSong(void *song) {
-    (void)song;
-    return 0;
+    Music *music = sound_music();
+
+    return music != NULL ? music_start_song(music, song, SONG_BUFFER) : 0;
 }
 
 void MusStop(int32_t flags, int32_t speed) {
-    (void)flags;
-    (void)speed;
+    Music *music = sound_music();
+
+    if (music != NULL) {
+        music_stop(music, flags, speed);
+    }
 }
 
 int32_t MusAsk(int32_t flags) {
-    (void)flags;
-    return 0;
+    Music *music = sound_music();
+
+    return music != NULL ? music_ask(music, flags) : 0;
 }
 
 void MusSetMasterVolume(int32_t flags, int32_t volume) {
-    (void)flags;
-    (void)volume;
+    Music *music = sound_music();
+
+    if (music != NULL) {
+        music_set_master_volume(music, flags, volume);
+    }
 }
 
 uint32_t MusBankStartEffect(void *bank, int32_t number) {
+    Music *music = sound_music();
+
     (void)bank;
-    (void)number;
-    return 0;
+    return music != NULL ? music_start_effect(music, number, 128, 128, 0, -1) : 0;
 }
 
 uint32_t MusBankStartEffect2(void *bank, int32_t number, int32_t volume, int32_t pan, int32_t restart, int32_t pri) {
+    Music *music = sound_music();
+
     (void)bank;
-    (void)number;
-    (void)volume;
-    (void)pan;
-    (void)restart;
-    (void)pri;
-    return 0;
+    return music != NULL ? music_start_effect(music, number, volume, pan, restart, pri) : 0;
 }
 
 int32_t MusHandleAsk(uint32_t handle) {
-    (void)handle;
-    return 0;
+    Music *music = sound_music();
+
+    return music != NULL ? music_handle_ask(music, handle) : 0;
 }
 
 int32_t MusHandleStop(uint32_t handle, int32_t speed) {
-    (void)handle;
-    (void)speed;
-    return 0;
+    Music *music = sound_music();
+
+    return music != NULL ? music_handle_stop(music, handle, speed) : 0;
 }
 
 int32_t MusHandleSetReverb(uint32_t handle, int32_t reverb) {
-    (void)handle;
-    (void)reverb;
-    return 0;
+    Music *music = sound_music();
+
+    return music != NULL ? music_handle_set_reverb(music, handle, reverb) : 0;
 }
 
 int32_t MusHandleSetVolume(uint32_t handle, int32_t volume) {
-    (void)handle;
-    (void)volume;
-    return 0;
+    Music *music = sound_music();
+
+    return music != NULL ? music_handle_set_volume(music, handle, volume) : 0;
 }
 
-/* An audio library setting, the N64's D_80060500, which func_8000333C sets from its argument: nothing plays yet, so
- * nothing reads it. */
+/* The N64's D_80060500, which func_8000333C sets from the options' sound setting: while it is set, the pans the player
+ * sends are centred. The player clears it at the end of each of its frames, as the N64's does. */
 void func_8001613C(int32_t mode) {
-    (void)mode;
+    Music *music = sound_music();
+
+    if (music != NULL) {
+        music_set_mono(music, mode);
+    }
 }

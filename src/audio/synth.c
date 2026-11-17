@@ -102,21 +102,45 @@ static float stream_next(Synth *synth, SynthVoice *v) {
     return v->frame[v->position++ % 16];
 }
 
-void synth_voice_start(Synth *synth, int voice, const SoundWave *wave, float pitch, int16_t volume, int pan, int fxmix,
-                       int32_t ramp_us) {
+void synth_voice_play(Synth *synth, int voice, const SoundWave *wave) {
     SynthVoice *v = voice_at(synth, voice);
+    SynthVoice keep;
 
     if (v == NULL || wave == NULL || wave->rom == 0 || wave->rom > synth->rom_size ||
         wave->length > synth->rom_size - wave->rom) {
         return;
     }
+    /* The stream starts again; the settings carry on. */
+    keep = *v;
     memset(v, 0, sizeof(*v));
     v->wave = wave;
     v->frame_number = 0xFFFFFFFFu;
+    v->pitch = keep.pitch;
+    v->volume = keep.volume;
+    v->volume_target = keep.volume_target;
+    v->volume_step = keep.volume_step;
+    v->ramp = keep.ramp;
+    v->pan = keep.pan;
+    v->fxmix = keep.fxmix;
     /* The resampler starts with the first sample under it and the next two ahead. */
     v->history[1] = stream_next(synth, v);
     v->history[2] = stream_next(synth, v);
     v->history[3] = stream_next(synth, v);
+}
+
+void synth_voice_start(Synth *synth, int voice, const SoundWave *wave, float pitch, int16_t volume, int pan, int fxmix,
+                       int32_t ramp_us) {
+    SynthVoice *v = voice_at(synth, voice);
+
+    if (v == NULL) {
+        return;
+    }
+    v->volume = 0.0f;
+    v->ramp = 0;
+    synth_voice_play(synth, voice, wave);
+    if (v->wave != wave) {
+        return;
+    }
     synth_voice_set_pitch(synth, voice, pitch);
     synth_voice_set_pan(synth, voice, pan);
     synth_voice_set_fxmix(synth, voice, fxmix);
@@ -146,7 +170,9 @@ void synth_voice_set_volume(Synth *synth, int voice, int16_t volume, int32_t ram
     if (v == NULL) {
         return;
     }
-    v->volume_target = volume < 0 ? 0.0f : (float)volume;
+    /* The mixer's gain is the volume squared (n_audio's envelope mixer: volume x volume / 32768), so that volumes
+     * from the music player fall off as the N64's do. */
+    v->volume_target = volume <= 0 ? 0.0f : (float)((int32_t)volume * volume / 32768);
     samples = ramp_us <= 0 ? 0 : (int32_t)((int64_t)ramp_us * SYNTH_RATE / 1000000);
     if (samples <= 0) {
         v->volume = v->volume_target;
@@ -302,7 +328,8 @@ static void make_subframe(Synth *synth) {
     while (synth->player != NULL && synth->player_due < SYNTH_SUBFRAME) {
         int32_t us = synth->player(synth->player_context);
 
-        synth->player_due += us > 0 ? (double)us * SYNTH_RATE / 1000000.0 : SYNTH_SUBFRAME;
+        /* The time to the next call, rounded to whole samples as n_audio does (16666 us is 480 samples). */
+        synth->player_due += us > 0 ? (int32_t)((int64_t)us * SYNTH_RATE / 1000000.0 + 0.5) : SYNTH_SUBFRAME;
     }
     synth->player_due -= SYNTH_SUBFRAME;
 

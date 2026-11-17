@@ -6,6 +6,9 @@
 #include "game.h"
 #include "audio/sound.h"
 #include "audio/sound_dump.h"
+#ifdef TD_GAME_CODE
+#include "audio/music_dump.h"
+#endif
 #include "rom.h"
 #ifdef TD_GAME_CODE
 #include "resources.h"
@@ -111,6 +114,7 @@ int main(int argc, char **argv) {
     unsigned dump_frame = 0;
     const char *capture_dir = NULL;
     const char *sound_dump_dir = NULL; /* --sound-dump DIR: write the sound banks' samples as WAV files and stop */
+    const char *music_dump_dir = NULL; /* --music-dump DIR: write the songs, played by the music player, and stop */
     unsigned capture_frames[64];
     unsigned capture_count = 0;
 #ifdef TD_DEV_MATCH
@@ -137,6 +141,12 @@ int main(int argc, char **argv) {
 #endif
         } else if (strcmp(argv[i], "--sound-dump") == 0 && i + 1 < argc) {
             sound_dump_dir = argv[++i];
+        } else if (strcmp(argv[i], "--music-dump") == 0 && i + 1 < argc) {
+            music_dump_dir = argv[++i];
+#ifndef TD_GAME_CODE
+            fprintf(stderr, "--music-dump: this build has no game code (README.md, Building, says how to build it)\n");
+            return 1;
+#endif
         } else if (strcmp(argv[i], "--dev-boot") == 0 && i + 1 < argc) {
             dev_boot = (unsigned)strtoul(argv[++i], NULL, 0);
 #ifndef TD_DEV_MATCH
@@ -207,7 +217,7 @@ int main(int argc, char **argv) {
             match_options.seed = (uint32_t)strtoul(argv[++i], NULL, 0);
 #endif
         } else if (strncmp(argv[i], "--", 2) == 0 || rom_arg != NULL) {
-            fprintf(stderr, "Usage: turnbuckle-dive [--res ID | --sound-dump DIR | --dev-boot FRAMES [--no-splash] [--pad-script FILE] [--record-pads FILE] [--replay-pads FILE] [--no-idle-randoms] | --dev-match [--headless] [--wr-log FILE] [--res-log FILE] [--seed N] "
+            fprintf(stderr, "Usage: turnbuckle-dive [--res ID | --sound-dump DIR | --music-dump DIR | --dev-boot FRAMES [--no-splash] [--pad-script FILE] [--record-pads FILE] [--replay-pads FILE] [--no-idle-randoms] | --dev-match [--headless] [--wr-log FILE] [--res-log FILE] [--seed N] "
                             "[--no-watchdog] "
                             "[--hide-group N]... [--screenshot FILE [--screenshot-frame N | --screenshot-every N]] [--dump-frame N FILE] [--no-idle-randoms] [--capture-match-frames N,N,... DIR] [--players 0|1] [--time-limit MINUTES] [--matches N] [--record-pads FILE] [--replay-pads FILE] [--pad-script FILE] [--pad-bot SEED]] [ROM]\n");
             return 1;
@@ -239,6 +249,14 @@ int main(int argc, char **argv) {
         return 2;
     }
     printf("Status: supported ROM\n");
+#ifdef TD_GAME_CODE
+    if (music_dump_dir != NULL) {
+        int result = music_dump(&rom, music_dump_dir, 90);
+
+        rom_free(&rom);
+        return result;
+    }
+#endif
     if (sound_dump_dir != NULL) {
         int result = sound_dump(rom.data, rom.size, sound_dump_dir);
 
@@ -255,8 +273,11 @@ int main(int argc, char **argv) {
         if (!headless && dev_inspector_start() == 0) {
             on_frame = dev_inspector_frame;
             dev_inspector_frames_from(dev_boot_frames);
-            /* The sound: the synthesizer, heard through the window's sound device. */
-            if (sound_start(rom.data, rom.size) == 0) {
+            /* The sound: the music player and the synthesizer, heard through the window's sound device. Not in a
+             * scripted or replayed run: the game asks whether its music still plays before it starts the next song,
+             * and the answer would hang on the sound device's timing, so such a run would not go the same each time. */
+            if (match_options.pad_script == NULL && match_options.replay_pads == NULL &&
+                sound_start(rom.data, rom.size) == 0) {
                 dev_inspector_open_sound();
             }
             /* The game's saves in a file beside the program, as a cartridge keeps them; a scripted or replayed run
