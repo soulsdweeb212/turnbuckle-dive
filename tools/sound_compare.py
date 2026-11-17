@@ -6,6 +6,9 @@ The recording DIR is made in Project64 by the comparison script (td_sound.js): c
 
 - the music player's calls to the synthesizer, side by side: how many match, and the first that differ, with the
   frame, the voice and both lines;
+- for a match's recording (td_sound.js with td_lockstep.js, the port's --dev-match --sound-lockstep DIR), the game's
+  own calls to its music library in the match, and the answers to its questions, side by side; a song is compared by
+  its bytes (song_F.bin with port_song_F.bin);
 - the sound: the two recordings lined up (the offset that matches them best), and for each stretch of time the
   loudness of each and how alike they are (the correlation, 1.0 the same), so that a difference in level, timing or
   tone shows where it is.
@@ -55,6 +58,50 @@ def compare_calls(directory, show):
                 shown += 1
     print(f'synthesizer calls: {same} of {total} the same')
     return same == total
+
+
+def read_game_calls(path):
+    """The match's 'a' and 'r' lines (after the 'm' line), as (frame, text); None without an 'm' line."""
+    calls, match = [], False
+    with open(path) as f:
+        for line in f:
+            parts = line.split()
+            if not parts:
+                continue
+            if parts[0] == 'm':
+                match = True
+            elif match and parts[0] in ('a', 'r'):
+                if parts[0] == 'a' and parts[2] == 'MusStartSong':
+                    parts = parts[:3]  # the song is compared by its bytes
+                calls.append((int(parts[1]), ' '.join([parts[0]] + parts[2:])))
+    return calls if match else None
+
+
+def same_song(directory, frame):
+    try:
+        with open(os.path.join(directory, f'song_{frame}.bin'), 'rb') as a, \
+                open(os.path.join(directory, f'port_song_{frame}.bin'), 'rb') as b:
+            return a.read() == b.read()
+    except OSError:
+        return False
+
+
+def compare_game_calls(directory, show):
+    original = read_game_calls(os.path.join(directory, 'calls.txt'))
+    port = read_game_calls(os.path.join(directory, 'port_calls.txt'))
+    if original is None or port is None:
+        return
+    same = shown = 0
+    for i in range(max(len(original), len(port))):
+        x = original[i] if i < len(original) else None
+        y = port[i] if i < len(port) else None
+        if x == y and (not x[1].endswith('MusStartSong') or same_song(directory, x[0])):
+            same += 1
+        elif shown < show:
+            print(f'  call {i}: original {x}, port {y}')
+            shown += 1
+    print(f'the game\'s calls and answers in the match: {same} of {max(len(original), len(port))} the same '
+          f'(at the same player frames; songs by their bytes)')
 
 
 def read_raw(path, big_endian):
@@ -139,6 +186,7 @@ def main():
     parser.add_argument('--wav', action='store_true', help='write original.wav and port.wav, lined up')
     parser.add_argument('--show', type=int, default=20, help='how many differing calls to print')
     args = parser.parse_args()
+    compare_game_calls(args.dir, args.show)
     compare_calls(args.dir, args.show)
     compare_audio(args.dir, args.wav)
 

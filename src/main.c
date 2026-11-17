@@ -117,6 +117,7 @@ int main(int argc, char **argv) {
     const char *sound_dump_dir = NULL; /* --sound-dump DIR: write the sound banks' samples as WAV files and stop */
     const char *music_dump_dir = NULL; /* --music-dump DIR: write the songs, played by the music player, and stop */
     const char *sound_replay_dir = NULL; /* --sound-replay DIR: replay a recording of the original's sound calls */
+    const char *sound_lockstep_dir = NULL; /* --sound-lockstep DIR: the developer match's sound, in step with a recording */
     unsigned capture_frames[64];
     unsigned capture_count = 0;
 #ifdef TD_DEV_MATCH
@@ -145,6 +146,8 @@ int main(int argc, char **argv) {
             sound_dump_dir = argv[++i];
         } else if (strcmp(argv[i], "--sound-replay") == 0 && i + 1 < argc) {
             sound_replay_dir = argv[++i];
+        } else if (strcmp(argv[i], "--sound-lockstep") == 0 && i + 1 < argc) {
+            sound_lockstep_dir = argv[++i];
         } else if (strcmp(argv[i], "--music-dump") == 0 && i + 1 < argc) {
             music_dump_dir = argv[++i];
 #ifndef TD_GAME_CODE
@@ -221,7 +224,7 @@ int main(int argc, char **argv) {
             match_options.seed = (uint32_t)strtoul(argv[++i], NULL, 0);
 #endif
         } else if (strncmp(argv[i], "--", 2) == 0 || rom_arg != NULL) {
-            fprintf(stderr, "Usage: turnbuckle-dive [--res ID | --sound-dump DIR | --music-dump DIR | --sound-replay DIR | --dev-boot FRAMES [--no-splash] [--pad-script FILE] [--record-pads FILE] [--replay-pads FILE] [--no-idle-randoms] | --dev-match [--headless] [--wr-log FILE] [--res-log FILE] [--seed N] "
+            fprintf(stderr, "Usage: turnbuckle-dive [--res ID | --sound-dump DIR | --music-dump DIR | --sound-replay DIR | --dev-boot FRAMES [--no-splash] [--pad-script FILE] [--record-pads FILE] [--replay-pads FILE] [--no-idle-randoms] | --dev-match [--headless] [--sound-lockstep DIR] [--wr-log FILE] [--res-log FILE] [--seed N] "
                             "[--no-watchdog] "
                             "[--hide-group N]... [--screenshot FILE [--screenshot-frame N | --screenshot-every N]] [--dump-frame N FILE] [--no-idle-randoms] [--capture-match-frames N,N,... DIR] [--players 0|1] [--time-limit MINUTES] [--matches N] [--record-pads FILE] [--replay-pads FILE] [--pad-script FILE] [--pad-bot SEED]] [ROM]\n");
             return 1;
@@ -349,7 +352,15 @@ int main(int argc, char **argv) {
             }
         }
 #endif
+        /* The match's sound in step with a recording of the original's (src/audio/sound_replay.h). */
+        if (sound_lockstep_dir != NULL && sound_lockstep_start(rom.data, rom.size, sound_lockstep_dir) != 0) {
+            rom_free(&rom);
+            return 1;
+        }
         result = dev_match_run(&rom, &match_options);
+        if (sound_lockstep_dir != NULL) {
+            sound_lockstep_end();
+        }
 #ifdef TD_INSPECTOR
         dev_inspector_stop();
 #endif
@@ -358,6 +369,7 @@ int main(int argc, char **argv) {
     }
 #endif
     (void)dev_match;
+    (void)sound_lockstep_dir;
     (void)dev_boot;
     (void)headless;
     (void)no_splash;

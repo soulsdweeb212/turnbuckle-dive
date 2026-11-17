@@ -154,3 +154,27 @@ void sound_present(void) {
         g_feed();
     }
 }
+
+static const SoundWatch *g_watch;
+
+void sound_watch(const SoundWatch *watch) {
+    g_watch = watch;
+}
+
+void sound_watch_call(const char *name, int count, const int32_t *args, const void *song) {
+    if (g_watch != NULL && g_watch->call != NULL) {
+        g_watch->call(g_watch->context, name, count, args, song);
+    }
+}
+
+void sound_watch_answer(int32_t value) {
+    if (g_watch != NULL && g_watch->answer != NULL) {
+        g_watch->answer(g_watch->context, value);
+    }
+}
+
+void sound_watch_hand_off(void) {
+    if (g_watch != NULL && g_watch->hand_off != NULL) {
+        g_watch->hand_off(g_watch->context);
+    }
+}

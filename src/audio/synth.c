@@ -540,6 +540,10 @@ static void make_subframe(Synth *synth) {
     synth->time += SYNTH_SUBFRAME;
 }
 
+int synth_player_next(const Synth *synth) {
+    return synth->out_left == 0 && synth->player != NULL && synth->player_due < SYNTH_SUBFRAME / 2;
+}
+
 void synth_render(Synth *synth, int16_t *out, int frames) {
     while (frames > 0) {
         int n;

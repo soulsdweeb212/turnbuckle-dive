@@ -203,6 +203,9 @@ void port_present(int32_t kind) {
 
     sram_flush();
     sound_present(); /* the sound device is handed what it wants (src/audio/sound.h) */
+    if (kind == GAME_PRESENT_FRAME) {
+        sound_watch_hand_off();
+    }
 
     if (kind == GAME_PRESENT_FRAME) {
         static const FrameCmd end = { (uintptr_t)G_ENDDL_OP << 24, 0 };
@@ -649,7 +652,8 @@ void osWritebackDCacheAll(void) {
  * The port's music player (src/audio/music.c) does what the N64's library does. Without sound (no window, or a scripted
  * or replayed run, src/main.c) nothing plays: a song or an effect gets handle 0, and every question about what plays
  * answers 0 (nothing), so such runs go the same every time. The game passes the effects' sample bank to the effect
- * functions; the player knows it already. */
+ * functions; the player knows it already. Each call is shown to whoever watches them (sound_watch_call, the
+ * comparison's --sound-lockstep) before it is made, and each question's answer after. */
 
 /* The game loads every song into one buffer of this size (D_800487F0) before it starts it. */
 #define SONG_BUFFER 0x8000
@@ -657,12 +661,15 @@ void osWritebackDCacheAll(void) {
 uint32_t MusStartSong(void *song) {
     Music *music = sound_music();
 
+    sound_watch_call("MusStartSong", 0, NULL, song);
     return music != NULL ? music_start_song(music, song, SONG_BUFFER) : 0;
 }
 
 void MusStop(int32_t flags, int32_t speed) {
     Music *music = sound_music();
+    int32_t args[2] = { flags, speed };
 
+    sound_watch_call("MusStop", 2, args, NULL);
     if (music != NULL) {
         music_stop(music, flags, speed);
     }
@@ -670,13 +677,19 @@ void MusStop(int32_t flags, int32_t speed) {
 
 int32_t MusAsk(int32_t flags) {
     Music *music = sound_music();
+    int32_t answer;
 
-    return music != NULL ? music_ask(music, flags) : 0;
+    sound_watch_call("MusAsk", 1, &flags, NULL);
+    answer = music != NULL ? music_ask(music, flags) : 0;
+    sound_watch_answer(answer);
+    return answer;
 }
 
 void MusSetMasterVolume(int32_t flags, int32_t volume) {
     Music *music = sound_music();
+    int32_t args[2] = { flags, volume };
 
+    sound_watch_call("MusSetMasterVolume", 2, args, NULL);
     if (music != NULL) {
         music_set_master_volume(music, flags, volume);
     }
@@ -686,37 +699,51 @@ uint32_t MusBankStartEffect(void *bank, int32_t number) {
     Music *music = sound_music();
 
     (void)bank;
+    sound_watch_call("MusBankStartEffect", 1, &number, NULL);
     return music != NULL ? music_start_effect(music, number, 128, 128, 0, -1) : 0;
 }
 
 uint32_t MusBankStartEffect2(void *bank, int32_t number, int32_t volume, int32_t pan, int32_t restart, int32_t pri) {
     Music *music = sound_music();
 
+    int32_t args[5] = { number, volume, pan, restart, pri };
+
     (void)bank;
+    sound_watch_call("MusBankStartEffect2", 5, args, NULL);
     return music != NULL ? music_start_effect(music, number, volume, pan, restart, pri) : 0;
 }
 
 int32_t MusHandleAsk(uint32_t handle) {
     Music *music = sound_music();
+    int32_t arg = (int32_t)handle, answer;
 
-    return music != NULL ? music_handle_ask(music, handle) : 0;
+    sound_watch_call("MusHandleAsk", 1, &arg, NULL);
+    answer = music != NULL ? music_handle_ask(music, handle) : 0;
+    sound_watch_answer(answer);
+    return answer;
 }
 
 int32_t MusHandleStop(uint32_t handle, int32_t speed) {
     Music *music = sound_music();
+    int32_t args[2] = { (int32_t)handle, speed };
 
+    sound_watch_call("MusHandleStop", 2, args, NULL);
     return music != NULL ? music_handle_stop(music, handle, speed) : 0;
 }
 
 int32_t MusHandleSetReverb(uint32_t handle, int32_t reverb) {
     Music *music = sound_music();
+    int32_t args[2] = { (int32_t)handle, reverb };
 
+    sound_watch_call("MusHandleSetReverb", 2, args, NULL);
     return music != NULL ? music_handle_set_reverb(music, handle, reverb) : 0;
 }
 
 int32_t MusHandleSetVolume(uint32_t handle, int32_t volume) {
     Music *music = sound_music();
+    int32_t args[2] = { (int32_t)handle, volume };
 
+    sound_watch_call("MusHandleSetVolume", 2, args, NULL);
     return music != NULL ? music_handle_set_volume(music, handle, volume) : 0;
 }
 
@@ -725,6 +752,7 @@ int32_t MusHandleSetVolume(uint32_t handle, int32_t volume) {
 void func_8001613C(int32_t mode) {
     Music *music = sound_music();
 
+    sound_watch_call("mono", 1, &mode, NULL);
     if (music != NULL) {
         music_set_mono(music, mode);
     }

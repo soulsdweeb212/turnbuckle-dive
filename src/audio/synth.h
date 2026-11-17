@@ -185,6 +185,9 @@ int synth_voice_playing(const Synth *synth, int voice);
 
 /* Makes `frames` stereo samples (left, right) into out. */
 void synth_render(Synth *synth, int16_t *out, int frames);
+/* Whether the next sub-frame synth_render makes starts with a call to the player (none of the last one's output is
+ * left). */
+int synth_player_next(const Synth *synth);
 
 #ifdef __cplusplus
 }

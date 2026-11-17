@@ -33,6 +33,22 @@ Music *sound_music(void);
 void sound_set_output(void (*feed)(void));
 void sound_present(void);
 
+/* Someone watching the game's calls to its music library (src/game_sdk.c), as --sound-lockstep does
+ * (src/audio/sound_replay.c): `call` before each call, with the library's name for it and its arguments (for
+ * MusStartSong, the song); `answer` after each question (MusAsk, MusHandleAsk) with the answer; `hand_off` at each frame
+ * the game hands over (port_present's GAME_PRESENT_FRAME). NULL stops watching. */
+typedef struct {
+    void (*call)(void *context, const char *name, int count, const int32_t *args, const void *song);
+    void (*answer)(void *context, int32_t value);
+    void (*hand_off)(void *context);
+    void *context;
+} SoundWatch;
+
+void sound_watch(const SoundWatch *watch);
+void sound_watch_call(const char *name, int count, const int32_t *args, const void *song);
+void sound_watch_answer(int32_t value);
+void sound_watch_hand_off(void);
+
 /* The game's reverb, read from the ROM: the big room (fxType 2), from its audio library's parameter table. Returns 0,
  * or -1 when the table is not one the synthesizer can run. Used by sound_start; here for the tests. */
 int sound_read_reverb(const uint8_t *rom, size_t rom_size, SynthReverb *reverb);

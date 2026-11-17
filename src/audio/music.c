@@ -50,23 +50,28 @@ static uint16_t next_length(MusicChannel *c, const uint8_t **p, int *bad) {
 /* ---- The pieces ---- */
 
 float music_power_of_2(float x) {
-    /* e to the power x ln 2, its series to the sixth power, in double with x's powers in single precision; for a
-     * negative x, 1 over the value at -x. */
+    /* e to the power x ln 2, its series to the sixth power, summed in double from the lowest power up; for a negative x,
+     * 1 over the value at -x, also in double. x's powers are single precision, made as the N64's are: the fourth as
+     * the square's square, the fifth and sixth from the fourth (each way rounds differently). */
     static const double k[6] = { 0.693147180559945, 0.240226506959101, 0.0555041086648216, 0.00961812910762848,
                                  0.00133335581464284, 0.000154035303933816 };
-    float a = x < 0.0f ? -x : x;
-    float power = a;
+    float power[6];
     double sum = 1.0;
     int i;
 
     if (x == 0.0f) {
         return 1.0f;
     }
+    power[0] = x < 0.0f ? -x : x;
+    power[1] = power[0] * power[0];
+    power[2] = power[1] * power[0];
+    power[3] = power[1] * power[1];
+    power[4] = power[3] * power[0];
+    power[5] = power[3] * power[1];
     for (i = 0; i < 6; i++) {
-        sum += k[i] * power;
-        power *= a;
+        sum += k[i] * power[i];
     }
-    return x < 0.0f ? (float)(1.0 / (float)sum) : (float)sum;
+    return x < 0.0f ? (float)(1.0 / sum) : (float)sum;
 }
 
 /* A random number between about -range/2 and +range/2, from a seed shared by every channel: each call shifts it left
@@ -1039,7 +1044,7 @@ static void send_pitch(Music *music, int index, float delta) {
         }
         c->glide_at = pitch;
     }
-    sum = pitch + delta + c->bend;
+    sum = pitch + (delta + c->bend); /* the offset and the bend first, then the note, as the N64 adds them */
     if (sum != c->last_pitch) {
         float ratio;
 

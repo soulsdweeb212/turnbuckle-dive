@@ -617,6 +617,46 @@ To run it: put `td_sound.js` in Project64's `Scripts` folder, add `Autorun Scrip
 `Config/Project64.cfg` (keep a copy of the file first and put it back afterwards), start Project64 with the ROM, wait
 for `done.txt`, and close Project64. The recordings are made from your ROM: keep them out of the repository.
 
+#### A match's sound
+
+The boot shows the player and the synthesizer; a match also shows the game's own calls (crowd, hits, the song, the
+volumes it sets as the match goes) and the answers it gets when it asks whether something still plays. The match is
+the developer match that is checked against the original below ("Comparing with the original game"), with the same
+pad file, and the sound script records it alongside the match script:
+
+1. In Project64's `Scripts` folder, make one script of the two, each wrapped in a function of its own so their names
+   stay apart (Project64 runs one autorun script):
+
+   ```
+   S=<the decompilation>/notes/gameplay_route/work/reference/out/pj64/Scripts
+   { echo '(function () {'; cat $S/td_lockstep.js; echo '})();'
+     echo '(function () {'; cat $S/td_sound.js; echo '})();'; } > /mnt/c/n64/pj64/Scripts/td_match_sound.js
+   ```
+
+   Put `{"match": true}` in `C:/n64/out/sound/config.json` and the match's `config.json` and pad file in
+   `C:/n64/out/lockstep/` as below, autorun `td_match_sound.js`, start Project64 with the ROM and wait for
+   `C:/n64/out/sound/done.txt`. The sound script then also writes when the match begins (`m`), each frame hand-off in
+   the match with the player frame it came at (`h`), and each answer to the game's questions (`r`), and stops 50
+   hand-offs after the match ends.
+2. The port plays the same match with `--sound-lockstep`:
+
+   ```
+   ./build/debug/turnbuckle-dive --dev-match --headless --no-idle-randoms --players 1 --replay-pads /mnt/c/n64/out/lockstep/lock_bot4.pads --time-limit 0 --sound-lockstep /mnt/c/n64/out/sound
+   python3 tools/sound_compare.py /mnt/c/n64/out/sound --wav
+   ```
+
+On the N64 the music player runs on its own, once a retrace, whatever the game is doing; on PC it runs when the sound
+is made. With `--sound-lockstep` the port makes its sound on demand instead (`src/audio/sound_replay.c`): before each
+of the game's calls to its music library, up to the player frame at which the original made the same call, and at
+each frame hand-off, up to the original's. The port's own game, not the recording, makes the calls, so the comparison
+shows whether they are the same calls, at the same moments, with the same answers. The developer match sets the
+master volumes at its start where the original's boot did; those calls stand in for the boot's (`p` lines).
+
+On the bot match (3,603 hand-offs, two minutes): the game's 230 calls and 54 answers in the match are the same, at the
+same player frames, and its song is the same to the byte; all 16,937 synthesizer calls are the same; the sound is
+alike to 1.000 throughout, 0.0 dB apart. What is left is the microcode's rounding again: on average 9 steps in 32768,
+most on the song's drum hits.
+
 ### Comparing with the original game
 
 The developer match can be checked against the original game, run in the Project64 emulator on Windows. The emulator
