@@ -1,6 +1,7 @@
 /* The synthesizer (src/audio/synth.c), with the game's sound banks, pan gains and reverb from the ROM
  * (src/audio/sound.c). It checks:
- * - a voice at pitch 1, all to the left and dry, gives the sample as decoded, scaled by its volume;
+ * - a voice at pitch 1, all to the left and dry, gives the sample as decoded through the resampler's filter (which
+ *   mixes in each sample's neighbours a little even at pitch 1), scaled by its volume;
  * - a looping sample goes round its loop with no seam: after the loop's end, the output is the sample from the loop's
  *   start again;
  * - at pitch 0.5 a sample lasts twice as long, and at 2 half as long;
@@ -34,13 +35,15 @@ static Synth *fresh(void) {
     Synth *synth = sound_synth();
     SynthReverb reverb;
     int16_t eqpower[128];
+    int16_t resample[256];
     const uint8_t *rom = synth->rom;
     size_t size = synth->rom_size;
 
     memcpy(eqpower, synth->eqpower, sizeof(eqpower));
+    memcpy(resample, synth->resample, sizeof(resample));
     reverb = synth->reverb;
     synth_free(synth);
-    synth_init(synth, rom, size, eqpower, &reverb);
+    synth_init(synth, rom, size, eqpower, resample, &reverb);
     return synth;
 }
 
@@ -70,6 +73,22 @@ static const SoundWave *first_wave(const SoundBank *bank, int looping) {
     return NULL;
 }
 
+/* What the resampler makes at pitch 1 from the samples it reads, seq[0..n): output i is the four samples before seq[i]
+ * through the filter's first row (the samples before the first are 0), so the sample is heard three samples late. */
+static int16_t filtered(const Synth *synth, const int16_t *seq, uint32_t n, uint32_t i) {
+    const int16_t *w = synth->resample[0];
+    int32_t x[4];
+    int k;
+
+    for (k = 0; k < 4; k++) {
+        int64_t j = (int64_t)i - 4 + k; /* the window trails the samples read by four */
+
+        x[k] = j >= 0 && j < (int64_t)n ? seq[j] : 0;
+    }
+    k = (x[0] * w[0] + x[1] * w[1] + x[2] * w[2] + x[3] * w[3]) >> 15;
+    return (int16_t)(k < -32768 ? -32768 : k > 32767 ? 32767 : k);
+}
+
 static void check_exact(const Rom *rom, const SoundWave *wave) {
     Synth *synth = fresh();
     uint32_t n = sound_wave_samples(wave);
@@ -84,7 +103,7 @@ static void check_exact(const Rom *rom, const SoundWave *wave) {
     for (i = 0; i < (uint32_t)frames; i++) {
         /* Full volume (its square, 32766), all to the left and dry is the sample times 32766 / 32768 and (32767 /
          * 32768) squared: up to 4 less. */
-        if (abs(out[2 * i] - decoded[i]) > 4 || out[2 * i + 1] != 0) {
+        if (abs(out[2 * i] - filtered(synth, decoded, n, i)) > 4 || out[2 * i + 1] != 0) {
             bad++;
         }
     }
@@ -97,22 +116,29 @@ static void check_loop(const Rom *rom, const SoundWave *wave) {
     Synth *synth = fresh();
     uint32_t n = sound_wave_samples(wave);
     uint32_t length = wave->loop_end - wave->loop_start;
+    uint32_t total = wave->loop_end + 2 * length;
     int16_t *decoded = malloc(n * sizeof(int16_t));
+    int16_t *seq = malloc((total + 3) * sizeof(int16_t));
     int16_t *out;
     int frames;
     uint32_t i, bad = 0;
 
     sound_wave_decode(wave, rom->data, rom->size, decoded);
+    /* What the voice reads: the sample to the loop's end, then the loop again and again. */
+    for (i = 0; i < total + 3; i++) {
+        seq[i] = i < wave->loop_end ? decoded[i] : decoded[wave->loop_start + (i - wave->loop_end) % length];
+    }
     synth_voice_start(synth, 0, wave, 1.0f, 32767, 0, 0, 0);
-    out = play(synth, (int)(wave->loop_end + 2 * length), &frames);
+    out = play(synth, (int)total, &frames);
     CHECK(frames == (int)(wave->loop_end + 2 * length), "a looping sample stopped after %d samples", frames);
     for (i = wave->loop_end; i < (uint32_t)frames; i++) {
-        if (abs(out[2 * i] - decoded[wave->loop_start + (i - wave->loop_end) % length]) > 4) {
+        if (abs(out[2 * i] - filtered(synth, seq, total + 3, i)) > 4) {
             bad++;
         }
     }
     CHECK(bad == 0, "loop: %u samples after the loop's end are not the loop's again", (unsigned)bad);
     free(out);
+    free(seq);
     free(decoded);
 }
 

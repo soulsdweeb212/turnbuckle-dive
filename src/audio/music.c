@@ -775,7 +775,7 @@ static void stream_ended(Music *music, int index) {
     c->data = NULL;
     if (c->sounding) {
         c->sounding = 0;
-        synth_voice_set_volume(music->synth, index, 0, 0);
+        synth_voice_set_volume(music->synth, index, 0, MUSIC_FRAME_US);
         synth_voice_stop(music->synth, index);
     }
 }

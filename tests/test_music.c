@@ -25,11 +25,9 @@ static int g_failed;
         }                                                                                                              \
     } while (0)
 
-/* One frame of the player and its sound (480 samples at 28800 Hz). */
+/* One frame of the player. (Rendering 480 samples would run the player once or twice, as the sub-frames fall.) */
 static void frame(void) {
-    static int16_t out[480 * 2];
-
-    synth_render(sound_synth(), out, 480);
+    music_frame(sound_music());
 }
 
 static void put32(uint8_t *p, uint32_t v) {

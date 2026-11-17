@@ -6,6 +6,7 @@
 #include "game.h"
 #include "audio/sound.h"
 #include "audio/sound_dump.h"
+#include "audio/sound_replay.h"
 #ifdef TD_GAME_CODE
 #include "audio/music_dump.h"
 #endif
@@ -115,6 +116,7 @@ int main(int argc, char **argv) {
     const char *capture_dir = NULL;
     const char *sound_dump_dir = NULL; /* --sound-dump DIR: write the sound banks' samples as WAV files and stop */
     const char *music_dump_dir = NULL; /* --music-dump DIR: write the songs, played by the music player, and stop */
+    const char *sound_replay_dir = NULL; /* --sound-replay DIR: replay a recording of the original's sound calls */
     unsigned capture_frames[64];
     unsigned capture_count = 0;
 #ifdef TD_DEV_MATCH
@@ -141,6 +143,8 @@ int main(int argc, char **argv) {
 #endif
         } else if (strcmp(argv[i], "--sound-dump") == 0 && i + 1 < argc) {
             sound_dump_dir = argv[++i];
+        } else if (strcmp(argv[i], "--sound-replay") == 0 && i + 1 < argc) {
+            sound_replay_dir = argv[++i];
         } else if (strcmp(argv[i], "--music-dump") == 0 && i + 1 < argc) {
             music_dump_dir = argv[++i];
 #ifndef TD_GAME_CODE
@@ -217,7 +221,7 @@ int main(int argc, char **argv) {
             match_options.seed = (uint32_t)strtoul(argv[++i], NULL, 0);
 #endif
         } else if (strncmp(argv[i], "--", 2) == 0 || rom_arg != NULL) {
-            fprintf(stderr, "Usage: turnbuckle-dive [--res ID | --sound-dump DIR | --music-dump DIR | --dev-boot FRAMES [--no-splash] [--pad-script FILE] [--record-pads FILE] [--replay-pads FILE] [--no-idle-randoms] | --dev-match [--headless] [--wr-log FILE] [--res-log FILE] [--seed N] "
+            fprintf(stderr, "Usage: turnbuckle-dive [--res ID | --sound-dump DIR | --music-dump DIR | --sound-replay DIR | --dev-boot FRAMES [--no-splash] [--pad-script FILE] [--record-pads FILE] [--replay-pads FILE] [--no-idle-randoms] | --dev-match [--headless] [--wr-log FILE] [--res-log FILE] [--seed N] "
                             "[--no-watchdog] "
                             "[--hide-group N]... [--screenshot FILE [--screenshot-frame N | --screenshot-every N]] [--dump-frame N FILE] [--no-idle-randoms] [--capture-match-frames N,N,... DIR] [--players 0|1] [--time-limit MINUTES] [--matches N] [--record-pads FILE] [--replay-pads FILE] [--pad-script FILE] [--pad-bot SEED]] [ROM]\n");
             return 1;
@@ -257,6 +261,12 @@ int main(int argc, char **argv) {
         return result;
     }
 #endif
+    if (sound_replay_dir != NULL) {
+        int result = sound_replay(rom.data, rom.size, sound_replay_dir);
+
+        rom_free(&rom);
+        return result;
+    }
     if (sound_dump_dir != NULL) {
         int result = sound_dump(rom.data, rom.size, sound_dump_dir);
 

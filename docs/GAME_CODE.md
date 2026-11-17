@@ -176,19 +176,36 @@ rate of 28800 Hz, with `samples.txt` listing them; a sample has no pitch of its 
 each note's pitch), so the files are for checking the decoding by ear, not the music.
 
 The synthesizer (`src/audio/synth.c`) does on the CPU what the N64's audio library and its audio microcode do: 24
-voices, each streaming one sample from the ROM a frame at a time and round its loop, at a pitch (a four-point cubic
-curve reads between the samples), with a volume that moves to a new value over a given time, a pan and a reverb send.
-The pan and send gains are the game's own table, and the reverb is the game's "big room", both read from the ROM when
-sound starts (`src/audio/sound.c`): one delay line that the sound sent to the reverb is written into, read and written
-back at two places by each of four sections (two all-pass filters, one with output, and a comb with a low-pass filter
-feeding back into the start). It makes stereo sound at 28800 Hz in sub-frames of 184 samples, as the N64's library
-does, and calls the music player (when there is one) at the start of the sub-frame in which its time falls. At each
-game frame `port_present` hands the sound device as much as it wants (`src/audio/sound_output.cpp`, through
-LibUltraShip's audio player, opened at 28800 Hz). Where a loop starts, the sample keeps the decoded frame that holds the
-loop's start, so the stream goes on from inside that frame. The test `synth` checks it against the decoded samples:
-exact at pitch 1, no seam at a loop, the right length at other pitches, the pan, the reverb and the player's timing.
-The F1 menu's Debug, Sound Test window plays any sample at a note, volume, pan and reverb send. As on the N64, a
-voice's gain is its volume squared, and starting a sample on a voice keeps the voice's pitch, volume, pan and send.
+voices, each streaming one sample from the ROM a frame at a time and round its loop, at a pitch, with a volume, a pan
+and a reverb send. It follows the N64 closely, because the port's sound was compared with the original's, sample by
+sample ("Comparing the sound with the original", below), and each difference found was traced to what the N64 does:
+
+- Reading between samples: the microcode's four-point filter, whose 64 rows of weights are in the ROM. Its window
+  trails the samples read by four, so a sample is heard about three samples after it is read, and even at the
+  sample's own pitch it mixes in the neighbours a little, which softens the highest sounds.
+- Volume: the volume a voice is given is squared, and the left and right levels move to new values in straight lines,
+  a step every 8 samples, over a ramp of whole sub-frames (a frame's ramp, 480 samples, becomes 552). Changes reach a
+  voice in groups at sub-frame boundaries, and a change that follows another in the same group, or that comes at the
+  start of an audio frame, finds the levels already at their target: so a note whose pan or pitch changes with its
+  volume starts at once rather than fading in. Starting a sample keeps the voice's levels; stopping a voice sets its
+  level to almost nothing. (`SynthLevels` in `src/audio/synth.h` says it in full.)
+- Timing: a change is heard from the sub-frame boundary nearest to its time. The N64 makes its sound in audio frames
+  of 552 or 368 samples, the length chosen at each video frame by how much its audio interface still has to play; the
+  synthesizer has a model of that choice (`next_frame_length`).
+- Mixing: whole numbers with 15 fractional bits, rounded, each voice added into 16-bit sums that saturate as it is
+  added, as the N64's do; the voices from the last to the first.
+- The reverb is the game's "big room", read from the ROM: one delay line that the sound sent to the reverb is written
+  into, as (left + right) x 0.707, read and written back at two places by each of four sections (two all-pass
+  filters, one with output, and a comb with a low-pass filter feeding back into the start). Its output joins both
+  sides.
+
+It makes stereo sound at 28800 Hz in sub-frames of 184 samples, and calls the music player (when there is one) at the
+sub-frame boundary nearest to its time. At each game frame `port_present` hands the sound device as much as it wants
+(`src/audio/sound_output.cpp`, through LibUltraShip's audio player, opened at 28800 Hz). Where a loop starts, the
+sample keeps the decoded frame that holds the loop's start, so the stream goes on from inside that frame. The test
+`synth` checks it against the decoded samples: through the filter at pitch 1, no seam at a loop, the right length at
+other pitches, the pan, the reverb and the player's timing. The F1 menu's Debug, Sound Test window plays any sample at
+a note, volume, pan and reverb send. All of it costs about 1% of one CPU core.
 
 The music player (`src/audio/music.c`) does what the game's music library (libmus) does, and the game's calls to that
 library (`src/game_sdk.c`: MusStartSong, MusBankStartEffect2, MusHandleStop and the rest) go to it. The synthesizer
@@ -568,6 +585,37 @@ find bugs (`--seed 1`, `--seed 2` and so on).
 - Inside the match, `D_800E2FAC` counts the match's frames and `(int)D_800EB465` is the phase; a breakpoint with a
   condition such as `D_800F9D10[1].health < 100` stops where it happens.
 - In gdb in a terminal, `source tools/gdb/wrestler.py` gives the same one-line records.
+
+### Comparing the sound with the original
+
+The port's sound can be checked against the original game's, run in Project64 (the emulator is only a measuring tool,
+as for the match, below). A script for Project64, kept out of both repositories in the decompilation's folder at
+`notes/gameplay_route/work/reference/out/pj64/Scripts/td_sound.js`, boots the original with no input and writes, to
+`C:/n64/out/sound/`:
+
+- `calls.txt`: every call the game makes to its music library (songs, effects, stops, volumes), every call the
+  library makes to the synthesizer (start, stop, volume, pitch, pan, send), each with the number of player frames so
+  far, and the length of every buffer of sound handed to the audio interface;
+- `song_N.bin`: each song as the game loaded it;
+- `audio.raw`: the sound itself, as the N64 made it.
+
+The port then plays the same game calls on the same player frames, with the N64's audio frame lengths from the
+recording, and writes its own calls and sound beside them:
+
+```
+./build/debug/turnbuckle-dive --sound-replay /mnt/c/n64/out/sound
+python3 tools/sound_compare.py /mnt/c/n64/out/sound --wav
+```
+
+`tools/sound_compare.py` prints how many of the synthesizer calls are the same and the first that differ, then lines
+up the two recordings and gives, for every five seconds, the loudness of each and how alike they are (1.000 is the
+same sound); `--wav` writes `original.wav` and `port.wav`, lined up, to listen to. On the boot's first 81 seconds (the
+intro's sound effects, then a song) every call is the same, and the sound is alike to 1.000 throughout, 0.0 dB apart:
+what is left are differences of a few steps in 32768, from the microcode's own rounding.
+
+To run it: put `td_sound.js` in Project64's `Scripts` folder, add `Autorun Scripts=td_sound.js` under `[Debugger]` in
+`Config/Project64.cfg` (keep a copy of the file first and put it back afterwards), start Project64 with the ROM, wait
+for `done.txt`, and close Project64. The recordings are made from your ROM: keep them out of the repository.
 
 ### Comparing with the original game
 

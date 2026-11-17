@@ -9,6 +9,8 @@
 #define MAIN_RAM_TO_ROM 0x7FFFF400u
 #define ROM_BIGROOM (0x80036FC8u - MAIN_RAM_TO_ROM)
 #define ROM_EQPOWER (0x800370F0u - MAIN_RAM_TO_ROM)
+/* The audio microcode's resampling filter, in its data (which the game's ROM holds beside the microcode). */
+#define ROM_RESAMPLE 0x3B270u
 
 static SoundBank g_banks[2];
 static Synth g_synth;
@@ -71,15 +73,37 @@ int sound_read_eqpower(const uint8_t *rom, size_t rom_size, int16_t eqpower[128]
     return eqpower[0] == 32767 && eqpower[127] == 0 ? 0 : -1;
 }
 
+int sound_read_resample(const uint8_t *rom, size_t rom_size, int16_t resample[256]) {
+    int i;
+
+    if (rom_size < ROM_RESAMPLE + 512) {
+        return -1;
+    }
+    for (i = 0; i < 256; i++) {
+        resample[i] = (int16_t)(uint16_t)((unsigned)rom[ROM_RESAMPLE + 2 * i] << 8 | rom[ROM_RESAMPLE + 2 * i + 1]);
+    }
+    /* Each row's weights add up to about 1 (32768). */
+    for (i = 0; i < 64; i++) {
+        int32_t sum = resample[4 * i] + resample[4 * i + 1] + resample[4 * i + 2] + resample[4 * i + 3];
+
+        if (sum < 32768 - 64 || sum > 32768 + 64) {
+            return -1;
+        }
+    }
+    return 0;
+}
+
 int sound_start(const uint8_t *rom, size_t rom_size) {
     SynthReverb reverb;
     int16_t eqpower[128];
+    int16_t resample[256];
 
     if (g_started) {
         return 0;
     }
-    if (sound_read_eqpower(rom, rom_size, eqpower) != 0 || sound_read_reverb(rom, rom_size, &reverb) != 0) {
-        fprintf(stderr, "sound: the pan gains or the reverb are not where they should be in the ROM\n");
+    if (sound_read_eqpower(rom, rom_size, eqpower) != 0 || sound_read_reverb(rom, rom_size, &reverb) != 0 ||
+        sound_read_resample(rom, rom_size, resample) != 0) {
+        fprintf(stderr, "sound: the pan gains, the reverb or the resampling filter are not where they should be in the ROM\n");
         return -1;
     }
     if (sound_bank_load(&g_banks[SOUND_BANK_MUSIC], rom, rom_size, SOUND_BANK_MUSIC_START, SOUND_BANK_MUSIC_END,
@@ -88,7 +112,7 @@ int sound_start(const uint8_t *rom, size_t rom_size) {
     }
     if (sound_bank_load(&g_banks[SOUND_BANK_EFFECTS], rom, rom_size, SOUND_BANK_EFFECT_START, SOUND_BANK_EFFECT_END,
                         SOUND_BANK_EFFECT_WAVES) != 0 ||
-        synth_init(&g_synth, rom, rom_size, eqpower, &reverb) != 0 ||
+        synth_init(&g_synth, rom, rom_size, eqpower, resample, &reverb) != 0 ||
         music_init(&g_music, &g_synth, &g_banks[SOUND_BANK_MUSIC], &g_banks[SOUND_BANK_EFFECTS], rom, rom_size) != 0) {
         synth_free(&g_synth);
         sound_bank_free(&g_banks[SOUND_BANK_MUSIC]);

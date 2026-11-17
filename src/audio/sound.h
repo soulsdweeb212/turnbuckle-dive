@@ -37,6 +37,7 @@ void sound_present(void);
  * or -1 when the table is not one the synthesizer can run. Used by sound_start; here for the tests. */
 int sound_read_reverb(const uint8_t *rom, size_t rom_size, SynthReverb *reverb);
 int sound_read_eqpower(const uint8_t *rom, size_t rom_size, int16_t eqpower[128]);
+int sound_read_resample(const uint8_t *rom, size_t rom_size, int16_t resample[256]);
 
 #ifdef __cplusplus
 }

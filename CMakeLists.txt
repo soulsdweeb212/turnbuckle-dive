@@ -170,6 +170,7 @@ add_library(td_core STATIC
     src/audio/sound.c
     src/audio/sound_bank.c
     src/audio/sound_dump.c
+    src/audio/sound_replay.c
     src/audio/synth.c
     src/audio/vadpcm.c)
 target_include_directories(td_core PUBLIC src)
