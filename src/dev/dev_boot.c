@@ -12,6 +12,9 @@
  * 3. At every frame hand-off it counts the frame, prints a line every 60 frames and, with a window, has the Match
  *    Inspector draw the frame (and take its screenshots); at the FRAMES-th it prints the count and ends the program.
  *
+ * With --wr-log FILE it writes the wrestler log (src/dev/dev_records.h) at every hand-off while overlay 2, the match,
+ * is loaded; dev_boot_at_end names what to do before the program ends (the sound comparison's files).
+ *
  * Controller 1 is plugged in. Its pads come from a pad file (--replay-pads), else a pad script (--pad-script, frames
  * counted from the boot), else the window's controllers (as the Match Inspector reads them); without any, it reads
  * as released. --record-pads saves every read (src/dev/dev_pads.h). */
@@ -21,6 +24,7 @@
 
 #include "dev_boot.h"
 #include "dev_pads.h"
+#include "dev_records.h"
 #include "game.h"
 #include "game_sdk.h"
 #include "game_vars.h"
@@ -34,12 +38,32 @@ static void (*g_on_frame)(void *user);
 static void *g_user;
 static const char *g_replay, *g_record, *g_script;
 static int g_replay_ended;
+static FILE *g_log;
+static void (*g_at_end)(void);
+
+void dev_boot_wr_log(const char *path) {
+    g_log = dev_records_log_open(path);
+    if (g_log == NULL) {
+        port_fatal("dev-boot: cannot write the wrestler log %s", path);
+    }
+}
+
+void dev_boot_at_end(void (*at_end)(void)) {
+    g_at_end = at_end;
+}
 
 static void on_present(int kind) {
     if (kind != GAME_PRESENT_FRAME) {
         return;
     }
     g_frames++;
+    if (g_log != NULL && game_vars_overlay() == 2) {
+        DevWrestler w[DEV_WRESTLERS];
+        DevMatch m;
+
+        dev_records_read(w, &m);
+        dev_records_log_frame(g_log, g_frames, &m);
+    }
     if (dev_pads_scripted()) {
         dev_pads_script_frame(g_frames);
     }
@@ -56,6 +80,13 @@ static void on_present(int kind) {
         /* The game never returns from its boot loop, so the program ends here. _Exit leaves out the exit handlers:
          * the game's heap blocks are still in use, which a leak check would report; the pad files are closed first. */
         dev_pads_close();
+        if (g_log != NULL) {
+            fclose(g_log);
+        }
+        if (g_at_end != NULL) {
+            g_at_end();
+        }
+        fflush(stdout);
         _Exit(0);
     }
 }

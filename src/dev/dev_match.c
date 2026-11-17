@@ -147,55 +147,6 @@ uint32_t dev_match_frames(void) {
     return g_frames;
 }
 
-/* ---- The wrestler log ----
- * A binary file, in the PC's byte order (little-endian): the header "TDWRLOG1", then u32 record size, u32 number of
- * records (4), u32 number of fields, and for each field u16 name length, the name, u32 offset and u32 size (the fields
- * of the game's Wrestler, src/dev/dev_records.c); then one entry per frame: u32 frame, u32 match frame (D_800E2FAC),
- * u32 seed (xseed), i32 phase, and the four records (dev_records_snapshot). tools/wr_log.py reads it. */
-static void put32(FILE *f, uint32_t v) {
-    fwrite(&v, 4, 1, f);
-}
-
-static void log_open(const char *path) {
-    size_t count, record_size, i;
-    const DevField *fields = dev_records_fields(&count, &record_size);
-
-    g_log = fopen(path, "wb");
-    if (g_log == NULL) {
-        port_fatal("dev-match: cannot write the wrestler log %s", path);
-    }
-    fwrite("TDWRLOG1", 8, 1, g_log);
-    put32(g_log, (uint32_t)record_size);
-    put32(g_log, DEV_WRESTLERS);
-    put32(g_log, (uint32_t)count);
-    for (i = 0; i < count; i++) {
-        uint16_t n = (uint16_t)strlen(fields[i].name);
-
-        fwrite(&n, 2, 1, g_log);
-        fwrite(fields[i].name, n, 1, g_log);
-        put32(g_log, fields[i].offset);
-        put32(g_log, fields[i].size);
-    }
-}
-
-static void log_frame(const DevMatch *m) {
-    static uint8_t *buf;
-    size_t n = dev_records_snapshot_size();
-
-    if (buf == NULL) {
-        buf = malloc(n);
-        if (buf == NULL) {
-            port_fatal("dev-match: no memory for the wrestler log");
-        }
-    }
-    put32(g_log, g_frames);
-    put32(g_log, m->match_frame);
-    put32(g_log, m->seed);
-    put32(g_log, (uint32_t)(int32_t)m->phase);
-    dev_records_snapshot(buf);
-    fwrite(buf, n, 1, g_log);
-}
-
 /* ---- The watchdog ---- */
 
 static void *watchdog(void *arg) {
@@ -238,7 +189,7 @@ static void on_present(int kind) {
     g_frames++;
     dev_records_read(w, &m);
     if (g_log != NULL) {
-        log_frame(&m);
+        dev_records_log_frame(g_log, g_frames, &m);
     }
     if (g_options->on_frame == NULL && g_frames % 300 == 0) {
         printf("dev-match: frame %u, match frame %u, phase %d, health %d / %d\n", g_frames, m.match_frame,
@@ -432,7 +383,10 @@ int dev_match_run(const Rom *rom, const DevMatchOptions *options) {
         xseed = g_options->seed;
     }
     if (g_options->wr_log != NULL) {
-        log_open(g_options->wr_log);
+        g_log = dev_records_log_open(g_options->wr_log);
+        if (g_log == NULL) {
+            port_fatal("dev-match: cannot write the wrestler log %s", g_options->wr_log);
+        }
     }
     pads_open();
     if (g_options->res_log != NULL) {
@@ -476,7 +430,10 @@ int dev_match_run(const Rom *rom, const DevMatchOptions *options) {
 
                 fclose(g_log);
                 snprintf(path, sizeof(path), "%s.%d", g_options->wr_log, match);
-                log_open(path);
+                g_log = dev_records_log_open(path);
+                if (g_log == NULL) {
+                    port_fatal("dev-match: cannot write the wrestler log %s", path);
+                }
             }
             printf("dev-match: match %d\n", match);
             fflush(stdout);

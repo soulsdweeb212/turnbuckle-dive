@@ -5,6 +5,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -53,6 +54,14 @@ typedef struct {
     uint32_t size;
 } DevField;
 const DevField *dev_records_fields(size_t *count, size_t *record_size);
+
+/* The wrestler log: a binary file, in the PC's byte order (little-endian): the header "TDWRLOG1", then u32 record size,
+ * u32 number of records (4), u32 number of fields, and for each field u16 name length, the name, u32 offset and u32
+ * size (dev_records_fields); then one entry per frame: u32 frame, u32 match frame (D_800E2FAC), u32 seed (xseed), i32
+ * phase, and the four records (dev_records_snapshot). tools/wr_log.py reads it. dev_records_log_open returns NULL when
+ * the file cannot be written; dev_records_log_frame adds the entry of `frame` (the hand-offs so far). */
+FILE *dev_records_log_open(const char *path);
+void dev_records_log_frame(FILE *log, uint32_t frame, const DevMatch *match);
 
 /* One work block of the scene (Nw2SceneWork in the game's common.h), what the draw-order table shows. The game keeps
  * the blocks sorted by depth, farthest first (func_80001EA8), and draws them by group in this order: the group-0

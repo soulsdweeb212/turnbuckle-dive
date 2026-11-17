@@ -26,6 +26,10 @@ void dev_boot_pads(const char *replay, const char *record, const char *script);
 void dev_boot_idle_randoms(int no_idle_randoms);
 /* The frames the game has handed over since the boot began. */
 uint32_t dev_boot_frames(void);
+/* The wrestler log (src/dev/dev_records.h) to FILE while the match is loaded, and a function to call before the program
+ * ends at the last frame. Before dev_boot_run. */
+void dev_boot_wr_log(const char *path);
+void dev_boot_at_end(void (*at_end)(void));
 
 #ifdef __cplusplus
 }

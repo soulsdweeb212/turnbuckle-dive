@@ -61,20 +61,23 @@ def compare_calls(directory, show):
 
 
 def read_game_calls(path):
-    """The match's 'a' and 'r' lines (after the 'm' line), as (frame, text); None without an 'm' line."""
-    calls, match = [], False
+    """The game's 'a' and 'r' lines as (frame, text): for a match's recording those after its 'm' line, for a boot's
+    (with 'h' lines and no 'm' line) all; None for a recording without hand-offs (the replay's)."""
+    calls, match, hand_offs = [], False, False
     with open(path) as f:
         for line in f:
             parts = line.split()
             if not parts:
                 continue
             if parts[0] == 'm':
-                match = True
-            elif match and parts[0] in ('a', 'r'):
+                match, calls = True, []
+            elif parts[0] == 'h':
+                hand_offs = True
+            elif parts[0] in ('a', 'r'):
                 if parts[0] == 'a' and parts[2] == 'MusStartSong':
                     parts = parts[:3]  # the song is compared by its bytes
                 calls.append((int(parts[1]), ' '.join([parts[0]] + parts[2:])))
-    return calls if match else None
+    return calls if match or hand_offs else None
 
 
 def same_song(directory, frame):
@@ -100,7 +103,7 @@ def compare_game_calls(directory, show):
         elif shown < show:
             print(f'  call {i}: original {x}, port {y}')
             shown += 1
-    print(f'the game\'s calls and answers in the match: {same} of {max(len(original), len(port))} the same '
+    print(f'the game\'s calls and answers: {same} of {max(len(original), len(port))} the same '
           f'(at the same player frames; songs by their bytes)')
 
 
@@ -163,8 +166,11 @@ def compare_audio(directory, write_wav):
         ry = math.sqrt(sum(v * v for v in y) / step)
         num = sum(p * q for p, q in zip(x, y))
         den = math.sqrt(sum(p * p for p in x) * sum(q * q for q in y)) or 1.0
-        level = 20 * math.log10(ry / rx) if rx > 0 and ry > 0 else float('nan')
-        print(f'  {start / RATE:5.1f}s {rx:8.0f} {ry:8.0f} {level:+6.1f} dB {num / den:6.3f}')
+        if rx == 0 and ry == 0:
+            print(f'  {start / RATE:5.1f}s        0        0   (both silent)')
+        else:
+            level = 20 * math.log10(ry / rx) if rx > 0 and ry > 0 else float('nan')
+            print(f'  {start / RATE:5.1f}s {rx:8.0f} {ry:8.0f} {level:+6.1f} dB {num / den:6.3f}')
         start += step
     if write_wav:
         n = min(len(a) // 2 - sa, len(b) // 2 - sa - offset)

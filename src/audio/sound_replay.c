@@ -237,7 +237,8 @@ static int read_recording(Replay *r, const char *dir) {
         }
     }
     fclose(calls);
-    r->queued = match_calls >= 0 ? match_calls : r->ncalls;
+    /* A boot's recording (no "m" line): the lockstep follows the game from its first call. */
+    r->queued = match_calls >= 0 ? match_calls : 0;
     r->expect = r->queued;
     return 0;
 }
@@ -444,7 +445,8 @@ int sound_lockstep_start(const uint8_t *rom, size_t rom_size, const char *dir) {
         return 1;
     }
     r->lockstep = 1;
-    /* Up to the match, with the original's calls before it: the boot's, which the developer match leaves out. */
+    /* Up to the match, with the original's calls before it: the boot's, which the developer match leaves out (for a
+     * boot's recording, nothing: the port's boot makes them). */
     advance_to(r, r->match_frame);
     fprintf(r->trace, "m %u\n", (unsigned)r->frame);
     sound_watch(&g_lockstep_watch);
@@ -458,7 +460,7 @@ void sound_lockstep_end(void) {
         return;
     }
     sound_watch(NULL);
-    printf("sound-lockstep: the port's game made %d of the original's %d calls in the match in the same order%s "
+    printf("sound-lockstep: the port's game made %d of the original's %d calls in the same order%s "
            "(and %d after the recording's end); %d of %d questions answered the same; %d of %d hand-offs; wrote "
            "port_calls.txt and port_audio.raw\n",
            r->expect - r->queued, r->ncalls - r->queued, r->differ ? ", then differed" : "", r->after,

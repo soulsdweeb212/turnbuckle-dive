@@ -224,7 +224,7 @@ int main(int argc, char **argv) {
             match_options.seed = (uint32_t)strtoul(argv[++i], NULL, 0);
 #endif
         } else if (strncmp(argv[i], "--", 2) == 0 || rom_arg != NULL) {
-            fprintf(stderr, "Usage: turnbuckle-dive [--res ID | --sound-dump DIR | --music-dump DIR | --sound-replay DIR | --dev-boot FRAMES [--no-splash] [--pad-script FILE] [--record-pads FILE] [--replay-pads FILE] [--no-idle-randoms] | --dev-match [--headless] [--sound-lockstep DIR] [--wr-log FILE] [--res-log FILE] [--seed N] "
+            fprintf(stderr, "Usage: turnbuckle-dive [--res ID | --sound-dump DIR | --music-dump DIR | --sound-replay DIR | --dev-boot FRAMES [--no-splash] [--wr-log FILE] [--sound-lockstep DIR] [--pad-script FILE] [--record-pads FILE] [--replay-pads FILE] [--no-idle-randoms] | --dev-match [--headless] [--sound-lockstep DIR] [--wr-log FILE] [--res-log FILE] [--seed N] "
                             "[--no-watchdog] "
                             "[--hide-group N]... [--screenshot FILE [--screenshot-frame N | --screenshot-every N]] [--dump-frame N FILE] [--no-idle-randoms] [--capture-match-frames N,N,... DIR] [--players 0|1] [--time-limit MINUTES] [--matches N] [--record-pads FILE] [--replay-pads FILE] [--pad-script FILE] [--pad-bot SEED]] [ROM]\n");
             return 1;
@@ -289,7 +289,7 @@ int main(int argc, char **argv) {
             /* The sound: the music player and the synthesizer, heard through the window's sound device. Not in a
              * scripted or replayed run: the game asks whether its music still plays before it starts the next song,
              * and the answer would hang on the sound device's timing, so such a run would not go the same each time. */
-            if (match_options.pad_script == NULL && match_options.replay_pads == NULL &&
+            if (match_options.pad_script == NULL && match_options.replay_pads == NULL && sound_lockstep_dir == NULL &&
                 sound_start(rom.data, rom.size) == 0) {
                 dev_inspector_open_sound();
             }
@@ -323,6 +323,18 @@ int main(int argc, char **argv) {
 #endif
         dev_boot_pads(match_options.replay_pads, match_options.record_pads, match_options.pad_script);
         dev_boot_idle_randoms(match_options.no_idle_randoms);
+        if (match_options.wr_log != NULL) {
+            dev_boot_wr_log(match_options.wr_log);
+        }
+        /* The sound in step with a recording of the original's boot (src/audio/sound_replay.h); its files are finished
+         * when the boot ends at its last frame. */
+        if (sound_lockstep_dir != NULL) {
+            if (sound_lockstep_start(rom.data, rom.size, sound_lockstep_dir) != 0) {
+                rom_free(&rom);
+                return 1;
+            }
+            dev_boot_at_end(sound_lockstep_end);
+        }
         result = dev_boot_run(&rom, dev_boot, on_frame, NULL);
         sound_end();
         rom_free(&rom);

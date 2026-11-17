@@ -2,6 +2,8 @@
  * settings and includes the game's headers, so it reads the records by their types; the rest of the port sees only
  * the plain values of dev_records.h. It only reads the game's values, but for the draw switches, which change the
  * objects' draw groups while the port builds a frame and then put them back (dev_records_hide_groups). */
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h> /* system headers come before common.h, whose port.h renames some C library functions */
 
 #include "common.h"
@@ -320,3 +322,50 @@ const char *dev_phase_name(int phase) {
 /* One variable of each enum, so that the debug information describes them and a debugger can cast to them. */
 const enum TdWrState td_wr_state_names_for_debugger = TD_WR_STANDING;
 const enum TdMatchPhase td_match_phase_names_for_debugger = TD_PHASE_FIGHT;
+
+/* ---- The wrestler log (dev_records.h) ---- */
+
+static void put32(FILE *f, uint32_t v) {
+    fwrite(&v, 4, 1, f);
+}
+
+FILE *dev_records_log_open(const char *path) {
+    size_t count, record_size, i;
+    const DevField *fields = dev_records_fields(&count, &record_size);
+    FILE *log = fopen(path, "wb");
+
+    if (log == NULL) {
+        return NULL;
+    }
+    fwrite("TDWRLOG1", 8, 1, log);
+    put32(log, (uint32_t)record_size);
+    put32(log, DEV_WRESTLERS);
+    put32(log, (uint32_t)count);
+    for (i = 0; i < count; i++) {
+        uint16_t n = (uint16_t)strlen(fields[i].name);
+
+        fwrite(&n, 2, 1, log);
+        fwrite(fields[i].name, n, 1, log);
+        put32(log, fields[i].offset);
+        put32(log, fields[i].size);
+    }
+    return log;
+}
+
+void dev_records_log_frame(FILE *log, uint32_t frame, const DevMatch *match) {
+    static uint8_t *buf;
+    size_t n = dev_records_snapshot_size();
+
+    if (buf == NULL) {
+        buf = malloc(n);
+        if (buf == NULL) {
+            port_fatal("dev-records: no memory for the wrestler log");
+        }
+    }
+    put32(log, frame);
+    put32(log, match->match_frame);
+    put32(log, match->seed);
+    put32(log, (uint32_t)(int32_t)match->phase);
+    dev_records_snapshot(buf);
+    fwrite(buf, n, 1, log);
+}

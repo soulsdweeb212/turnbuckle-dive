@@ -745,6 +745,48 @@ with the original game in Project64, whose idle thread's random calls are turned
 the same presses the title screen, the Rumble Pak notice and the main menu then have the original's display lists,
 command for command.
 
+### A match from the menus, against the original
+
+The menus lead to a match by seven routes: Championship (U.S. Heavyweight, Cruiserweight, Tag Team title),
+Exhibition (Single Match, Tag Match) and Special Match (Battle Royal, Handicap Match). A pad script that presses
+Start through the title screens, picks the route and then presses A every 200 frames takes the default at each
+screen (character select, the rules) and reaches the match.
+
+Such a run can be played on the original in Project64 and compared, frame by frame, from the boot to the match. Two
+options of the developer boot make that possible:
+
+- `--wr-log FILE` writes the wrestler log (the developer match's, `src/dev/dev_records.h`) at every frame while
+  overlay 2, the match, is loaded.
+- `--sound-lockstep DIR` makes the sound in step with a recording of the original's (above, "A match's sound").
+  Without it, a scripted run has no sound, so every question the game asks its music library ("does a song still
+  play?") is answered no, where the original's answers depend on what plays, and the two runs could go apart. With
+  it, the port's own boot makes its calls and the comparison shows whether they are the original's.
+
+In Project64, `td_route.js` (in the decompilation's `notes/gameplay_route/work/reference/out/pj64/Scripts/`) plays
+the boot with the pads of a pad file, from the boot's first frame, turns off the idle thread's random calls, and
+writes the match's frames to `route.bin`, in the format of the developer match's comparison; run it together with
+`td_sound.js`, wrapped as for the match:
+
+1. The pads: run the route in the port and keep its reads, `--dev-boot 7000 --headless --pad-script ROUTE.txt
+   --no-idle-randoms --record-pads ROUTE.pads`.
+2. In `C:/n64/out/route/`: the pad file and `config.json`, `{"pads": "ROUTE.pads", "last": 7000}`; in
+   `C:/n64/out/sound/`: `{"last": 7000}`. Make `td_route_sound.js` from `td_route.js` and `td_sound.js` as
+   `td_match_sound.js` is made from `td_lockstep.js` and `td_sound.js`, autorun it, start Project64 with the ROM and
+   wait for `C:/n64/out/sound/done.txt`; close Project64 and take the autorun line out again.
+3. The port, the same route, and the two comparisons:
+
+   ```
+   ./build/debug/turnbuckle-dive --dev-boot 7000 --headless --replay-pads /mnt/c/n64/out/route/ROUTE.pads --no-idle-randoms --wr-log build/debug/route.wrlog --sound-lockstep /mnt/c/n64/out/sound
+   python3 tools/n64_compare.py records /mnt/c/n64/out/route/route.bin build/debug/route.wrlog
+   python3 tools/sound_compare.py /mnt/c/n64/out/sound
+   ```
+
+Five routes have been compared this way: Exhibition's Single Match and Tag Match, and the U.S. Heavyweight,
+Cruiserweight and Tag Team title runs of Championship (6,000 or 7,000 frames from the boot, 2,040 to 4,229 of them in
+the match). In each, every field of every wrestler and the seed are the same at every match frame; the game's calls to
+its music library and the answers it got are the same, at the same player frames (164 to 252 a run); every
+synthesizer call is the same (24,244 to 34,079 a run); and the sound is alike to 1.000 throughout.
+
 ### The save file
 
 The cartridge keeps the game's saves in 32 KiB of battery-backed SRAM: the records, the score rankings, the title

@@ -197,10 +197,19 @@ static void build_gfx(const GameVarSection *sec, const GameVarGfx *g) {
     free(rom);
 }
 
+static int g_overlay;
+
+int game_vars_overlay(void) {
+    return g_overlay;
+}
+
 void game_vars_load(int overlay) {
     int i;
     uint32_t j;
 
+    if (overlay != 0) {
+        g_overlay = overlay;
+    }
     for (i = 0; i < GAME_VAR_SECTIONS; i++) {
         const GameVarSection *sec = &game_var_sections[i];
 

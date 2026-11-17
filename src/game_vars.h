@@ -134,5 +134,7 @@ void (*game_vars_function(uint32_t n64))(void);
  * on the N64. The address tables of its sections are built in their PC layout, each N64 address turned into the PC
  * address of what it names (game_vars_address), and so are the PC copies of its display lists (GameVarGfx). */
 void game_vars_load(int overlay);
+/* The overlay loaded last (1 or 2), or 0 before either. */
+int game_vars_overlay(void);
 
 #endif
