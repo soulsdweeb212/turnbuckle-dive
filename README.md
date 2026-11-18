@@ -70,7 +70,7 @@ Put your ROM in it as `source/baserom.z64`: the decompilation's own build reads 
 the tests look for it there when they are given no ROM. For a decompilation in another folder, add
 `-DTD_DECOMP_DIR=/path/to/it` to the first `cmake --preset` command. Configure prints whether the build includes the
 game's code; without the decompilation, as on CI, it leaves it out. The game's code needs Python 3, which writes the C
-of the game's variables. With it, a full build also compiles every game file of the match (857 files) and links them
+of the game's variables. With it, a full build also compiles all 1201 game files (the match reaches 857) and links them
 in a test program. That part needs the decompilation's own build run once in `source` (`python3 build.py`, as its
 README says), which extracts the data files the list is made from; without them the build leaves only that part out
 and says why.

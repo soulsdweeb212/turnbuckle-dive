@@ -1,5 +1,5 @@
 // The Move List window (F1, Debug, Move List): every wrestler's move table as the game stores it, entry by entry, with
-// each entry's six 32-bit words, the fields the game unpacks from them (unpackAnimationParameters) and the animations
+// each entry's six 32-bit words, the fields the game unpacks from them (unpackMoveRecord) and the animations
 // it plays for it; and a button that saves the table as JSON beside the program. C++ only.
 #ifndef TD_MOVE_LIST_H
 #define TD_MOVE_LIST_H

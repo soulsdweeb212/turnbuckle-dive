@@ -12,9 +12,9 @@
  * next id, its animation list at the one after, up to 0x20E. The game's character table D_80038A64 (resource ids by
  * character group) names all 76 profiles, from 0x12B to 0x20C.
  * - Profile, 0x40 bytes (the wrestler's +0x364): bytes up to +0x23; five 16-bit animation ids at +0x24
- *   (requestAttachmentAction reads two of them); five 16-bit character ids at +0x2E, the wrestlers that can run in
+ *   (aiTryProfileMove reads two of them); five 16-bit character ids at +0x2E, the wrestlers that can run in
  *   (func_800BFCF0); a 64-bit set of ability bits at +0x38.
- * - Move table: entries of six 32-bit words, read only as 32-bit words (unpackAnimationParameters).
+ * - Move table: entries of six 32-bit words, read only as 32-bit words (unpackMoveRecord).
  * - Animation list: 16-bit animation ids (D_8007C5B8, one row per player).
  * And one more move table: resource 0x126, the moves that every wrestler shares, which resetMatchState loads to
  * D_8007BD64 + 0x14 and func_800A7D1C reads (32-bit words). Resources 0x127 to 0x12A, loaded next to it, are read as

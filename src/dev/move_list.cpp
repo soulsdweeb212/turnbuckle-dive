@@ -4,7 +4,7 @@
 // three resources in a row, from 0x12B to 0x20E (src/res_convert.c): a profile, a move table and an animation list. The
 // move table is 279 entries of 0x18 bytes, six 32-bit words each, stored LZSS-compressed. The game loads it (for each
 // wrestler in a match, into D_80075468 + 0x10 + owner * 0x1A30) and, when a wrestler starts a move, unpacks one entry
-// into the wrestler's WrMove (func_800A7C40 and unpackAnimationParameters, in the decompilation). Only the small tables
+// into the wrestler's WrMove (func_800A7C40 and unpackMoveRecord, in the decompilation). Only the small tables
 // that say which entry is which are in the game code's data: D_80030570 (the entry's first animation in the animation
 // list) and D_800E3C20 (the entries of the twelve grapple moves). This window reads the resources with the game's own
 // loader (res_load), in the PC's byte order, and those two tables from the ROM.
@@ -49,7 +49,7 @@ constexpr uint32_t kRomBanks = 0x39664;          // D_80038A64: 10 addresses of 
 constexpr uint32_t kBanks = 10;
 constexpr uint32_t kMainRamToRom = 0x7FFFF400;
 
-// One field of an entry, as unpackAnimationParameters takes it: `bits` bits of word `word` from bit `shift`. A signed
+// One field of an entry, as unpackMoveRecord takes it: `bits` bits of word `word` from bit `shift`. A signed
 // field is a 6-bit value whose bit 5 the game extends into the byte's top bits. Names and order are WrMove's
 // (include/wrestler.h in the decompilation).
 struct Field {

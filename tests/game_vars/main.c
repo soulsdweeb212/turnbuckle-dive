@@ -15,7 +15,7 @@
  *    itself when its word is not an address); every function field holds the function at that N64 address, so
  *    each entry of the handler tables D_800E2FF0 and D_800E3660 is the function the N64 calls there.
  * 5. A function's old name (set by the linker from the map) is the same function: func_800E2400 is
- *    tryBeginBlockReaction.
+ *    tryStartBarricadeSearch.
  * 6. The display lists of the ROM's data: every command of every PC copy has the N64 command's first word, and its
  *    second word too unless that is an address (G_VTX, G_DL, G_SETTIMG, G_MOVEMEM), which must be what the address
  *    names, found by the same plain search as in 4; a G_DL must lead to a command of a PC copy.
@@ -41,7 +41,7 @@
 #define EXIT_SKIP 77
 
 /* Two names of one game function (the map's "function" lines). */
-void tryBeginBlockReaction(void);
+void tryStartBarricadeSearch(void);
 void func_800E2400(void);
 
 static uint64_t native_value(const uint8_t *p, unsigned width) {
@@ -372,10 +372,10 @@ int main(int argc, char **argv) {
         /* Through volatile copies: C says two differently named functions have different addresses, so a compiler may
          * answer this comparison without making it (clang does). */
         void (*volatile old_name)(void) = func_800E2400;
-        void (*volatile name)(void) = tryBeginBlockReaction;
+        void (*volatile name)(void) = tryStartBarricadeSearch;
 
         if (old_name != name) {
-            printf("FAIL: func_800E2400 is not tryBeginBlockReaction\n");
+            printf("FAIL: func_800E2400 is not tryStartBarricadeSearch\n");
             return EXIT_FAILURE;
         }
     }

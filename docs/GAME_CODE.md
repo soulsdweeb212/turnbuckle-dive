@@ -262,7 +262,7 @@ not use them; on PC those reads find one record of zeros.
 
 A few names the port provides itself (`tools/game_vars.py`, `PORT`): `osTvType` (1, NTSC), the three framebuffers, and
 the address of the RSP's boot code. Some game files still call functions by an old name, which the N64 link keeps as
-a second name of the function (`func_800E2400` is `tryBeginBlockReaction`). Only the linker can give a function a second
+a second name of the function (`func_800E2400` is `tryStartBarricadeSearch`). Only the linker can give a function a second
 name, so `game_vars.py` also writes `game_vars_link.txt`, the linker options (`--defsym`) that do it, which CMake adds
 to the programs that link every game file.
 
@@ -452,7 +452,7 @@ data: no names, and nothing is played. A wrestler's moves are not in the game co
 ROM's resource archive: each wrestler has three resources in a row (a profile, a move table and an animation list,
 from 0x12B to 0x20E; `src/res_convert.c`), and the move table is LZSS-compressed in the ROM. Unpacked, it holds 279
 entries of 0x18 bytes, six 32-bit words each. When a wrestler starts a move, the game unpacks one entry into the
-wrestler's `WrMove` (`func_800A7C40` and `unpackAnimationParameters` in the decompilation; `include/wrestler.h` names the
+wrestler's `WrMove` (`func_800A7C40` and `unpackMoveRecord` in the decompilation; `include/wrestler.h` names the
 fields). Only the small tables that say which entry is which are in the game code's data, and the window reads them
 from the ROM: `D_80030570` (ROM 0x31170) gives each entry's first animation in the animation list, and `D_800E3C20` (ROM
 0xD70C0) the entries of the twelve grapple moves (`func_800D00FC` picks one by the grapple's strength, the A button
