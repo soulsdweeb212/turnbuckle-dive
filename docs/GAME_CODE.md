@@ -424,6 +424,17 @@ through the game's code and then the port's music player just as the game's own 
 - Menu sounds, by the ids the menus use (0x401 to 0x42B, each with the effect it plays), with `func_8000DEE4`, as the
   menus play them.
 
+Songs and effects are listed in the order they are stored in the ROM (the songs are resources 0x210 to 0x224, in that
+order; the effects' streams are not quite in the order of their numbers), each with a category, and a filter shows one
+category. A song is BGM (a match's, the title screen's idle demo, the ending credits, or a title win's), menu BGM,
+entrance music, unused (song 21, which the game never asks for) or unclear (song 18, which plays in a scene after a
+championship match that has not been identified); its row says where it plays, and whether that was heard in a run of
+the game or only read from the code that asks for songs (`func_800ABE60` for the menus, `func_800BCD30` for the scenes
+around a match, `func_800AF978` for the match's song). There are no wrestlers' own themes: every entrance plays song 16
+or 17, by the order the wrestlers come out. Outside Championship a match's song is one of 1 to 6, chosen by a match
+setting; in Championship, match n of the run plays song n, so the title match plays song 9. An effect is a menu sound
+when one of the menus' ids plays it (effects 90 to 132), and a sound otherwise.
+
 The game's screens ask for their own song at every frame, so a song started for the player would be faded out at once.
 While the player has a song, the game's own song calls therefore wait (`game_sdk_hold_songs`, `src/game_sdk.c`): its
 calls that would start a song or stop the player's are let through and do nothing. When the player's song is stopped

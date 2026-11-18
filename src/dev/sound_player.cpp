@@ -2,7 +2,9 @@
 //
 // Three tabs list what the game can play: its songs (by song number, with the resource each is kept in), its sound
 // effects (by number in the effect table) and the menus' sounds (by the ids the menus use, with the effect each plays).
-// Each row has a play button and, while it plays, a stop button.
+// Each row has a play button and, while it plays, a stop button. Songs and effects are listed in the order they are
+// stored in the ROM, each with its category (kSongs, and for an effect whether the menus play it), and a filter shows
+// one category.
 //
 // A song is started as the game starts one, with the game's func_8000E55C (sp_request_song): it fades out the song
 // playing, and once that is quiet a later call starts the new one; so the window asks again at every frame until the
@@ -12,6 +14,8 @@
 // screen starts its own again.
 #include "sound_player.h"
 
+#include <algorithm>
+#include <array>
 #include <cstdint>
 #include <cstdio>
 
@@ -34,10 +38,52 @@ namespace {
 // How long the window keeps asking for a song: ten seconds of the game's frames (a fade is at most 255 frames).
 constexpr int kRequestFrames = 600;
 
+// What each song is, found by running the game through its screens and by reading the code that asks for songs
+// (func_800ABE60 for the menus, func_800BCD30 for the scenes around a match, func_800AF978 for the match's song, which
+// func_80090030 plays). seen: heard on that screen in a run; otherwise read from the code only.
+enum class SongKind { Bgm, MenuBgm, Entrance, Unused, Unclear };
+
+constexpr const char* kKindNames[] = { "BGM", "Menu BGM", "Entrance", "Unused", "Unclear" };
+
+struct SongInfo {
+    SongKind kind;
+    const char* where;
+    bool seen;
+};
+
+// By song number (0 is none).
+constexpr std::array<SongInfo, SP_SONGS> kSongs = { {
+    { SongKind::Unused, "", false },
+    { SongKind::Bgm, "Match (the default match setting; Championship match 1)", true },
+    { SongKind::Bgm, "Match (a match setting; Championship match 2)", false },
+    { SongKind::Bgm, "Match (a match setting; Championship match 3)", false },
+    { SongKind::Bgm, "Match (a match setting; Championship match 4)", false },
+    { SongKind::Bgm, "Match (a match setting; Championship match 5)", false },
+    { SongKind::Bgm, "Match (a match setting; Championship match 6)", false },
+    { SongKind::Bgm, "Match (Championship match 7)", false },
+    { SongKind::Bgm, "Match (Championship match 8)", false },
+    { SongKind::Bgm, "Match (Championship title match)", false },
+    { SongKind::Bgm, "Attract: the demo when the title screen sits idle", true },
+    { SongKind::Bgm, "Ending credits", false },
+    { SongKind::MenuBgm, "Main menu, mode menus, character select", true },
+    { SongKind::MenuBgm, "Costume Change", true },
+    { SongKind::MenuBgm, "Option", true },
+    { SongKind::MenuBgm, "The screen after a match", false },
+    { SongKind::Entrance, "The first wrestler's walk-out (and the third in a battle royal)", true },
+    { SongKind::Entrance, "The second wrestler's walk-out (and the fourth in a battle royal)", true },
+    { SongKind::Unclear, "An after-match scene that shows the opponents", false },
+    { SongKind::Bgm, "Winning a title: the ceremony and the screen after it", false },
+    { SongKind::MenuBgm, "The screen after a match in Championship", false },
+    { SongKind::Unused, "The game never asks for it", false },
+} };
+
+// The filter's choices: all, then each kind.
+constexpr const char* kFilterNames[] = { "All", "BGM", "Menu BGM", "Entrance", "Unused", "Unclear" };
+
 class SoundPlayerWindow : public Ship::GuiWindow {
   public:
     SoundPlayerWindow(const std::shared_ptr<Ship::ConsoleVariable>& cvars, const std::shared_ptr<Ship::Window>& window)
-        : Ship::GuiWindow(cvars, window, "gSoundPlayerShown", false, kSoundPlayerWindow, ImVec2(460, 520),
+        : Ship::GuiWindow(cvars, window, "gSoundPlayerShown", false, kSoundPlayerWindow, ImVec2(640, 560),
                           ImGuiWindowFlags_None) {
     }
 
@@ -137,17 +183,33 @@ class SoundPlayerWindow : public Ship::GuiWindow {
     }
 
     void DrawSongs() {
-        if (!ImGui::BeginTable("##songs", 3, ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY)) {
+        ImGui::SetNextItemWidth(160);
+        ImGui::Combo("Category", &mSongFilter, kFilterNames, IM_ARRAYSIZE(kFilterNames));
+        if (!ImGui::BeginTable("##songs", 5, ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY | ImGuiTableFlags_Resizable)) {
             return;
         }
         ImGui::TableSetupColumn("##play", ImGuiTableColumnFlags_WidthFixed, 50);
-        ImGui::TableSetupColumn("Song", ImGuiTableColumnFlags_WidthFixed, 60);
-        ImGui::TableSetupColumn("Resource");
+        ImGui::TableSetupColumn("Song", ImGuiTableColumnFlags_WidthFixed, 40);
+        ImGui::TableSetupColumn("Resource", ImGuiTableColumnFlags_WidthFixed, 70);
+        ImGui::TableSetupColumn("Category", ImGuiTableColumnFlags_WidthFixed, 80);
+        ImGui::TableSetupColumn("Where it plays");
         ImGui::TableSetupScrollFreeze(0, 1);
         ImGui::TableHeadersRow();
-        for (int song = 1; song < SP_SONGS; song++) {
+        // In the order they are stored in the ROM, which is the order of their resources.
+        std::array<int, SP_SONGS - 1> order;
+        for (int i = 0; i < SP_SONGS - 1; i++) {
+            order[i] = i + 1;
+        }
+        std::stable_sort(order.begin(), order.end(),
+                         [](int a, int b) { return sp_song_resource(a) < sp_song_resource(b); });
+        for (int song : order) {
             int resource = sp_song_resource(song);
             bool on = song == mPlaying || song == mWanted;
+            const SongInfo& info = kSongs[song];
+
+            if (mSongFilter != 0 && static_cast<int>(info.kind) != mSongFilter - 1) {
+                continue;
+            }
 
             ImGui::PushID(song);
             ImGui::TableNextRow();
@@ -173,6 +235,13 @@ class SoundPlayerWindow : public Ship::GuiWindow {
             } else {
                 ImGui::TextDisabled("none");
             }
+            ImGui::TableNextColumn();
+            ImGui::TextUnformatted(kKindNames[static_cast<int>(info.kind)]);
+            ImGui::TableNextColumn();
+            ImGui::TextUnformatted(info.where);
+            ImGui::SetItemTooltip("%s\n(%s)", info.where,
+                                  info.seen ? "heard on that screen in a run of the game"
+                                            : "read from the game's code; not yet heard on that screen in a run");
             ImGui::PopID();
         }
         ImGui::EndTable();
@@ -182,22 +251,37 @@ class SoundPlayerWindow : public Ship::GuiWindow {
         ImGui::SetNextItemWidth(160);
         ImGui::SliderInt("Volume", &mEffectVolume, 0, 255);
         ImGui::SetItemTooltip("128 plays the effect as written; a match scales some by distance");
-        ImGui::SameLine();
-        ImGui::Checkbox("Only those that exist", &mOnlyExisting);
+        static const char* kEffectFilters[] = { "All", "Menu sound", "Sound" };
+
+        ImGui::SetNextItemWidth(160);
+        ImGui::Combo("Category", &mEffectFilter, kEffectFilters, IM_ARRAYSIZE(kEffectFilters));
         const Music* music = sound_music();
 
-        if (!ImGui::BeginTable("##effects", 3, ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY)) {
+        if (!ImGui::BeginTable("##effects", 4, ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY)) {
             return;
         }
         ImGui::TableSetupColumn("##play", ImGuiTableColumnFlags_WidthFixed, 50);
-        ImGui::TableSetupColumn("Effect", ImGuiTableColumnFlags_WidthFixed, 60);
+        ImGui::TableSetupColumn("Effect", ImGuiTableColumnFlags_WidthFixed, 50);
+        ImGui::TableSetupColumn("Category", ImGuiTableColumnFlags_WidthFixed, 90);
         ImGui::TableSetupColumn("Priority");
         ImGui::TableSetupScrollFreeze(0, 1);
         ImGui::TableHeadersRow();
-        for (int number = 0; number < SP_EFFECTS; number++) {
+        // In the order their streams are stored in the ROM (the effect table points into the ROM's copy of the game's
+        // data), which is not quite the order of their numbers; effects the table lacks go last.
+        std::array<int, SP_EFFECTS> order;
+        for (int i = 0; i < SP_EFFECTS; i++) {
+            order[i] = i;
+        }
+        std::stable_sort(order.begin(), order.end(), [music](int a, int b) {
+            const uint8_t* pa = music->effect[a];
+            const uint8_t* pb = music->effect[b];
+            return pa != nullptr && (pb == nullptr || pa < pb);
+        });
+        for (int number : order) {
             bool exists = music->effect[number] != nullptr;
+            bool menu = IsMenuEffect(number);
 
-            if (!exists && mOnlyExisting) {
+            if (!exists || (mEffectFilter == 1 && !menu) || (mEffectFilter == 2 && menu)) {
                 continue;
             }
             ImGui::PushID(number);
@@ -208,6 +292,9 @@ class SoundPlayerWindow : public Ship::GuiWindow {
             ImGui::EndDisabled();
             ImGui::TableNextColumn();
             ImGui::Text("%d", number);
+            ImGui::TableNextColumn();
+            ImGui::TextUnformatted(menu ? "Menu sound" : "Sound");
+            ImGui::SetItemTooltip(menu ? "The menus play it (Menu sounds tab)" : "The menus do not play it");
             ImGui::TableNextColumn();
             if (exists) {
                 ImGui::Text("%d", static_cast<int>(music->effect_priority[number]));
@@ -253,6 +340,16 @@ class SoundPlayerWindow : public Ship::GuiWindow {
         ImGui::EndTable();
     }
 
+    // Whether one of the menus' sound ids plays effect `number`.
+    static bool IsMenuEffect(int number) {
+        for (int i = 0; i < SP_MENU_COUNT; i++) {
+            if (sp_menu_sound_effect(SP_MENU_FIRST + i) == number) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     // Play, or Stop while the sound of `handle` plays.
     template <typename Play> void PlayButton(uint32_t& handle, Play play) {
         if (sp_effect_playing(handle)) {
@@ -269,7 +366,8 @@ class SoundPlayerWindow : public Ship::GuiWindow {
     int mRequestLeft = 0;
     int mFade = 16;
     int mEffectVolume = 128;
-    bool mOnlyExisting = true;
+    int mSongFilter = 0;
+    int mEffectFilter = 0;
     uint32_t mEffectHandle[SP_EFFECTS] = {};
     uint32_t mMenuHandle[SP_MENU_COUNT] = {};
 };
