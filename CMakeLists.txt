@@ -179,6 +179,11 @@ td_strict(td_core)
 # (Threads::Threads adds it where it is separate, and nothing where it is not, as on Windows).
 find_package(Threads REQUIRED)
 target_link_libraries(td_core PUBLIC Threads::Threads)
+# The synthesizer and the music player call the C maths functions (sinf, powf...), which on Linux are in their own
+# library, libm; MSVC has them in its C library.
+if(NOT MSVC)
+    target_link_libraries(td_core PUBLIC m)
+endif()
 if(TD_ORDER_CHECK)
     # The byte-order check's calls, in every program (all of them link td_core, whose conversions call the check), and
     # the C library's copies passed through it, so that copied bytes keep what the check knows of them.
@@ -384,18 +389,12 @@ if(BUILD_TESTING)
     # The synthesizer, with the game's banks and reverb (tests/test_synth.c says what it checks); skipped without the ROM.
     add_executable(test_synth tests/test_synth.c)
     target_link_libraries(test_synth PRIVATE td_core)
-    if(NOT MSVC)
-        target_link_libraries(test_synth PRIVATE m)
-    endif()
     td_strict(test_synth)
     add_test(NAME synth COMMAND test_synth)
     set_tests_properties(synth PROPERTIES SKIP_RETURN_CODE 77)
     # The music player (tests/test_music.c says what it checks); skipped without the ROM.
     add_executable(test_music tests/test_music.c)
     target_link_libraries(test_music PRIVATE td_core)
-    if(NOT MSVC)
-        target_link_libraries(test_music PRIVATE m)
-    endif()
     td_strict(test_music)
     add_test(NAME music COMMAND test_music)
     set_tests_properties(music PROPERTIES SKIP_RETURN_CODE 77)
