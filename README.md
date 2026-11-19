@@ -28,7 +28,7 @@ any rights holder of WCW or nWo. All trademarks belong to their owners.
 | P4 | a match runs |
 | P5 | audio plays |
 | P6 | saves work |
-| P7 | Windows and macOS builds, and the Torch asset extractor |
+| P7 | Windows and macOS builds, and the asset extractor that writes the game's `.o2r` archive from your ROM |
 
 Linux (x86-64) is planned first. Open design decisions are listed in [docs/DECISIONS.md](docs/DECISIONS.md).
 
@@ -42,6 +42,9 @@ There are three programs so far:
   can also be written in decimal). `turnbuckle-dive --dev-match` plays a CPU-against-CPU match with the game's own code,
   straight from the boot without the menus, and shows it in the Match Inspector's window: a table of the wrestlers and
   a map of the ring, live; there is no 3D picture yet ([docs/GAME_CODE.md](docs/GAME_CODE.md), "The developer match").
+  `turnbuckle-dive --extract revenge.o2r` writes the game's archive, the `.o2r` file LibUltraShip runs from, from
+  your ROM, and `--archive revenge.o2r` runs from that archive instead of the ROM
+  ([docs/GAME_CODE.md](docs/GAME_CODE.md), "The game's archive").
 - `hello` opens a LibUltraShip window and draws a test picture made of N64 display-list commands, at the game's
   480x240 resolution shown at 4:3.
 - `viewer`, the asset viewer, built with the game's code: it draws a wrestler's head, an effect sprite and a 2D
@@ -147,5 +150,5 @@ to add to it.
 ## Licence
 
 The code in this repository is MIT licensed (see [LICENSE](LICENSE)). It builds on LibUltraShip and its Fast3D renderer
-(MIT), SDL3 (zlib licence), Dear ImGui (MIT), the other libraries LibUltraShip uses and, later, Torch (MIT), each
-licensed by its authors; their notices will ship with the program.
+(MIT), SDL3 (zlib licence), Dear ImGui (MIT), and the other libraries LibUltraShip uses, each licensed by its
+authors; their notices will ship with the program.

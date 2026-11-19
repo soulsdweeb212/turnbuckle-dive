@@ -7,7 +7,7 @@ it. Dates are when the decision was made. Several recommendations draw on the ex
 | # | Decision | Status | Recommended / chosen |
 |---|---|---|---|
 | D1 | Pointer size | open | native 64-bit from the start (no 32-bit bring-up build) |
-| D2 | Assets for the first playable build | open | the user's ROM read at run time, each resource type converted exactly once at load time; a Torch archive later (P7) through the same loader |
+| D2 | Assets | **decided 2026-11-18** | the user's ROM read at run time for now, each resource type converted exactly once at load time. For releases, the port writes the game's `.o2r` archive (a zip that LibUltraShip reads) from the ROM itself, once: one file per resource, decompressed with the game's own code, and the ROM ranges the game reads outside its resources. The game's loader then reads from the archive. No separate extractor such as Torch: it has no converters for this game's formats, and the port already has the ROM check, the decompressor and libzip |
 | D3 | How game data becomes C without committing ROM bytes | **decided 2026-11-09** | (c) typed zero-initialised definitions filled from the checked ROM at start-up, as `game_vars.c` and `src/game_vars.c` do (docs/GAME_CODE.md, "The game's variables"); no build ever contains ROM bytes. Never commit generated game data |
 | D4 | Repo layout | **decided 2026-11-06** | a separate repo (this one); the decompilation stays its own repo, and all game C stays there |
 | D5 | LibUltraShip version | open | current upstream head (SDL3), pinned as a submodule and upgraded only on purpose, with a short listed set of local patches |
