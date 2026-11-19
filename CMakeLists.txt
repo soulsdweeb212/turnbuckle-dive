@@ -595,8 +595,9 @@ if(TD_BUILD_HELLO)
         target_link_libraries(turnbuckle-dive PRIVATE td_window)
         target_compile_definitions(turnbuckle-dive PRIVATE TD_INSPECTOR)
         # The game's archive (src/archive.h): --extract writes it from the ROM with libzip and the game's LZSS, and
-        # --archive runs from it, read through LibUltraShip.
-        target_sources(turnbuckle-dive PRIVATE src/archive_write.c src/archive_read.cpp)
+        # --archive runs from it, read through LibUltraShip; the player's launch writes it on the first launch and then
+        # starts from it (src/first_launch.h).
+        target_sources(turnbuckle-dive PRIVATE src/archive_write.c src/archive_read.cpp src/first_launch.cpp)
         target_link_libraries(turnbuckle-dive PRIVATE libzip::zip)
         target_compile_definitions(turnbuckle-dive PRIVATE TD_ARCHIVE)
     endif()
@@ -664,6 +665,14 @@ if(TD_BUILD_HELLO)
             set_tests_properties(archive_check_guard PROPERTIES
                 SKIP_RETURN_CODE 77
                 PASS_REGULAR_EXPRESSION "inside the resources' data, which the game's archive keeps as files, not as ROM bytes, for a packed resource")
+            # The player's launch (tests/first_launch/check.py says what it checks): the first launch writes the
+            # archive, the next starts from it, a damaged one is written again. Skipped (77) with no ROM or off Linux.
+            if(Python3_FOUND)
+                add_test(NAME first_launch COMMAND ${Python3_EXECUTABLE} -B
+                    ${PROJECT_SOURCE_DIR}/tests/first_launch/check.py $<TARGET_FILE:turnbuckle-dive>
+                    ${CMAKE_BINARY_DIR}/first_launch_home)
+                set_tests_properties(first_launch PROPERTIES SKIP_RETURN_CODE 77)
+            endif()
         endif()
     endif()
 endif()

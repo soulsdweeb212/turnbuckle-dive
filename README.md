@@ -37,8 +37,10 @@ Linux (x86-64) is planned first. Open design decisions are listed in [docs/DECIS
 There are three programs so far:
 
 - `turnbuckle-dive` loads your ROM, checks that it is the supported one, and prints what it found. When the build
-  includes the game's code (below), it then loads all 7657 resources of the ROM with the game's own loader and prints
-  how many it loaded. `turnbuckle-dive --res 0x3` loads only resource 3 and prints its size and first 16 bytes (the id
+  includes the game's code (below), it then loads all 7657 resources with the game's own loader and prints how many it
+  loaded. Such a build runs from the game's archive, which it writes from your ROM on the first launch, into the folder
+  it keeps its files in; after that the ROM is no longer needed ([docs/GAME_CODE.md](docs/GAME_CODE.md), "The game's
+  archive"). `turnbuckle-dive --res 0x3` loads only resource 3 and prints its size and first 16 bytes (the id
   can also be written in decimal). `turnbuckle-dive --dev-match` plays a CPU-against-CPU match with the game's own code,
   straight from the boot without the menus, and shows it in the Match Inspector's window: a table of the wrestlers and
   a map of the ring, live; there is no 3D picture yet ([docs/GAME_CODE.md](docs/GAME_CODE.md), "The developer match").

@@ -13,6 +13,7 @@
 #include "rom.h"
 #ifdef TD_ARCHIVE
 #include "archive.h"
+#include "first_launch.h"
 #endif
 #ifdef TD_GAME_CODE
 #include "resources.h"
@@ -235,7 +236,8 @@ int main(int argc, char **argv) {
         } else if (strncmp(argv[i], "--", 2) == 0 || rom_arg != NULL) {
             fprintf(stderr, "Usage: turnbuckle-dive [--archive FILE] [--extract FILE | --res ID | --sound-dump DIR | --music-dump DIR | --sound-replay DIR | --dev-boot FRAMES [--no-splash] [--wr-log FILE] [--sound-lockstep DIR] [--pad-script FILE] [--record-pads FILE] [--replay-pads FILE] [--no-idle-randoms] | --dev-match [--headless] [--sound-lockstep DIR] [--wr-log FILE] [--res-log FILE] [--seed N] "
                             "[--no-watchdog] "
-                            "[--hide-group N]... [--screenshot FILE [--screenshot-frame N | --screenshot-every N]] [--dump-frame N FILE] [--no-idle-randoms] [--capture-match-frames N,N,... DIR] [--players 0|1] [--time-limit MINUTES] [--matches N] [--record-pads FILE] [--replay-pads FILE] [--pad-script FILE] [--pad-bot SEED]] [ROM]\n");
+                            "[--hide-group N]... [--screenshot FILE [--screenshot-frame N | --screenshot-every N]] [--dump-frame N FILE] [--no-idle-randoms] [--capture-match-frames N,N,... DIR] [--players 0|1] [--time-limit MINUTES] [--matches N] [--record-pads FILE] [--replay-pads FILE] [--pad-script FILE] [--pad-bot SEED]] [ROM]\n"
+                            "With no mode, the game runs from its archive, which the first launch writes from the ROM.\n");
             return 1;
         } else {
             rom_arg = argv[i];
@@ -255,6 +257,14 @@ int main(int argc, char **argv) {
         }
         path = archive_arg;
         status = ROM_OK;
+    } else if (extract_arg == NULL && !dev_match && dev_boot == 0 && res_id == 0 && sound_dump_dir == NULL &&
+               music_dump_dir == NULL && sound_replay_dir == NULL) {
+        /* The player's launch, with no developer mode: the game's archive, written from the ROM on the first launch
+         * (src/first_launch.h). The developer modes read the ROM itself, unless given --archive. */
+        status = first_launch_open(rom_arg, &rom, &path);
+        if (path == NULL) {
+            return 1; /* no ROM given and none found; first_launch_open said where to put it */
+        }
     } else
 #endif
     {
@@ -269,7 +279,7 @@ int main(int argc, char **argv) {
         /* 77: CTest reports the developer match's tests as skipped on a machine with no ROM, such as CI. */
         return dev_match && status == ROM_NOT_FOUND ? 77 : 1;
     }
-    printf("ROM:    %s\n", path);
+    printf("%s %s\n", rom.sparse ? "Archive:" : "ROM:    ", path);
     printf("Size:   %zu bytes (%zu MiB)\n", rom.size, rom.size >> 20);
     printf("Order:  %s\n", rom_order_text(rom.order));
     printf("Name:   %s\n", rom.name);

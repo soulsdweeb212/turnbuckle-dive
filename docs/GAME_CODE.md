@@ -1020,8 +1020,27 @@ guard stops a stray read (docs/TESTING.md lists all three). Beyond the tests, th
 archive writes the same wrestler log, byte for byte, as the same match played from the ROM, and the boot to the menus
 gives the same screenshot.
 
-Still to come: on first launch, a release build finds the ROM, writes the archive into a folder it can write to (not
-beside the program when that folder is read-only, as in an AppImage), and from then on starts from the archive.
+**The player's launch.** Started with no developer mode (no `--dev-match`, `--dev-boot`, `--res`, `--extract` or
+the sound and music options), the port runs from the archive and writes it itself the first time
+(`src/first_launch.h`):
+
+1. It looks for `revenge.o2r` in the folder it keeps its files in, the same folder as its log, settings and saves:
+   LibUltraShip's app folder. That is the folder holding the program, or on Linux `$SHIP_HOME` when it is set. An
+   AppImage's launcher sets `$SHIP_HOME`, because the AppImage's own folder is read-only.
+2. When there is no archive, or one it cannot use (damaged, written from another ROM, or in an older format), it looks
+   for the ROM: any 16 MB file ending in `.z64`, `.n64` or `.v64`, whatever its name, in that folder, in the program's
+   folder and in the current folder, and last the decompilation's `baserom.z64`. The first one that is the supported
+   ROM is used. A ROM given as the first argument, or in `$TD_ROM`, is used instead of searching.
+3. It writes the archive from that ROM, which takes under two seconds, and runs from it. From then on it starts from the
+   archive and the ROM is no longer needed.
+
+When it finds no ROM, it says which folder to put the ROM in and stops. When it cannot write the archive (a folder it
+cannot write to, a full disk), it says why and runs from the ROM that time. The developer modes keep reading the ROM
+itself unless given `--archive`, so their tests and logs do not depend on what the player's folder holds. The test
+`first_launch` (`tests/first_launch/check.py`) runs the program three times with a folder of its own: the first launch
+must write the archive, the second must start from it without writing, and after the archive is cut in half, the next
+launch must write it again. With the build as it is now, the player's launch loads all 7657 resources and stops;
+starting the game itself from this launch comes later.
 
 ## Stepping through game code
 

@@ -77,8 +77,9 @@ different after any change; a digest is such a fingerprint taken over many piece
 | `archive_check` | The port writes the game's archive from your ROM, opens it again, and the game's own loader loads all 7657 resources twice, once from the ROM and once from the archive: the two runs must give the same descriptors and the same bytes. The ROM image built from the archive must also equal the ROM wherever it holds ROM bytes ([GAME_CODE.md](GAME_CODE.md), "The game's archive"). The test deletes the archive at its end. |
 | `archive_check_detects_change` | The same with one byte of one resource changed after it is loaded from the archive. This test passes when `archive_check` reports that the two runs differ. |
 | `archive_check_guard` | A read inside a packed resource of the archive's ROM image. This test passes when the program stops and says that the archive keeps that data as files. |
+| `first_launch` | The player's launch, run three times with an empty folder of its own: the first launch must find the ROM, write the game's archive into the folder and run from it; the second must run from the archive without writing; after the archive is cut in half, the next launch must write it again. The test deletes the folder at its end. It runs on Linux only, where the folder can be given to the program in `SHIP_HOME` ([GAME_CODE.md](GAME_CODE.md), "The game's archive"). |
 
-Near the end, CTest prints how many passed, `100% tests passed, 0 tests failed out of 33` (34 in the asan and order presets), and
+Near the end, CTest prints how many passed, `100% tests passed, 0 tests failed out of 34` (35 in the asan and order presets), and
 then the time the tests took. The tests from `rom_loader` on, but for the two gdb tests, need your ROM. When they find none, CTest marks them `***Skipped` instead of `Passed`, still
 counts them in that line, and names them at the very end, under `The following tests did not run:`.
 
