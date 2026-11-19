@@ -1,4 +1,5 @@
 #include "rom.h"
+#include "archive.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -10,6 +11,7 @@
 /* The ROM the game's code reads (rom_attach): its data in .z64 order, and its size. */
 static const uint8_t *g_game_rom;
 static size_t g_game_rom_size;
+static int g_game_rom_sparse;
 
 static int file_exists(const char *path) {
     FILE *f = fopen(path, "rb");
@@ -162,6 +164,7 @@ void rom_attach(const Rom *rom) {
     if (rom == NULL) {
         g_game_rom = NULL;
         g_game_rom_size = 0;
+        g_game_rom_sparse = 0;
         return;
     }
     if (rom->data == NULL || strcmp(rom->sha1, TD_ROM_SHA1) != 0) {
@@ -169,6 +172,57 @@ void rom_attach(const Rom *rom) {
     }
     g_game_rom = rom->data;
     g_game_rom_size = rom->size;
+    g_game_rom_sparse = rom->sparse;
+}
+
+/* In an image built from the game's archive, the resources' data holds every resource stored unpacked (the game
+ * streams the animations from it a piece at a time, initializeResourceStream) and, of each packed one, only its first
+ * 4 bytes, its unpacked size, which the game reads by itself; the rest of a packed resource comes from the archive
+ * through the loader. A read there is allowed when the part of it inside each packed resource lies within those first
+ * 4 bytes. The resource table's starts rise from one resource to the next; a binary search finds the first resource
+ * the read touches. */
+static uint32_t res_word(uint32_t index) {
+    const uint8_t *w = g_game_rom + TD_ROM_RES_TABLE + index * 4;
+
+    return (uint32_t)w[0] << 24 | (uint32_t)w[1] << 16 | (uint32_t)w[2] << 8 | w[3];
+}
+
+static uint32_t res_start(uint32_t index) {
+    return TD_ROM_RES_DATA + (res_word(index) & ~1u);
+}
+
+static int sparse_read_ok(uint32_t src, uint32_t size) {
+    uint32_t end = src + size;
+    uint32_t lo = 0;
+    uint32_t hi = GAME_RES_COUNT - 1;
+    uint32_t i;
+
+    if (end <= TD_ROM_RES_DATA || src >= TD_ROM_RES_TABLE) {
+        return 1;
+    }
+    if (src < TD_ROM_RES_DATA) {
+        return 0;
+    }
+    while (lo < hi) {
+        uint32_t mid = lo + (hi - lo + 1) / 2;
+
+        if (res_start(mid) <= src) {
+            lo = mid;
+        } else {
+            hi = mid - 1;
+        }
+    }
+    for (i = lo; i < GAME_RES_COUNT && res_start(i) < end; i++) {
+        if (res_word(i) & 1u) {
+            uint32_t next = res_start(i + 1); /* the table's last word is the end of the last resource */
+            uint32_t part_end = end < next ? end : next;
+
+            if (part_end > res_start(i) + 4) {
+                return 0;
+            }
+        }
+    }
+    return 1;
 }
 
 /* The game's code reads ROM only through this function: on the PC, its readRomSynchronousChunks (the N64's PI DMA
@@ -189,6 +243,12 @@ void port_rom_read(void *dst, uint32_t src, uint32_t size) {
     }
     if (dst == NULL) {
         port_fatal("port_rom_read: the game read 0x%X bytes at ROM address 0x%07X into a null pointer", size, src);
+    }
+    if (g_game_rom_sparse && !sparse_read_ok(src, size)) {
+        port_fatal("port_rom_read: the game read 0x%X bytes at ROM address 0x%07X, inside the resources' data, which "
+                   "the game's archive keeps as files, not as ROM bytes, for a packed resource; only the loader (func_80003684) "
+                   "reads those",
+                   size, src);
     }
     memcpy(dst, g_game_rom + src, size);
 }

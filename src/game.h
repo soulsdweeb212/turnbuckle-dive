@@ -65,6 +65,12 @@ TD_NORETURN void port_fatal(const char *fmt, ...) TD_PRINTF_FORMAT;
 void port_rom_read(void *dst, uint32_t src, uint32_t size);
 /* func_80003684 calls this once a whole resource is in RAM (src/port.c). */
 void port_res_loaded(uint32_t id, void *buf, int32_t size);
+/* func_80003684 calls this first: when a source is set (port_res_source), the source gives resource id's size bytes
+ * and this returns 1; otherwise it returns 0 and the loader reads the ROM (src/port.c). */
+int32_t port_res_read(uint32_t id, void *buf, int32_t size);
+/* Sets where port_res_read takes resources from: the game's archive (archive_open, src/archive.h) sets it, and NULL
+ * goes back to the ROM. A source returns 1 when it gave the bytes; it stops the program when it cannot. */
+void port_res_source(int (*source)(uint32_t id, void *buf, int32_t size));
 /* PTR_TO_SLOT and SLOT_TO_PTR in port.h (src/slots.c): turn an address into the 32-bit handle that a 4-byte address
  * field of an N64-layout record holds on the PC, and back. The same address always gives the same handle, NULL gives
  * 0, and port_slot_to_ptr stops the program on a handle that was never given out. */

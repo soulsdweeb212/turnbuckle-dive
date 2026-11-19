@@ -74,8 +74,11 @@ different after any change; a digest is such a fingerprint taken over many piece
 | `byte_order_match` | Only in the order preset: plays the developer match under the byte-order check (below, "The byte-order check") and passes when no read of the game's code gives another value than the N64's. It takes about a minute. |
 | `viewer_reference` | `tools/viewer_ref.py` works out from your ROM, without the game's code, what the asset viewer must build and draw, and writes it to `build/debug/viewer_ref.json`: the reference. |
 | `viewer_check` | The asset viewer builds its three subjects (a wrestler's head from its three parts, an effect sprite and a 2D picture) with the game's code and compares them with the reference: first the vertices and triangles of each of the head's parts, and the camera placed over them, then every pixel of each picture. Between the head's two sides Fast3D draws at another resolution, as when someone stretches the window. Last, the picture's palette is changed in memory, and the picture must be drawn in the new colours. Its window opens, draws and closes by itself. |
+| `archive_check` | The port writes the game's archive from your ROM, opens it again, and the game's own loader loads all 7657 resources twice, once from the ROM and once from the archive: the two runs must give the same descriptors and the same bytes. The ROM image built from the archive must also equal the ROM wherever it holds ROM bytes ([GAME_CODE.md](GAME_CODE.md), "The game's archive"). The test deletes the archive at its end. |
+| `archive_check_detects_change` | The same with one byte of one resource changed after it is loaded from the archive. This test passes when `archive_check` reports that the two runs differ. |
+| `archive_check_guard` | A read inside a packed resource of the archive's ROM image. This test passes when the program stops and says that the archive keeps that data as files. |
 
-Near the end, CTest prints how many passed, `100% tests passed, 0 tests failed out of 27` (28 in the asan and order presets), and
+Near the end, CTest prints how many passed, `100% tests passed, 0 tests failed out of 33` (34 in the asan and order presets), and
 then the time the tests took. The tests from `rom_loader` on, but for the two gdb tests, need your ROM. When they find none, CTest marks them `***Skipped` instead of `Passed`, still
 counts them in that line, and names them at the very end, under `The following tests did not run:`.
 

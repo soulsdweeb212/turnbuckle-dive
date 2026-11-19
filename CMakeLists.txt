@@ -579,6 +579,8 @@ if(TD_BUILD_HELLO)
     target_compile_definitions(td_window PUBLIC F3DEX_GBI_2 $<$<PLATFORM_ID:Windows>:NOMINMAX>)
     td_strict(td_window)
     add_dependencies(td_window f3d_o2r)
+    # libzip, which LibUltraShip reads .o2r archives with, also writes the game's archive (src/archive_write.c).
+    find_package(libzip REQUIRED)
 
     add_executable(hello hello/main.cpp)
     target_link_libraries(hello PRIVATE td_window)
@@ -592,6 +594,11 @@ if(TD_BUILD_HELLO)
             src/dev/sound_test.cpp src/dev/sound_player.cpp src/audio/sound_output.cpp src/splash.cpp)
         target_link_libraries(turnbuckle-dive PRIVATE td_window)
         target_compile_definitions(turnbuckle-dive PRIVATE TD_INSPECTOR)
+        # The game's archive (src/archive.h): --extract writes it from the ROM with libzip and the game's LZSS, and
+        # --archive runs from it, read through LibUltraShip.
+        target_sources(turnbuckle-dive PRIVATE src/archive_write.c src/archive_read.cpp)
+        target_link_libraries(turnbuckle-dive PRIVATE libzip::zip)
+        target_compile_definitions(turnbuckle-dive PRIVATE TD_ARCHIVE)
     endif()
 
     if(TD_GAME_CODE)
@@ -637,6 +644,26 @@ if(TD_BUILD_HELLO)
             else()
                 message(STATUS "viewer_check: not added (no Python 3, which computes its reference, was found)")
             endif()
+        endif()
+
+        # The game's archive against the ROM (tests/archive_check/main.c says what it checks). It needs the ROM, and
+        # CTest reports it as skipped without one (exit code 77). archive_check_detects_change changes one byte of a
+        # resource loaded from the archive, which must make it fail; archive_check_guard reads inside a packed resource
+        # in the archive's ROM image, which port_rom_read must refuse.
+        add_executable(archive_check tests/archive_check/main.c src/archive_write.c src/archive_read.cpp)
+        target_link_libraries(archive_check PRIVATE td_window td_resources libzip::zip)
+        td_strict(archive_check)
+        if(BUILD_TESTING)
+            add_test(NAME archive_check COMMAND archive_check)
+            set_tests_properties(archive_check PROPERTIES SKIP_RETURN_CODE 77)
+            add_test(NAME archive_check_detects_change COMMAND archive_check --flip 0x123)
+            set_tests_properties(archive_check_detects_change PROPERTIES
+                SKIP_RETURN_CODE 77
+                PASS_REGULAR_EXPRESSION "FAIL: the resources loaded from the archive differ")
+            add_test(NAME archive_check_guard COMMAND archive_check --read-inside)
+            set_tests_properties(archive_check_guard PROPERTIES
+                SKIP_RETURN_CODE 77
+                PASS_REGULAR_EXPRESSION "inside the resources' data, which the game's archive keeps as files, not as ROM bytes, for a packed resource")
         endif()
     endif()
 endif()

@@ -8,6 +8,7 @@
 
 static uint32_t g_res_loaded;
 static void (*g_res_hook)(uint32_t id);
+static int (*g_res_source)(uint32_t id, void *buf, int32_t size);
 
 void port_res_hook(void (*hook)(uint32_t id)) {
     g_res_hook = hook;
@@ -43,6 +44,14 @@ void port_res_loaded(uint32_t id, void *buf, int32_t size) {
     if (g_res_hook != NULL) {
         g_res_hook(id);
     }
+}
+
+void port_res_source(int (*source)(uint32_t id, void *buf, int32_t size)) {
+    g_res_source = source;
+}
+
+int32_t port_res_read(uint32_t id, void *buf, int32_t size) {
+    return g_res_source != NULL && g_res_source(id, buf, size);
 }
 
 uint32_t port_res_loaded_count(void) {

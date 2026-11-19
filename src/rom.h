@@ -30,6 +30,7 @@ typedef struct {
     RomByteOrder order;
     char sha1[41];   /* hex SHA-1 of data (after conversion to .z64 order) */
     char name[21];   /* internal name from the header (0x20..0x33), trailing spaces removed */
+    int sparse;      /* built from the game's archive (archive_open, src/archive.h): the resources' data is left out */
 } Rom;
 
 /* The ROM path to use: given if it is not NULL, else $TD_ROM, else baserom.z64 in the current folder, else (builds made

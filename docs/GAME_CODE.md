@@ -967,6 +967,62 @@ When a change is meant to change what the game's loader loads, for example once 
 byte order, `tools/res_digest.py` gets the same change. The digest that both then compute goes into `RES_DIGEST` in
 `tests/rom_loader/main.c`.
 
+## The game's archive
+
+A LibUltraShip port runs from `.o2r` archives: zip files of named files, which LibUltraShip opens and reads by path.
+The port writes the game's archive itself, once, from your ROM, so that from then on it can run without the ROM. No
+separate extractor is needed: the port already checks the ROM, has the game's own decompressor (compiled from the
+decompilation) and links libzip, the library LibUltraShip reads `.o2r` files with. `src/archive.h` describes it.
+
+```
+./build/debug/turnbuckle-dive --extract revenge.o2r
+./build/debug/turnbuckle-dive --archive revenge.o2r --dev-match
+```
+
+The first command writes the archive from the ROM (in under two seconds); the second runs the developer match from
+the archive alone. `--archive` works with every other option.
+
+**What the archive holds.** The ROM keeps the game's 7657 resources (textures, models, animations, songs and the rest)
+one after another, 2429 of them packed with the game's LZSS; a table after them gives each resource's start. The
+archive holds:
+
+- `revenge/res/XXXX`: each resource, as the game's loader has it once unpacked, in the N64's byte order; `XXXX` is its
+  id in hex. 1589 resources are stored in the ROM twice, byte for byte; the archive keeps the 6068 different ones once.
+- `revenge/res/index`: for every resource id, the id whose file holds its bytes, and the first 4 bytes the ROM has at
+  the resource's start.
+- `revenge/rom/low` and `revenge/rom/high`: the ROM before the resources (the game's code and its data, which the
+  port reads the game's variables from) and after them (the resource table and the sound banks), as they are.
+- `revenge/extract.txt`: the archive's format number and the SHA-1 of the ROM it was written from. The port checks
+  both when it opens the archive.
+
+The archive is 12 MB, against the ROM's 16 MB. It holds the game's data, so it is made on each player's machine from
+their own ROM and never shipped or committed. It has no LibUltraShip `version` file: LibUltraShip accepts an archive
+that has one only through the full resource manager of a running game, and `extract.txt` says more.
+
+**How the game reads it.** `archive_open` (`src/archive_read.cpp`) mounts the archive with a LibUltraShip
+`ResourceManager` of its own and builds the 16 MB ROM image the game reads, as when it runs from the ROM: the two ROM
+ranges, every resource stored unpacked, and of each packed resource only its first 4 bytes. The port's code reads that
+image as before, the sound code included. A packed resource comes from the archive instead: the game's loader,
+`func_80003684`, asks the port first (`port_res_read`, in the decompilation's `include/port.h`), and the port copies
+the resource's file.
+
+Two things in the game read resource bytes without the loader, which is why the image keeps the pieces it does:
+`initializeAssetSizeTable`, `func_80008810` and `func_800084AC` read the first 4 bytes of resources by themselves (a
+packed resource's size, or an animation's two counts), and during a match `initializeResourceStream` streams the
+animations from the ROM 0x100 bytes at a time. All 4017 animations are stored unpacked, so their bytes are in the
+image. Any other read of a packed resource's bytes stops the program with a message that names the address
+(`port_rom_read`, `src/rom.c`), so a reader found later cannot get zeros without anyone noticing.
+
+**How it is checked.** The test `archive_check` (`tests/archive_check/main.c`) writes the archive, loads all 7657
+resources from it and from the ROM with the game's loader, and compares the two runs; it also compares the image with
+the ROM wherever the image holds ROM bytes. Two more tests show that the check notices a changed byte and that the
+guard stops a stray read (docs/TESTING.md lists all three). Beyond the tests, the developer match played from the
+archive writes the same wrestler log, byte for byte, as the same match played from the ROM, and the boot to the menus
+gives the same screenshot.
+
+Still to come: on first launch, a release build finds the ROM, writes the archive into a folder it can write to (not
+beside the program when that folder is read-only, as in an AppImage), and from then on starts from the archive.
+
 ## Stepping through game code
 
 In VS Code (see the README for the setup), with a Debug build that includes game code:

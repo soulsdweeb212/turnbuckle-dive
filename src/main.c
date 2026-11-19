@@ -11,6 +11,9 @@
 #include "audio/music_dump.h"
 #endif
 #include "rom.h"
+#ifdef TD_ARCHIVE
+#include "archive.h"
+#endif
 #ifdef TD_GAME_CODE
 #include "resources.h"
 #endif
@@ -103,6 +106,8 @@ static void run_game_loader(const Rom *rom, uint32_t res_id) {
 int main(int argc, char **argv) {
     const char *rom_arg = NULL;
     const char *path;
+    const char *archive_arg = NULL; /* --archive FILE: run from the game's archive instead of the ROM */
+    const char *extract_arg = NULL; /* --extract FILE: write the game's archive from the ROM and stop */
     uint32_t res_id = 0;
     int dev_match = 0;
     unsigned dev_boot = 0; /* --dev-boot FRAMES: frames to run from the boot */
@@ -131,7 +136,11 @@ int main(int argc, char **argv) {
     dev_inspector_set_command(argc, argv); /* the F1 menu's Reset starts the program again with these */
 #endif
     for (i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "--res") == 0 && i + 1 < argc) {
+        if (strcmp(argv[i], "--archive") == 0 && i + 1 < argc) {
+            archive_arg = argv[++i];
+        } else if (strcmp(argv[i], "--extract") == 0 && i + 1 < argc) {
+            extract_arg = argv[++i];
+        } else if (strcmp(argv[i], "--res") == 0 && i + 1 < argc) {
             res_id = parse_res_id(argv[++i]);
             if (res_id == 0) {
                 fprintf(stderr, "--res %s: a resource id is 1 to %u, in decimal or in hex such as 0x1DE9\n", argv[i],
@@ -224,7 +233,7 @@ int main(int argc, char **argv) {
             match_options.seed = (uint32_t)strtoul(argv[++i], NULL, 0);
 #endif
         } else if (strncmp(argv[i], "--", 2) == 0 || rom_arg != NULL) {
-            fprintf(stderr, "Usage: turnbuckle-dive [--res ID | --sound-dump DIR | --music-dump DIR | --sound-replay DIR | --dev-boot FRAMES [--no-splash] [--wr-log FILE] [--sound-lockstep DIR] [--pad-script FILE] [--record-pads FILE] [--replay-pads FILE] [--no-idle-randoms] | --dev-match [--headless] [--sound-lockstep DIR] [--wr-log FILE] [--res-log FILE] [--seed N] "
+            fprintf(stderr, "Usage: turnbuckle-dive [--archive FILE] [--extract FILE | --res ID | --sound-dump DIR | --music-dump DIR | --sound-replay DIR | --dev-boot FRAMES [--no-splash] [--wr-log FILE] [--sound-lockstep DIR] [--pad-script FILE] [--record-pads FILE] [--replay-pads FILE] [--no-idle-randoms] | --dev-match [--headless] [--sound-lockstep DIR] [--wr-log FILE] [--res-log FILE] [--seed N] "
                             "[--no-watchdog] "
                             "[--hide-group N]... [--screenshot FILE [--screenshot-frame N | --screenshot-every N]] [--dump-frame N FILE] [--no-idle-randoms] [--capture-match-frames N,N,... DIR] [--players 0|1] [--time-limit MINUTES] [--matches N] [--record-pads FILE] [--replay-pads FILE] [--pad-script FILE] [--pad-bot SEED]] [ROM]\n");
             return 1;
@@ -232,10 +241,26 @@ int main(int argc, char **argv) {
             rom_arg = argv[i];
         }
     }
-    path = rom_find(rom_arg);
-
     printf("Turnbuckle Dive %s, commit %s\n", TD_VERSION, TD_COMMIT);
-    status = rom_load(path, &rom);
+#ifdef TD_ARCHIVE
+    /* --archive: the ROM image comes from the game's archive (src/archive.h), and the game's loader takes each resource
+     * from the archive's files. */
+    if (archive_arg != NULL) {
+        char why[512];
+
+        if (archive_open(archive_arg, &rom, why, sizeof(why)) != 0) {
+            fflush(stdout);
+            fprintf(stderr, "Archive: %s\n", why);
+            return 1;
+        }
+        path = archive_arg;
+        status = ROM_OK;
+    } else
+#endif
+    {
+        path = rom_find(rom_arg);
+        status = rom_load(path, &rom);
+    }
     if (status != ROM_OK && status != ROM_WRONG_HASH) {
         /* stdout is buffered when it is not a terminal; flush it so messages keep their order. */
         fflush(stdout);
@@ -255,7 +280,22 @@ int main(int argc, char **argv) {
         rom_free(&rom);
         return 2;
     }
-    printf("Status: supported ROM\n");
+    printf("Status: supported ROM%s\n", rom.sparse ? ", from the game's archive" : "");
+#ifdef TD_ARCHIVE
+    if (extract_arg != NULL) {
+        char why[512];
+        int result = archive_write(&rom, extract_arg, why, sizeof(why));
+
+        if (result != 0) {
+            fflush(stdout);
+            fprintf(stderr, "Archive %s: %s\n", extract_arg, why);
+        } else {
+            printf("Archive: wrote %s\n", extract_arg);
+        }
+        rom_free(&rom);
+        return result != 0;
+    }
+#endif
 #ifdef TD_GAME_CODE
     if (music_dump_dir != NULL) {
         int result = music_dump(&rom, music_dump_dir, 90);
