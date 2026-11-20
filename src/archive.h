@@ -3,7 +3,7 @@
  *
  * What it holds (docs/GAME_CODE.md, "The game's archive", says why):
  * - TD_ARCHIVE_RES_FILE: each resource whose bytes differ from every earlier one's, as the game's loader has it once
- *   unpacked (the game's LZSS, func_800037F4), in the N64's byte order. 6068 of the 7657 resources; the other 1589 are
+ *   unpacked (the game's LZSS, decompressLzss), in the N64's byte order. 6068 of the 7657 resources; the other 1589 are
  *   stored in the ROM twice and use the file of the first copy.
  * - TD_ARCHIVE_INDEX: for each resource id, 1 to GAME_RES_COUNT, six bytes: the id whose file holds its bytes
  *   (big-endian u16), then the first 4 bytes the ROM has at the resource's start, which the game reads by themselves.
@@ -44,7 +44,7 @@ extern "C" {
 
 /* Writes the archive at path from rom, which must be the supported ROM: to path's name with ".part" added, then renamed
  * to path, so that an archive is never left half-written. Returns 0, or -1 with the reason in why. In builds with the
- * game's code only (it unpacks with the game's func_800037F4). */
+ * game's code only (it unpacks with the game's decompressLzss). */
 int archive_write(const Rom *rom, const char *path, char *why, size_t why_size);
 
 /* Opens the archive at path with LibUltraShip and builds from it, in rom, the ROM image the game reads: the two ROM

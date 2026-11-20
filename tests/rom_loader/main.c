@@ -2,7 +2,7 @@
  * loads.
  *
  * 1. It loads all 7657 resources with the game's initializeAssetSizeTable, lookupResourceDescriptor and func_80003684
- *    (which unpacks the compressed ones with the game's func_800037F4), checks that the game reported each load to the
+ *    (which unpacks the compressed ones with the game's decompressLzss), checks that the game reported each load to the
  *    port (port_res_loaded), and compares the resources with one known-good digest, RES_DIGEST below.
  * 2. It makes copies of the ROM in the .v64 and .n64 byte orders and checks that each, once the ROM check has turned
  *    it back into .z64 order, gives the same digest. Then it makes a copy with one byte of a resource changed, which

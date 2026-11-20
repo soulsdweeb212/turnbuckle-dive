@@ -4,7 +4,7 @@
 line per resource, which the test reads through the environment variable TD_MANIFEST to say which resources differ.
 
 It is a second, separate reader of the same data, written in Python from the format: the game's resource table, and
-the compression that the game's func_800037F4 unpacks. When its digest and the test's agree, the game's loader,
+the compression that the game's decompressLzss unpacks. When its digest and the test's agree, the game's loader,
 compiled for the PC, reads every resource exactly as this script does. docs/GAME_CODE.md says when to run it.
 
 Usage, from the repository folder:
@@ -91,7 +91,7 @@ def unpack(stream, size):
             at = len(out) + back
             out.append(out[at] if at >= 0 else 0)
     if len(out) != size:
-        # The game's func_800037F4 would write these bytes past the end of the resource's buffer.
+        # The game's decompressLzss would write these bytes past the end of the resource's buffer.
         raise ValueError('its last reference ends %d bytes past its size' % (len(out) - size))
     return bytes(out)
 

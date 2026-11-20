@@ -234,7 +234,7 @@ if(TD_GAME_CODE)
         ${TD_DECOMP}/src/main/initializeAssetSizeTable.c
         ${TD_DECOMP}/src/main/lookupResourceDescriptor.c
         ${TD_DECOMP}/src/main/func_80003684.c
-        ${TD_DECOMP}/src/main/func_800037F4.c
+        ${TD_DECOMP}/src/main/decompressLzss.c
         ${TD_DECOMP}/src/main/readRomSynchronousChunks.c
         ${TD_DECOMP}/src/main/func_8000486C.c
         ${TD_DECOMP}/src/main/buildVertexDisplayList.c

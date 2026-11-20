@@ -47,7 +47,7 @@ void initializeAssetSizeTable(void);
  * res_load (src/resources.c) checks the whole id before it calls the game's loader. */
 void lookupResourceDescriptor(void *out, uint32_t id);
 /* Loads resource id into buf, which must hold its size: a compressed resource is unpacked by the game's LZSS
- * decompressor func_800037F4, any other is copied. Writes the resource's GameResDesc to out and returns out. Like
+ * decompressor decompressLzss, any other is copied. Writes the resource's GameResDesc to out and returns out. Like
  * lookupResourceDescriptor, it only uses the low 16 bits of id. */
 void *func_80003684(void *out, int32_t id, void *buf);
 

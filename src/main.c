@@ -60,7 +60,7 @@ static uint32_t parse_res_id(const char *text) {
 #ifdef TD_GAME_CODE
 /* Runs the game's own ROM loader, compiled from the decompilation, on the checked ROM: with res_id 0 it loads every
  * resource and prints a summary, else only resource res_id, and prints its size and first bytes. A breakpoint in the
- * decompilation's src/main/func_800037F4.c (the game's LZSS decompressor) stops in here for each compressed one. */
+ * decompilation's src/main/decompressLzss.c (the game's LZSS decompressor) stops in here for each compressed one. */
 static void run_game_loader(const Rom *rom, uint32_t res_id) {
     GameResDesc desc;
     uint8_t *buf;

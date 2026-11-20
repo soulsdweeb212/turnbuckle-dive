@@ -92,7 +92,7 @@ needs and the build does not have. Today the files are the ROM loader, from the 
 | `initializeAssetSizeTable.c` | At boot, reads the resource table from ROM and works out each resource's size. |
 | `lookupResourceDescriptor.c` | Gives a resource's place in ROM, its size once loaded, and whether it is compressed. |
 | `func_80003684.c` | Loads one resource into memory: unpacks it if it is compressed, else copies it. |
-| `func_800037F4.c` | The game's LZSS decompressor, which unpacks a compressed resource. |
+| `decompressLzss.c` | The game's LZSS decompressor, which unpacks a compressed resource. |
 | `readRomSynchronousChunks.c` | Reads bytes from ROM: a DMA transfer on the N64, a copy from the ROM in memory here. |
 
 and the functions that build display lists for a model, an effect sprite or a picture, from `src/main` and, the last
@@ -1048,7 +1048,7 @@ launch must write it again. `--frames` and `--headless` are only for such checks
 
 In VS Code (see the README for the setup), with a Debug build that includes game code:
 
-1. Open a file of the game's C with File, Open File. For example, the decompilation's `src/main/func_800037F4.c` is
+1. Open a file of the game's C with File, Open File. For example, the decompilation's `src/main/decompressLzss.c` is
    the game's decompressor.
 2. Click left of a line number inside the function, for example on the line `size = READ_BE32(arg0);`. A red dot marks
    the breakpoint.
@@ -1064,7 +1064,7 @@ stops where the function starts; `next 2` runs on by two lines, past the one tha
 and, with `backtrace`, the calls that led there:
 
 ```
-gdb -ex 'break func_800037F4' -ex run -ex 'next 2' -ex 'print size' -ex backtrace \
+gdb -ex 'break decompressLzss' -ex run -ex 'next 2' -ex 'print size' -ex backtrace \
     --args ./build/debug/turnbuckle-dive --res 0x3
 ```
 

@@ -133,7 +133,7 @@ Direct3D 12 when it can; set `GALLIUM_DRIVER=llvmpipe` to draw on the CPU instea
 "Debug Turnbuckle Dive", "Debug hello window" or "Debug asset viewer" in the Run and Debug view; F5 builds that program
 and starts it under the debugger (the first time, CMake Tools asks for a configure preset: pick Debug). F7 only builds.
 To step through the game's own code, open one of its files with File, Open File, for example the decompilation's
-`src/main/func_800037F4.c` (the game's decompressor), click left of a line number to set a breakpoint, and start "Debug
+`src/main/decompressLzss.c` (the game's decompressor), click left of a line number to set a breakpoint, and start "Debug
 Turnbuckle Dive": it stops there with the game's variables in the Variables view. "Debug Turnbuckle Dive: one resource"
 asks for a resource id and loads only that one. "Debug Turnbuckle Dive: dev match" plays the developer match under the
 debugger, and "Debug Turnbuckle Dive: dev boot" boots the game to its menus, so a match chosen there runs under the

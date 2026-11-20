@@ -1,5 +1,5 @@
 /* Writing the game's archive from the ROM (src/archive.h says what it holds). It reads the resource table the way the
- * game's initializeAssetSizeTable does, unpacks each packed resource with the game's own LZSS (func_800037F4, compiled
+ * game's initializeAssetSizeTable does, unpacks each packed resource with the game's own LZSS (decompressLzss, compiled
  * from the decompilation), and writes the files with libzip, the library LibUltraShip reads .o2r files with. */
 #include "archive.h"
 
@@ -13,7 +13,7 @@
 #include "sha1.h"
 
 /* The game's LZSS: packed is a big-endian u32 size followed by the packed stream; out receives that many bytes. */
-void func_800037F4(uint8_t *packed, uint8_t *out);
+void decompressLzss(uint8_t *packed, uint8_t *out);
 
 static uint32_t be32(const uint8_t *p) {
     return (uint32_t)p[0] << 24 | (uint32_t)p[1] << 16 | (uint32_t)p[2] << 8 | p[3];
@@ -182,7 +182,7 @@ int archive_write(const Rom *rom, const char *path, char *why, size_t why_size) 
             return -1;
         }
         if (s.packed) {
-            func_800037F4(rom->data + s.start, bytes);
+            decompressLzss(rom->data + s.start, bytes);
         } else {
             memcpy(bytes, rom->data + s.start, size);
         }
