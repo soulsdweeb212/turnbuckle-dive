@@ -12,7 +12,7 @@ extern "C" {
 #endif
 
 /* Runs the game from its boot loop (func_80013108) for `frames` frame hand-offs, then ends the program with exit code
- * 0. on_frame, when not NULL, is called with user after every frame the game hands over (the Match Inspector's window,
+ * 0; with frames 0, for as long as the game runs (the player's game: it ends when the window is closed). on_frame, when not NULL, is called with user after every frame the game hands over (the Match Inspector's window,
  * dev_inspector_frame, which draws it); NULL for a run without a window. It returns only when the boot loop does,
  * which the N64's never does: then it returns 1. */
 int dev_boot_run(const Rom *rom, uint32_t frames, void (*on_frame)(void *user), void *user);
@@ -24,6 +24,9 @@ void dev_boot_pads(const char *replay, const char *record, const char *script);
  * compare with the original game run with its idle thread's random calls turned off, as the developer match's
  * --no-idle-randoms does. Before dev_boot_run. */
 void dev_boot_idle_randoms(int no_idle_randoms);
+/* The player's game (the plain launch, src/main.c) rather than the developer boot: no progress lines, only the game.
+ * Before dev_boot_run. */
+void dev_boot_play(void);
 /* The frames the game has handed over since the boot began. */
 uint32_t dev_boot_frames(void);
 /* The wrestler log (src/dev/dev_records.h) to FILE while the match is loaded, and a function to call before the program

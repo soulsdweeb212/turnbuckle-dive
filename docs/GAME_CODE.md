@@ -1021,8 +1021,9 @@ archive writes the same wrestler log, byte for byte, as the same match played fr
 gives the same screenshot.
 
 **The player's launch.** Started with no developer mode (no `--dev-match`, `--dev-boot`, `--res`, `--extract` or
-the sound and music options), the port runs from the archive and writes it itself the first time
-(`src/first_launch.h`):
+the sound and music options), the port starts the game: the same boot as `--dev-boot` (below, "The developer boot"),
+in the same window with its sound and saves, but with no frame limit and no progress lines; closing the window ends
+it. It runs from the archive and writes it itself the first time (`src/first_launch.h`):
 
 1. It looks for `revenge.o2r` in the folder it keeps its files in, the same folder as its log, settings and saves:
    LibUltraShip's app folder. That is the folder holding the program, or on Linux `$SHIP_HOME` when it is set. An
@@ -1037,10 +1038,11 @@ the sound and music options), the port runs from the archive and writes it itsel
 When it finds no ROM, it says which folder to put the ROM in and stops. When it cannot write the archive (a folder it
 cannot write to, a full disk), it says why and runs from the ROM that time. The developer modes keep reading the ROM
 itself unless given `--archive`, so their tests and logs do not depend on what the player's folder holds. The test
-`first_launch` (`tests/first_launch/check.py`) runs the program three times with a folder of its own: the first launch
-must write the archive, the second must start from it without writing, and after the archive is cut in half, the next
-launch must write it again. With the build as it is now, the player's launch loads all 7657 resources and stops;
-starting the game itself from this launch comes later.
+`first_launch` (`tests/first_launch/check.py`) runs the program three times with a folder of its own, each time with
+`--headless --frames 300`, which boot the game without a window and stop it after 300 frames: the first launch must
+write the archive, the second must boot from it without writing, and after the archive is cut in half, the next
+launch must write it again. `--frames` and `--headless` are only for such checks; `--screenshot` works as with
+`--dev-boot`.
 
 ## Stepping through game code
 

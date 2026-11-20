@@ -112,6 +112,8 @@ int main(int argc, char **argv) {
     uint32_t res_id = 0;
     int dev_match = 0;
     unsigned dev_boot = 0; /* --dev-boot FRAMES: frames to run from the boot */
+    int play = 0;          /* the player's launch, with no developer mode: the game, from its archive */
+    unsigned play_frames = 0; /* --frames N: the player's game stops after N frames (the tests); 0 for no limit */
     int headless = 0;
     int no_splash = 0;
     const char *screenshot = NULL;
@@ -185,6 +187,8 @@ int main(int argc, char **argv) {
             match_options.res_log = argv[++i];
         } else if (strcmp(argv[i], "--headless") == 0) {
             headless = 1;
+        } else if (strcmp(argv[i], "--frames") == 0 && i + 1 < argc) {
+            play_frames = (unsigned)strtoul(argv[++i], NULL, 0);
         } else if (strcmp(argv[i], "--no-splash") == 0) {
             no_splash = 1;
         } else if (strcmp(argv[i], "--screenshot") == 0 && i + 1 < argc) {
@@ -237,7 +241,8 @@ int main(int argc, char **argv) {
             fprintf(stderr, "Usage: turnbuckle-dive [--archive FILE] [--extract FILE | --res ID | --sound-dump DIR | --music-dump DIR | --sound-replay DIR | --dev-boot FRAMES [--no-splash] [--wr-log FILE] [--sound-lockstep DIR] [--pad-script FILE] [--record-pads FILE] [--replay-pads FILE] [--no-idle-randoms] | --dev-match [--headless] [--sound-lockstep DIR] [--wr-log FILE] [--res-log FILE] [--seed N] "
                             "[--no-watchdog] "
                             "[--hide-group N]... [--screenshot FILE [--screenshot-frame N | --screenshot-every N]] [--dump-frame N FILE] [--no-idle-randoms] [--capture-match-frames N,N,... DIR] [--players 0|1] [--time-limit MINUTES] [--matches N] [--record-pads FILE] [--replay-pads FILE] [--pad-script FILE] [--pad-bot SEED]] [ROM]\n"
-                            "With no mode, the game runs from its archive, which the first launch writes from the ROM.\n");
+                            "With no mode, the game starts in its window, from its archive, which the first launch writes from the ROM;\n"
+                            "--frames N stops it after N frames and --headless runs it without the window (for checks).\n");
             return 1;
         } else {
             rom_arg = argv[i];
@@ -265,6 +270,7 @@ int main(int argc, char **argv) {
         if (path == NULL) {
             return 1; /* no ROM given and none found; first_launch_open said where to put it */
         }
+        play = 1;
     } else
 #endif
     {
@@ -327,13 +333,29 @@ int main(int argc, char **argv) {
         return result;
     }
 #ifdef TD_DEV_MATCH
-    if (dev_boot != 0) {
+    /* The developer boot, and the player's game: the same boot in the same window, with no frame limit and no
+     * progress lines for the player (--frames and --headless are for the tests). */
+    if (play_frames != 0 && !play) {
+        fprintf(stderr, "--frames is for the game started with no developer mode; --dev-boot takes its own frames\n");
+        rom_free(&rom);
+        return 1;
+    }
+    if (dev_boot != 0 || play) {
         int result;
         void (*on_frame)(void *) = NULL;
 
+        if (play) {
+            dev_boot_play();
+        }
 #ifdef TD_INSPECTOR
-        /* The Match Inspector's window draws the frames, unless --headless (with no screen, the boot runs without). */
-        if (!headless && dev_inspector_start() == 0) {
+        /* The Match Inspector's window draws the frames, unless --headless (with no screen, the developer boot runs
+         * without; the player's game cannot). */
+        if (play && !headless && dev_inspector_start() != 0) {
+            fprintf(stderr, "The game cannot start without a window.\n");
+            rom_free(&rom);
+            return 1;
+        }
+        if (!headless && (play || dev_inspector_start() == 0)) {
             on_frame = dev_inspector_frame;
             dev_inspector_frames_from(dev_boot_frames);
             /* The sound: the music player and the synthesizer, heard through the window's sound device. Not in a
@@ -385,7 +407,7 @@ int main(int argc, char **argv) {
             }
             dev_boot_at_end(sound_lockstep_end);
         }
-        result = dev_boot_run(&rom, dev_boot, on_frame, NULL);
+        result = dev_boot_run(&rom, play ? play_frames : dev_boot, on_frame, NULL);
         sound_end();
         rom_free(&rom);
         return result;
@@ -431,6 +453,8 @@ int main(int argc, char **argv) {
     }
 #endif
     (void)dev_match;
+    (void)play;
+    (void)play_frames;
     (void)sound_lockstep_dir;
     (void)dev_boot;
     (void)headless;

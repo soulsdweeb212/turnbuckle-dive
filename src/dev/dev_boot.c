@@ -1,5 +1,6 @@
 /* The developer boot (turnbuckle-dive --dev-boot FRAMES): starts the game as the N64 does, from its boot loop, with no
- * window, and stops after FRAMES frames. It is the first step towards running the menus (overlay 1) on PC: it shows
+ * window, and stops after FRAMES frames. The player's game (turnbuckle-dive with no developer mode) is the same boot,
+ * with no frame limit and no progress lines (dev_boot_play). It is the first step towards running the menus (overlay 1) on PC: it shows
  * that the boot, the loading of overlay 1 and the menus' first frames run without stopping the program.
  *
  * What it does, in order:
@@ -40,6 +41,7 @@ static const char *g_replay, *g_record, *g_script;
 static int g_replay_ended;
 static FILE *g_log;
 static void (*g_at_end)(void);
+static int g_play; /* dev_boot_play: the player's game, which prints no progress lines */
 
 void dev_boot_wr_log(const char *path) {
     g_log = dev_records_log_open(path);
@@ -70,12 +72,13 @@ static void on_present(int kind) {
     if (g_on_frame != NULL) {
         g_on_frame(g_user);
     }
-    if (g_frames % 60 == 0) {
+    if (!g_play && g_frames % 60 == 0) {
         printf("dev-boot: frame %u\n", (unsigned)g_frames);
         fflush(stdout);
     }
-    if (g_frames >= g_cap) {
-        printf("dev-boot: passed after %u frames\n", (unsigned)g_frames);
+    if (g_cap != 0 && g_frames >= g_cap) {
+        printf(g_play ? "Stopped after %u frames (--frames)\n" : "dev-boot: passed after %u frames\n",
+               (unsigned)g_frames);
         fflush(stdout);
         /* The game never returns from its boot loop, so the program ends here. _Exit leaves out the exit handlers:
          * the game's heap blocks are still in use, which a leak check would report; the pad files are closed first. */
@@ -121,6 +124,10 @@ void dev_boot_idle_randoms(int no_idle_randoms) {
     game_sdk_set_idle_randoms(no_idle_randoms ? 0 : 1);
 }
 
+void dev_boot_play(void) {
+    g_play = 1;
+}
+
 uint32_t dev_boot_frames(void) {
     return g_frames;
 }
@@ -136,8 +143,10 @@ int dev_boot_run(const Rom *rom, uint32_t frames, void (*on_frame)(void *user), 
     game_sdk_set(&hooks, 0x1); /* controller 1 plugged in */
     game_vars_use_functions(game_var_functions, game_var_function_count);
     game_vars_load(0);
-    printf("dev-boot: boot, %u frames\n", (unsigned)frames);
-    fflush(stdout);
+    if (!g_play) {
+        printf("dev-boot: boot, %u frames\n", (unsigned)frames);
+        fflush(stdout);
+    }
     func_80013108();
     printf("dev-boot: the boot loop returned, which the N64's never does\n");
     dev_pads_close();

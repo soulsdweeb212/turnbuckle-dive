@@ -1,8 +1,10 @@
 """first_launch: checks the player's launch (src/first_launch.h) with a folder of its own for the port's files.
 
+Each launch runs the game from its boot for FRAMES frames without a window (--headless --frames), as the player's game
+runs in its window.
 1. The first launch, with an empty folder: the program finds the ROM, writes the game's archive into the folder, and
-   runs from the archive.
-2. The next launch: it runs from the archive and writes nothing.
+   boots the game from the archive.
+2. The next launch: it boots from the archive and writes nothing.
 3. A damaged archive (cut to half its size): the program says it cannot be used, writes it again, and runs from it.
 At the end the folder is deleted, archive and all: the archive holds the game's data and is never kept.
 
@@ -19,12 +21,15 @@ import sys
 SKIP = 77
 FROM_ARCHIVE = "Status: supported ROM, from the game's archive"
 WRITING = "Writing the game's archive"
+FRAMES = 300
+BOOTED = f"Stopped after {FRAMES} frames"
 
 
 def run(program, folder):
     env = dict(os.environ, SHIP_HOME=folder)
     env.pop("TD_ROM", None)  # a ROM given would make it the launch with a ROM, not the search
-    done = subprocess.run([program], cwd=folder, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    done = subprocess.run([program, "--headless", "--frames", str(FRAMES)], cwd=folder, env=env,
+                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     # The program's output goes into the test's, where CTest finds any sanitizer report (the asan preset).
     print(done.stdout)
     return done.returncode, done.stdout
@@ -52,21 +57,21 @@ def main():
         if "No ROM found" in out:
             print("SKIP: no ROM")
             return SKIP
-        check("the first launch writes the archive and runs from it",
-              code == 0 and WRITING in out and FROM_ARCHIVE in out and os.path.isfile(archive))
+        check("the first launch writes the archive and boots the game from it",
+              code == 0 and WRITING in out and FROM_ARCHIVE in out and BOOTED in out and os.path.isfile(archive))
 
         code, out = run(program, folder)
-        check("the next launch runs from the archive and writes nothing",
-              code == 0 and WRITING not in out and FROM_ARCHIVE in out)
+        check("the next launch boots from the archive and writes nothing",
+              code == 0 and WRITING not in out and FROM_ARCHIVE in out and BOOTED in out)
 
         with open(archive, "r+b") as f:
             f.truncate(os.path.getsize(archive) // 2)
         code, out = run(program, folder)
         check("a damaged archive is written again",
-              code == 0 and "cannot be used" in out and WRITING in out and FROM_ARCHIVE in out)
+              code == 0 and "cannot be used" in out and WRITING in out and FROM_ARCHIVE in out and BOOTED in out)
     finally:
         shutil.rmtree(folder, ignore_errors=True)
-    print("PASS: the first launch writes the game's archive, the next starts from it, and a damaged one is replaced")
+    print("PASS: the first launch writes the game's archive, the next boots from it, and a damaged one is replaced")
     return 0
 
 
