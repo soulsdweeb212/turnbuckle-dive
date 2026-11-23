@@ -108,9 +108,9 @@ jobs:
 
   windows:
     name: Windows zip
-    # The game's C is compiled by clang-cl (Clang with Visual Studio's options; GitHub's Windows machines have it), the
-    # C++ by Visual Studio's own compiler, as on CI. Everything is linked into the one .exe, with the C library too, so
-    # a player needs to install nothing first (no Visual C++ redistributable).
+    # The game's C needs clang-cl (Clang with Visual Studio's options; GitHub's Windows machines have it), and CMake
+    # allows one compiler family per build, so clang-cl compiles the C++ too. Everything is linked into the one .exe,
+    # with the C library too, so a player needs to install nothing first (no Visual C++ redistributable).
     runs-on: windows-2022
     timeout-minutes: 120
     steps:

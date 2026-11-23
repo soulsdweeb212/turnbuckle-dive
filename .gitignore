@@ -9,6 +9,8 @@
 generated/
 viewer_ref*.json
 *.png
+# ...except the program's icon for Linux, which is the port's own drawing (no game data)
+!packaging/turnbuckle-dive.png
 
 # Build output
 build*/

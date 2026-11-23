@@ -119,10 +119,11 @@
         {
             "name": "windows-clang-relwithdebinfo",
             "displayName": "Windows RelWithDebInfo, with the game (clang-cl)",
-            "description": "As windows-relwithdebinfo, but the C is compiled by clang-cl (Visual Studio's \"C++ Clang Compiler for Windows\"), which reads the game's C, so the program has the whole game; what releases build",
+            "description": "As windows-relwithdebinfo, but compiled by clang-cl (Visual Studio's \"C++ Clang Compiler for Windows\"), which reads the game's C, so the program has the whole game; what releases build",
             "inherits": "windows-relwithdebinfo",
             "cacheVariables": {
-                "CMAKE_C_COMPILER": "clang-cl"
+                "CMAKE_C_COMPILER": "clang-cl",
+                "CMAKE_CXX_COMPILER": "clang-cl"
             }
         }
     ],

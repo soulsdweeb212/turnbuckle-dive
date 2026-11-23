@@ -61,7 +61,8 @@ A build without game code still works: `turnbuckle-dive` only checks the ROM, an
 left out. CI builds this way, because it has no copy of the decompilation. So does Visual Studio's own compiler, cl,
 because the game's C uses options and extensions of GCC and Clang. On Windows the game is built with clang-cl instead
 (the preset `windows-clang-relwithdebinfo`): Clang with Visual Studio's options, libraries and linker. It compiles the
-C with exactly the settings it gets on Linux, and the C++ is still compiled by cl. Visual Studio installs clang-cl with
+game's C with exactly the settings it gets on Linux, and the C++ too (CMake allows only one of the two compilers in a
+build). Visual Studio installs clang-cl with
 the component "C++ Clang Compiler for Windows" (Visual Studio Installer, Modify, Individual components); VS Code uses
 whichever of the two the preset names.
 

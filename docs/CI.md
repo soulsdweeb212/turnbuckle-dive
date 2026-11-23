@@ -301,7 +301,8 @@ Debian 13 and later).
 
 **The Windows zip.** The game's C needs Clang's options and GNU C, which Visual Studio's own compiler (cl) does not
 take, so the release builds the C with clang-cl: Clang with Visual Studio's options, libraries and linker, which
-GitHub's Windows runners have. The C++ is still compiled by cl, as in ci.yml. Everything is linked into the one `.exe`:
+GitHub's Windows runners have. It compiles the C++ too, since CMake does not mix clang-cl and cl in one build (ci.yml
+keeps building with cl). Everything is linked into the one `.exe`:
 the libraries vcpkg builds are static (`x64-windows-static`), and so is the C library, so a player installs nothing
 first (no Visual C++ redistributable). The `.exe` is a console program: a console window opens beside the game with its
 messages. It keeps its files (the archive, settings, saves, logs) in its own folder, so the zip is unpacked into a
