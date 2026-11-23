@@ -269,12 +269,18 @@ if(TD_GAME_CODE)
     td_strict(td_resources)
 
     # Every game file that the game's boot reaches (the boot loop, the menus of overlay 1, the match of overlay 2),
-    # compiled with the game's settings but not linked yet: td_game_all. The decompilation's tools/port_filelist.py works out the list
-    # (its docs/port.md says how) and writes two text files: the list, and the paths of every file it read to make it;
-    # CMake configures again when one of those files changes, so the list follows the decompilation. A game file that
-    # stops compiling on the PC stops a full build. The tool needs the data files that the decompilation's build
-    # extracts from the ROM on its first run; without them, or when the tool finds the decompilation's list incomplete,
-    # configure says why and leaves td_game_all out (docs/GAME_CODE.md).
+    # compiled with the game's settings but not linked yet: td_game_all. The decompilation's tools/port_filelist.py works
+    # out the list (its docs/port.md says how) by following the game's calls, including those through the tables of
+    # function addresses in the game's data. That data comes from the ROM: the decompilation's build extracts it on its
+    # first run. So the decompilation also keeps the list it last worked out, port/game_files.txt, and a build that has
+    # no ROM (CI, releases) compiles the files that list names. The list holds only paths of the decompilation's C files.
+    #
+    # Where the tool can run, CMake runs it, compiles the list it writes, and warns when port/game_files.txt says
+    # otherwise, since a build without the ROM would then compile another set. The tool also writes the paths of every
+    # file it read; CMake configures again when one of those changes, so the list follows the decompilation. A game
+    # file that stops compiling on the PC stops a full build. With neither list, configure says why and leaves
+    # td_game_all out (docs/GAME_CODE.md).
+    set(TD_GAME_FILES ${TD_DECOMP}/port/game_files.txt)
     set(TD_MATCH_LIST ${CMAKE_BINARY_DIR}/game_match_files.txt)
     set(TD_MATCH_DEPENDS ${CMAKE_BINARY_DIR}/game_match_depends.txt)
     execute_process(
@@ -284,14 +290,28 @@ if(TD_GAME_CODE)
         RESULT_VARIABLE td_match_result
         OUTPUT_QUIET
         ERROR_VARIABLE td_match_error)
-    if(NOT td_match_result EQUAL 0)
-        # The build goes on without td_game_all, and says so as a warning. CMake keeps watching what the tool reads,
-        # so that the next build configures again once the cause is fixed (the decompilation's build run, or the
-        # game file mended): the files the last complete list depended on, the tool and build.json, and the
-        # decompilation's folders, whose dates change when build.py creates its build/ and asm/ folders.
+    set(td_match_files "")
+    set(td_committed_files "")
+    if(EXISTS ${TD_GAME_FILES})
+        file(STRINGS ${TD_GAME_FILES} td_committed_files ENCODING UTF-8)
+        set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${TD_GAME_FILES})
+    endif()
+    if(td_match_result EQUAL 0)
+        file(STRINGS ${TD_MATCH_LIST} td_match_files ENCODING UTF-8)
+        file(STRINGS ${TD_MATCH_DEPENDS} td_match_depends ENCODING UTF-8)
+        set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${td_match_depends})
+        if(NOT td_committed_files STREQUAL td_match_files)
+            message(WARNING "Game code: ${TD_GAME_FILES} is missing or out of date, so a build without the ROM (CI, "
+                            "releases) would compile another set of files. This build compiles the list the tool "
+                            "works out now. To update the file, run in the decompilation's folder:\n"
+                            "  python3 tools/port_filelist.py --set boot > port/game_files.txt")
+        endif()
+    else()
+        # CMake keeps watching what the tool reads, so that the next build configures again once the cause is fixed
+        # (the decompilation's build run, or a game file mended): the files the last complete list depended on, the
+        # tool and build.json, and the decompilation's folders, whose dates change when build.py creates its build/
+        # and asm/ folders.
         string(STRIP "${td_match_error}" td_match_error)
-        message(WARNING "Game code: td_game_all not built, because tools/port_filelist.py could not list the files "
-                        "(docs/GAME_CODE.md says what to do):\n${td_match_error}")
         set(td_match_watch ${TD_DECOMP} ${TD_DECOMP}/build.json ${TD_DECOMP}/tools/port_filelist.py)
         foreach(dir build asm asm/data)
             if(IS_DIRECTORY ${TD_DECOMP}/${dir})
@@ -307,10 +327,22 @@ if(TD_GAME_CODE)
             endforeach()
         endif()
         set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${td_match_watch})
-    else()
-        file(STRINGS ${TD_MATCH_LIST} td_match_files ENCODING UTF-8)
-        file(STRINGS ${TD_MATCH_DEPENDS} td_match_depends ENCODING UTF-8)
-        set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${td_match_depends})
+        set(td_match_files ${td_committed_files})
+        if(NOT IS_DIRECTORY ${TD_DECOMP}/asm/data AND td_match_files)
+            # The usual case without the ROM: the decompilation's build has never run, so the tool has no data.
+            message(STATUS "Game code: the file list is port/game_files.txt, not checked (the decompilation's build "
+                           "has not extracted the ROM's data, which tools/port_filelist.py needs)")
+        elseif(td_match_files)
+            message(WARNING "Game code: tools/port_filelist.py could not list the files, so this build compiles "
+                            "port/game_files.txt, which it could not check (docs/GAME_CODE.md says what to do):\n"
+                            "${td_match_error}")
+        else()
+            message(WARNING "Game code: td_game_all not built: the decompilation has no port/game_files.txt, and "
+                            "tools/port_filelist.py could not list the files (docs/GAME_CODE.md says what to do):\n"
+                            "${td_match_error}")
+        endif()
+    endif()
+    if(td_match_files)
         list(TRANSFORM td_match_files PREPEND ${TD_DECOMP}/)
         list(LENGTH td_match_files td_match_count)
         add_library(td_game_all OBJECT ${td_match_files})

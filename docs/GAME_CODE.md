@@ -876,7 +876,7 @@ the decompilation's tool `tools/port_filelist.py` works out by following the gam
 The target `td_game_all` compiles every one of them, with the same settings as `td_game`. `turnbuckle-dive` links them
 all, with the game's variables and the SDK functions, for the developer match (above) and the developer boot (below),
 and so does the test program `game_vars_check`; so a build stops on a game file that no longer compiles or uses a name
-the port lacks. Without `td_game_all` (no Python 3, or the decompilation's build not run), `turnbuckle-dive` links
+the port lacks. Without `td_game_all` (no Python 3, or no list of the files), `turnbuckle-dive` links
 only the ROM loader's files (`td_game`) and has no `--dev-match` or `--dev-boot`.
 
 Configure runs `port_filelist.py` and prints how many files it found:
@@ -890,12 +890,30 @@ read to make it (`game_match_depends.txt`). When one of those files changes, CMa
 follows the decompilation.
 
 The tool needs the data files that the decompilation's own build extracts from your ROM on its first run
-(its `asm/data` and `assets` folders). So, once, in the decompilation's folder, run its build as its README says
-(`python3 build.py`, which needs decompdecomp). The tool also stops when the decompilation's list is not complete: a
-game file calls a name that no file defines, or the decompilation's `build/game.ld` no longer matches its `build.json`
-(after a pull, until its build runs again). In each of these cases configure prints a warning that quotes the tool's
-message (a "README" in it means the decompilation's), and the build goes on without `td_game_all`. Once the cause is
-fixed, the next build configures again by itself and `td_game_all` is back.
+(its `asm/data` and `assets` folders): it follows the game's calls through the tables of function addresses in the
+game's data, and that data is in the ROM. So the decompilation also keeps the list in a file of its own,
+`port/game_files.txt`, which holds nothing but paths of its C files. A build with no ROM, as on CI or for a release,
+compiles the files that list names, and configure says so:
+
+```
+-- Game code: the file list is port/game_files.txt, not checked (the decompilation's build has not extracted the ROM's data, which tools/port_filelist.py needs)
+```
+
+Where the tool can run, the build compiles the list the tool works out, and configure warns when
+`port/game_files.txt` says otherwise, because a build without the ROM would then compile another set. That happens
+after a change in the decompilation adds or drops a file of the boot. To update the file, run this in the
+decompilation's folder, then commit it there:
+
+```
+python3 tools/port_filelist.py --set boot > port/game_files.txt
+```
+
+To run the tool, once, in the decompilation's folder, run its build as its README says (`python3 build.py`, which
+needs decompdecomp). The tool also stops when the decompilation's list is not complete: a game file calls a name that
+no file defines, or the decompilation's `build/game.ld` no longer matches its `build.json` (after a pull, until its
+build runs again). In each of these cases configure prints a warning that quotes the tool's message (a "README" in it
+means the decompilation's), and the build compiles `port/game_files.txt`, unchecked; without that file it goes on
+without `td_game_all`. Once the cause is fixed, the next build configures again by itself.
 
 Every record of these files that holds addresses has its PC layout, which the files follow (the decompilation's
 `docs/port.md`, "Shared records on PC", lists them). A few functions stop the program with a message where the N64
