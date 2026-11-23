@@ -114,7 +114,8 @@ The steps below have the same names as on GitHub.
 9. *Show LibUltraShip's log*, only when a step failed. On Windows, LibUltraShip writes its messages to
    `logs/hello.log` next to hello rather than to the step's output, so this step prints that file.
 
-The Windows build also leaves the game's code out, because the game's C needs GCC or Clang (configure says so).
+The Windows build also leaves the game's code out, because the game's C needs GCC or Clang (configure says so). The
+release recipe below builds it on Windows with clang-cl.
 Windows uses RelWithDebInfo rather than Debug because in a Debug build LibUltraShip moves the program's output to a
 console window of its own, and CI would not see what hello prints. Some of LibUltraShip's errors on Windows open a
 message box; on CI nobody can close it, so such a run ends at the step's time limit.
@@ -259,7 +260,7 @@ code, and nothing of the game's data. The player brings their own ROM; on its fi
 game's archive `revenge.o2r` from it (docs/GAME_CODE.md, "The game's archive"), and from then on runs from that.
 
 The recipe is [.github/workflows/release.yml](../.github/workflows/release.yml). It runs when a tag whose name starts
-with `v` is pushed. On a Linux runner it:
+with `v` is pushed. It builds on a Linux runner and a Windows runner at the same time. On the Linux runner it:
 
 1. gets this repository and, beside it in `source`, the decompilation's `port-groundwork` branch, as a build on your
    own computer has them (docs/GAME_CODE.md, "Where the game's C comes from");
@@ -272,8 +273,11 @@ with `v` is pushed. On a Linux runner it:
 6. creates the release, marked as a pre-release, with the AppImage, its SHA-256 checksum and notes that say how to
    use it and which commits of both repositories it was built from.
 
-"Run workflow" on the Actions tab runs steps 1 to 5 and keeps the AppImage with the run (under Artifacts) without
-publishing anything, which is how to try the recipe before a real release.
+The Windows runner does steps 1, 3 and 4 the same way with the preset `windows-clang-relwithdebinfo`, then packs a zip
+of `turnbuckle-dive.exe` and `f3d.o2r`. Step 6 waits for both and publishes the AppImage and the zip together.
+
+"Run workflow" on the Actions tab runs everything but step 6 and keeps the AppImage and the zip with the run (under
+Artifacts) without publishing anything, which is how to try the recipe before a real release.
 
 **To make a release:** set the new version in `CMakeLists.txt` (`project(turnbuckle-dive VERSION ...)`), commit and
 push it, then tag that commit and push the tag:
@@ -293,5 +297,16 @@ to (the player puts the ROM there too), or else to `~/.local/share/turnbuckle-di
 desktop entry and the icon, which are the port's own.
 
 The runner is Ubuntu 24.04, so the AppImage needs a Linux system with glibc 2.39 or newer (Ubuntu 24.04, Fedora 40,
-Debian 13 and later). Windows is not built yet: the game's C needs GCC or Clang, and the Windows job uses Visual
-Studio's compiler (docs/GAME_CODE.md, "Where the game's C comes from").
+Debian 13 and later).
+
+**The Windows zip.** The game's C needs Clang's options and GNU C, which Visual Studio's own compiler (cl) does not
+take, so the release builds the C with clang-cl: Clang with Visual Studio's options, libraries and linker, which
+GitHub's Windows runners have. The C++ is still compiled by cl, as in ci.yml. Everything is linked into the one `.exe`:
+the libraries vcpkg builds are static (`x64-windows-static`), and so is the C library, so a player installs nothing
+first (no Visual C++ redistributable). The `.exe` is a console program: a console window opens beside the game with its
+messages. It keeps its files (the archive, settings, saves, logs) in its own folder, so the zip is unpacked into a
+folder that can be written to.
+
+**For a player who starts the program by double-clicking it**, on either system, there is no terminal to read its
+messages in, so when the program cannot start the game (no ROM, or not the supported one) it also shows the message in
+a small window (src/first_launch.h). With `--headless`, as on CI, it only prints it.

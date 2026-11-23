@@ -32,6 +32,13 @@ extern "C" {
  *   none was found; first_launch_open has then said where to put the ROM. */
 RomStatus first_launch_open(const char *rom_arg, Rom *rom, const char **shown);
 
+/* A player who starts the program by double-clicking it has no terminal to read its messages in. With
+ * first_launch_boxes(1) (the player's launch without --headless), first_launch_tell also shows its text in a message
+ * box; first_launch_open tells "No ROM found" this way, and src/main.c the other problems of the player's launch.
+ * first_launch_tell always writes the text to stderr. */
+void first_launch_boxes(int on);
+void first_launch_tell(const char *text);
+
 #ifdef __cplusplus
 }
 #endif

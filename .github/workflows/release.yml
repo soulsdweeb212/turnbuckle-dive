@@ -1,5 +1,5 @@
-# Releases: when a version tag (v0.0.1, ...) is pushed, GitHub builds the program with the whole game's code and
-# publishes it on the repository's Releases page. docs/CI.md ("Releases") explains in plain words what is in a release, how to
+# Releases: when a version tag (v0.0.1, ...) is pushed, GitHub builds the program with the whole game's code, for
+# Linux (an AppImage) and Windows (a zip), and publishes them on the repository's Releases page. docs/CI.md ("Releases") explains in plain words what is in a release, how to
 # make one, and why no game data is in it. "Run workflow" on the Actions tab builds the files without publishing them.
 #
 # The game's code comes from the decompilation's port-groundwork branch, cloned beside this repository as CMake expects
@@ -106,18 +106,118 @@ jobs:
             TurnbuckleDive-*.AppImage.sha256
           if-no-files-found: error
 
+  windows:
+    name: Windows zip
+    # The game's C is compiled by clang-cl (Clang with Visual Studio's options; GitHub's Windows machines have it), the
+    # C++ by Visual Studio's own compiler, as on CI. Everything is linked into the one .exe, with the C library too, so
+    # a player needs to install nothing first (no Visual C++ redistributable).
+    runs-on: windows-2022
+    timeout-minutes: 120
+    steps:
+      - name: Get the code, with the LibUltraShip submodule
+        uses: actions/checkout@v7
+        with:
+          path: turnbuckle-dive
+          submodules: recursive
+
+      - name: Get the decompilation (branch port-groundwork) beside it
+        uses: actions/checkout@v7
+        with:
+          repository: soulsdweeb212/wcw-nwo-revenge
+          ref: port-groundwork
+          path: source
+
+      - name: Restore the libraries vcpkg built in earlier runs
+        # As in ci.yml's Windows job: vcpkg builds SDL3, GLEW, zlib, bzip2, libzip, nlohmann-json, tinyxml2 and spdlog
+        # from source, and keeps a zip of each here.
+        uses: actions/cache/restore@v6
+        with:
+          path: ~/AppData/Local/vcpkg/archives
+          key: vcpkg-archives-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: vcpkg-archives-
+
+      - name: Set up Visual Studio's compilers for 64-bit Windows
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Show which clang-cl compiles the game
+        run: |
+          where.exe clang-cl
+          clang-cl --version
+
+      - name: Configure (preset "windows-clang-relwithdebinfo"), and check that it compiles the game
+        working-directory: turnbuckle-dive
+        run: |
+          cmake --preset windows-clang-relwithdebinfo | Tee-Object -FilePath configure.log
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          if (-not (Select-String -Path configure.log -Pattern "td_game_all compiles the game's" -Quiet)) {
+            Write-Output "Configure left out the game's code; see its 'Game code:' lines above"; exit 1
+          }
+
+      - name: Save the libraries vcpkg built
+        if: always()
+        continue-on-error: true
+        uses: actions/cache/save@v6
+        with:
+          path: ~/AppData/Local/vcpkg/archives
+          key: vcpkg-archives-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Build
+        working-directory: turnbuckle-dive
+        run: cmake --build --preset windows-clang-relwithdebinfo
+
+      - name: Run the tests
+        working-directory: turnbuckle-dive
+        run: ctest --preset windows-clang-relwithdebinfo
+
+      - name: Check that the program starts and asks for the ROM
+        # With no ROM anywhere it must say where to put one and end with code 1 (--headless: no message box).
+        working-directory: turnbuckle-dive/build/windows-clang-relwithdebinfo
+        timeout-minutes: 2
+        run: |
+          $p = Start-Process -FilePath .\turnbuckle-dive.exe -ArgumentList "--headless","--frames","10" `
+                 -RedirectStandardError err.txt -NoNewWindow -PassThru -Wait
+          Get-Content err.txt
+          if ($p.ExitCode -ne 1 -or -not (Select-String -Path err.txt -Pattern "No ROM found" -Quiet)) { exit 1 }
+
+      - name: Show LibUltraShip's log (only when a step failed)
+        if: failure()
+        working-directory: turnbuckle-dive/build/windows-clang-relwithdebinfo
+        run: if (Test-Path logs) { Get-ChildItem logs -Filter *.log | ForEach-Object { Get-Content $_.FullName -Tail 100 } }
+
+      - name: Pack the zip
+        # The program and LibUltraShip's shaders (f3d.o2r), which it opens from its own folder.
+        run: |
+          $name = "TurnbuckleDive-$($env:GITHUB_REF_NAME -replace '/','-')-windows-x64"
+          New-Item -ItemType Directory $name | Out-Null
+          Copy-Item turnbuckle-dive/build/windows-clang-relwithdebinfo/turnbuckle-dive.exe, `
+                    turnbuckle-dive/build/windows-clang-relwithdebinfo/f3d.o2r $name
+          Compress-Archive -Path $name -DestinationPath "$name.zip"
+          $hash = (Get-FileHash "$name.zip" -Algorithm SHA256).Hash.ToLower()
+          "$hash  $name.zip" | Out-File -Encoding ascii "$name.zip.sha256"
+
+      - name: Keep the zip with the run
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-zip
+          path: |
+            TurnbuckleDive-*.zip
+            TurnbuckleDive-*.zip.sha256
+          if-no-files-found: error
+
   publish:
     name: Publish the release
     if: startsWith(github.ref, 'refs/tags/')
-    needs: linux
+    needs: [linux, windows]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
-      - name: Get the files the build made
+      - name: Get the files the builds made
         uses: actions/download-artifact@v4
         with:
-          name: linux-appimage
+          merge-multiple: true
 
       - name: Create the release, marked as a pre-release
         env:
@@ -127,6 +227,13 @@ jobs:
           cat > notes.md <<EOF
           A native PC port of WCW/nWo Revenge, built with LibUltraShip. **No game data is included:** you need your
           own ROM of the game (SHA-1 \`e1711a2511394b9357b5f1ac8ca5cc17bd674836\`).
+
+          **Windows (10 or newer, 64-bit):** download the zip and unpack it into a folder of its own, put your ROM
+          (any name ending in .z64, .n64 or .v64) in that folder, and start \`turnbuckle-dive.exe\`. Nothing else needs
+          installing. The first launch writes the game's archive \`revenge.o2r\` from the ROM, in that folder; after
+          that the ROM is no longer needed. Settings, saves and logs are kept there too, so use a folder you can write
+          to (not Program Files). A console window opens beside the game with its messages. Windows may warn that the
+          program is from an unknown publisher, since it is not signed: "More info", then "Run anyway".
 
           **Linux:** download the AppImage, make it executable (\`chmod +x\`), put your ROM (any name ending in .z64,
           .n64 or .v64) in the same folder, and run it. The first launch writes the game's archive \`revenge.o2r\` from
@@ -139,4 +246,4 @@ jobs:
           EOF
           gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --prerelease \
             --title "Turnbuckle Dive $GITHUB_REF_NAME" --notes-file notes.md \
-            TurnbuckleDive-*.AppImage TurnbuckleDive-*.AppImage.sha256
+            TurnbuckleDive-*.AppImage TurnbuckleDive-*.AppImage.sha256 TurnbuckleDive-*.zip TurnbuckleDive-*.zip.sha256

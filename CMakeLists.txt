@@ -61,10 +61,19 @@ endfunction()
 # the same way for a 64-bit PC, and stop the build on code that would cut a 64-bit pointer down to 32 bits. The build
 # type's own options still apply, so a Debug build keeps its debug information (-g) and no optimisation, and the game's
 # C can be stepped through in a debugger. Every game file gets its settings from this one function.
+#
+# On Windows the compiler is clang-cl: Clang with Visual Studio's options, libraries and linker. It takes Clang's own
+# options when each has "/clang:" before it, so the game's C gets exactly the same settings as on Linux and is read the
+# same way. The one difference is that a long is 32 bits on Windows; the checks below on pointers cut down to 32 bits
+# stop the build wherever that would matter.
 function(td_game_code target)
     # C17 with GNU extensions (-std=gnu17): the game's C uses GCC extensions, and old-style "()" declarations, which the
-    # newer C23 rejects.
-    set_target_properties(${target} PROPERTIES C_STANDARD 17 C_STANDARD_REQUIRED ON C_EXTENSIONS ON)
+    # newer C23 rejects. CMake would give clang-cl the standard without the extensions, so it gets the option itself.
+    if(MSVC)
+        target_compile_options(${target} PRIVATE /clang:-std=gnu17)
+    else()
+        set_target_properties(${target} PROPERTIES C_STANDARD 17 C_STANDARD_REQUIRED ON C_EXTENSIONS ON)
+    endif()
     # The game's headers: common.h, and port.h, which common.h includes at its end.
     target_include_directories(${target} PRIVATE ${TD_DECOMP}/include)
     target_compile_definitions(${target} PRIVATE
@@ -77,7 +86,7 @@ function(td_game_code target)
         AVOID_UB
         # The display-list format the game uses (F3DEX2), the one LibUltraShip is built for too.
         F3DEX_GBI_2)
-    target_compile_options(${target} PRIVATE
+    set(options
         # The game reads the same memory through pointers of different types; this stops the compiler from assuming
         # that such reads and writes never touch the same bytes.
         -fno-strict-aliasing
@@ -103,9 +112,16 @@ function(td_game_code target)
         # A pointer cast to a smaller integer, or such an integer cast to a pointer: on the N64 both are 32 bits, on a
         # 64-bit PC the pointer would lose its upper half.
         -Werror=pointer-to-int-cast -Werror=int-to-pointer-cast)
+    if(MSVC)
+        list(TRANSFORM options PREPEND /clang:)
+    endif()
+    target_compile_options(${target} PRIVATE ${options})
     # In a Debug build, the debug information also holds the game's macros, so a debugger knows names such as
-    # WR_FLAG_LEGAL (in VS Code's Watch, D_800F9D10[0].flags & WR_FLAG_LEGAL).
-    target_compile_options(${target} PRIVATE $<$<CONFIG:Debug>:-g3>)
+    # WR_FLAG_LEGAL (in VS Code's Watch, D_800F9D10[0].flags & WR_FLAG_LEGAL). Visual Studio's debug information has
+    # no macros.
+    if(NOT MSVC)
+        target_compile_options(${target} PRIVATE $<$<CONFIG:Debug>:-g3>)
+    endif()
     if(TD_SANITIZE)
         # The game reaches many variables through a label and an offset past it (a joint array that starts at a
         # one-float label, a record's field label plus a stride), and on PC those labels sit at their N64 offsets
@@ -124,17 +140,26 @@ function(td_game_code target)
     endif()
 endfunction()
 
+# The warnings that game-settings files of our own (src/dev/dev_records.c, the viewer's viewer_game.c) are held to, as
+# the port's other code is: -Wall -Wextra, or on clang-cl /W4, since clang-cl reads -Wall as every warning there is.
+if(MSVC)
+    set(TD_GAME_WARNINGS /W4)
+else()
+    set(TD_GAME_WARNINGS -Wall -Wextra)
+endif()
+
 # Game code is built when the decompilation is there, with the game's PC code, and the compiler is GCC or Clang, whose
-# options and extensions the game's C needs. Otherwise the build leaves it out and turnbuckle-dive only checks the ROM:
-# on CI, which has no copy of the decompilation, and with MSVC, which CMake also reports for clang-cl. Configure prints
-# which case it is.
+# options and extensions the game's C needs (on Windows, clang-cl). Otherwise the build leaves it out and turnbuckle-dive
+# only checks the ROM: on CI's checks of each commit, which have no copy of the decompilation, and with Visual Studio's
+# own compiler, cl. Configure prints which case it is.
 # TD_DECOMP is TD_DECOMP_DIR written without "..", which is how debuggers and editors show the game's files.
 cmake_path(SET TD_DECOMP NORMALIZE "${TD_DECOMP_DIR}")
 # Python 3 writes the C of the game's variables (tools/game_vars.py) and lists the developer program's files.
 find_package(Python3 COMPONENTS Interpreter)
 set(TD_GAME_CODE OFF)
-if(MSVC)
-    message(STATUS "Game code: not built (the game's C needs GCC or Clang, and this compiler takes MSVC's options)")
+if(MSVC AND NOT CMAKE_C_COMPILER_ID STREQUAL "Clang")
+    message(STATUS "Game code: not built (the game's C needs GCC or Clang, and this is Visual Studio's own compiler, "
+                   "cl; the preset windows-clang-relwithdebinfo uses its clang-cl)")
 elseif(NOT CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
     message(STATUS
         "Game code: not built (the game's C needs GCC or Clang, and this compiler is ${CMAKE_C_COMPILER_ID})")
@@ -220,6 +245,11 @@ if(TD_GAME_CODE)
     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
         ${TD_DECOMP}/port/game_vars.tsv ${PROJECT_SOURCE_DIR}/tools/game_vars.py)
     file(STRINGS ${TD_VARS_LINK} TD_VARS_LINK_OPTIONS ENCODING UTF-8)
+    # Each line is "LINKER:--defsym=OLD=NEW", GNU ld's way to give a function a second name. Visual Studio's linker does
+    # the same with /ALTERNATENAME:OLD=NEW (a name nothing defines is taken as the other one).
+    if(MSVC)
+        list(TRANSFORM TD_VARS_LINK_OPTIONS REPLACE "^LINKER:--defsym=" "/ALTERNATENAME:")
+    endif()
     add_library(td_game_vars STATIC ${TD_VARS_C} src/game_vars.c)
     target_include_directories(td_game_vars PUBLIC src)
     target_link_libraries(td_game_vars PUBLIC td_core)
@@ -387,7 +417,7 @@ if(TARGET td_game_all)
     add_library(td_dev_records OBJECT src/dev/dev_records.c src/dev/sound_player_game.c)
     td_game_code(td_dev_records)
     target_include_directories(td_dev_records PRIVATE src/dev)
-    target_compile_options(td_dev_records PRIVATE -Wall -Wextra)
+    target_compile_options(td_dev_records PRIVATE ${TD_GAME_WARNINGS})
     target_sources(turnbuckle-dive PRIVATE src/resources.c src/splash_faces.c src/audio/music_dump.c src/dev/dev_match.c
                    src/dev/dev_boot.c
                    src/dev/dev_pads.c $<TARGET_OBJECTS:td_dev_records>
@@ -445,8 +475,9 @@ if(BUILD_TESTING)
         PASS_REGULAR_EXPRESSION "Turnbuckle Dive stopped: PTR_TO_SLOT: the handle table is full: all 0x100000 handles")
 
     # The program itself, started with a ROM that does not exist: it must start and say so. It needs no ROM, so it
-    # runs on CI too, which must never have one.
-    add_test(NAME rom_missing COMMAND turnbuckle-dive ${CMAKE_BINARY_DIR}/no-rom-here.z64)
+    # runs on CI too, which must never have one. --headless: the player's launch would also show the message in a
+    # message box, which nobody would close here.
+    add_test(NAME rom_missing COMMAND turnbuckle-dive ${CMAKE_BINARY_DIR}/no-rom-here.z64 --headless)
     set_tests_properties(rom_missing PROPERTIES PASS_REGULAR_EXPRESSION "no-rom-here\\.z64: file not found")
 
     if(TD_GAME_CODE)
@@ -644,7 +675,7 @@ if(TD_BUILD_HELLO)
         # td_resources brings the game's loader and every file in td_game.
         add_library(td_viewer_game OBJECT viewer/viewer_game.c)
         td_game_code(td_viewer_game)
-        target_compile_options(td_viewer_game PRIVATE -Wall -Wextra)
+        target_compile_options(td_viewer_game PRIVATE ${TD_GAME_WARNINGS})
         add_executable(viewer viewer/main.cpp viewer/viewer_rom.c $<TARGET_OBJECTS:td_viewer_game>)
         target_link_libraries(viewer PRIVATE td_window td_resources)
         td_strict(viewer)

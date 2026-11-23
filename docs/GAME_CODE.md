@@ -52,14 +52,18 @@ Configure prints one line that says whether the build includes game code, for ex
 -- Game code: compiled from /home/you/projects/source
 -- Game code: not built (no decompilation in /home/you/projects/source; set TD_DECOMP_DIR to its folder)
 -- Game code: not built (/home/you/projects/source has no include/port.h, the start of the game's PC code: check out the decompilation's port-groundwork branch)
--- Game code: not built (the game's C needs GCC or Clang, and this compiler takes MSVC's options)
+-- Game code: not built (the game's C needs GCC or Clang, and this is Visual Studio's own compiler, cl; the preset windows-clang-relwithdebinfo uses its clang-cl)
 -- Game code: not built (/home/you/projects/source has no port/game_vars.tsv, the map of the game's variables: update the decompilation's port-groundwork branch)
 -- Game code: not built (no Python 3, which writes the C of the game's variables)
 ```
 
 A build without game code still works: `turnbuckle-dive` only checks the ROM, and the tests that need game code are
-left out. CI builds this way, because it has no copy of the decompilation. So does Visual Studio's compiler, because
-the game's C uses options and extensions of GCC and Clang.
+left out. CI builds this way, because it has no copy of the decompilation. So does Visual Studio's own compiler, cl,
+because the game's C uses options and extensions of GCC and Clang. On Windows the game is built with clang-cl instead
+(the preset `windows-clang-relwithdebinfo`): Clang with Visual Studio's options, libraries and linker. It compiles the
+C with exactly the settings it gets on Linux, and the C++ is still compiled by cl. Visual Studio installs clang-cl with
+the component "C++ Clang Compiler for Windows" (Visual Studio Installer, Modify, Individual components); VS Code uses
+whichever of the two the preset names.
 
 ## How it is compiled
 

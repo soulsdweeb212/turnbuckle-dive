@@ -15,6 +15,8 @@ extern "C" {
 #include <system_error>
 #include <vector>
 
+#include <SDL3/SDL.h>
+
 #include "ship/core/Context.h"
 
 namespace fs = std::filesystem;
@@ -25,6 +27,7 @@ namespace {
 constexpr std::uintmax_t kRomSize = 0x1000000;
 
 std::string gShown; // the file first_launch_open shows the player (its *shown)
+bool gBoxes;         // first_launch_boxes: problems are also shown in a message box
 
 bool HasRomName(const fs::path& path) {
     std::string ext = path.extension().string();
@@ -160,15 +163,27 @@ extern "C" RomStatus first_launch_open(const char* rom_arg, Rom* rom, const char
         }
     }
 
-    std::fflush(stdout);
-    std::fprintf(stderr,
-                 "No ROM found. Turnbuckle Dive needs your ROM once, to write the game's archive %s; after that it "
-                 "starts from the archive.\n"
-                 "Put the ROM (a .z64, .n64 or .v64 file of 16 MiB, under any name) in %s and start again, or pass "
-                 "its path as the first argument. The supported ROM's SHA-1 is %s.\n",
-                 archive.c_str(), folder.string().c_str(), TD_ROM_SHA1);
+    std::string text = "No ROM found. Turnbuckle Dive needs your ROM once, to write the game's archive " + archive +
+                       "; after that it starts from the archive.\n"
+                       "Put the ROM (a .z64, .n64 or .v64 file of 16 MiB, under any name) in " + folder.string() +
+                       " and start again, or pass its path as the first argument. The supported ROM's SHA-1 is " +
+                       TD_ROM_SHA1 + ".";
     for (const std::string& line : rejected) {
-        std::fprintf(stderr, "Looked at %s\n", line.c_str());
+        text += "\nLooked at " + line;
     }
+    first_launch_tell(text.c_str());
     return ROM_NOT_FOUND;
+}
+
+extern "C" void first_launch_boxes(int on) {
+    gBoxes = on != 0;
+}
+
+extern "C" void first_launch_tell(const char* text) {
+    std::fflush(stdout);
+    std::fprintf(stderr, "%s\n", text);
+    // SDL's message box needs no window of the program's own, and works before LibUltraShip has started.
+    if (gBoxes) {
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Turnbuckle Dive", text, nullptr);
+    }
 }

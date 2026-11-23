@@ -115,6 +115,15 @@
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "RelWithDebInfo"
             }
+        },
+        {
+            "name": "windows-clang-relwithdebinfo",
+            "displayName": "Windows RelWithDebInfo, with the game (clang-cl)",
+            "description": "As windows-relwithdebinfo, but the C is compiled by clang-cl (Visual Studio's \"C++ Clang Compiler for Windows\"), which reads the game's C, so the program has the whole game; what releases build",
+            "inherits": "windows-relwithdebinfo",
+            "cacheVariables": {
+                "CMAKE_C_COMPILER": "clang-cl"
+            }
         }
     ],
     "buildPresets": [
@@ -141,6 +150,10 @@
         {
             "name": "windows-relwithdebinfo",
             "configurePreset": "windows-relwithdebinfo"
+        },
+        {
+            "name": "windows-clang-relwithdebinfo",
+            "configurePreset": "windows-clang-relwithdebinfo"
         }
     ],
     "testPresets": [
@@ -182,6 +195,13 @@
         {
             "name": "windows-relwithdebinfo",
             "configurePreset": "windows-relwithdebinfo",
+            "output": {
+                "outputOnFailure": true
+            }
+        },
+        {
+            "name": "windows-clang-relwithdebinfo",
+            "configurePreset": "windows-clang-relwithdebinfo",
             "output": {
                 "outputOnFailure": true
             }

@@ -23,7 +23,6 @@
  * - a watchdog thread stops the program when no frame arrives for 3 seconds (a hang inside one frame). */
 #define _POSIX_C_SOURCE 200809L /* nanosleep, which strict C17 leaves out of <time.h> */
 
-#include <pthread.h>
 #include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -37,6 +36,14 @@
 #include "game_sdk.h"
 #include "game_vars.h"
 #include "rom.h"
+
+/* The watchdog's thread: Windows' own threads there, POSIX threads elsewhere. */
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#else
+#include <pthread.h>
+#endif
 
 /* The game's functions that the developer match calls (the decompilation's src/main and src/ovl2_80090000). */
 void func_80001260(void);
@@ -149,16 +156,19 @@ uint32_t dev_match_frames(void) {
 
 /* ---- The watchdog ---- */
 
-static void *watchdog(void *arg) {
+static void watch(void) {
     unsigned last = atomic_load(&g_alive);
     int still = 0;
 
-    (void)arg;
     while (!atomic_load(&g_watch_stop)) {
-        struct timespec second = { 1, 0 };
         unsigned now;
 
+#ifdef _WIN32
+        Sleep(1000);
+#else
+        struct timespec second = { 1, 0 };
         nanosleep(&second, NULL);
+#endif
         now = atomic_load(&g_alive);
         still = now == last ? still + 1 : 0;
         last = now;
@@ -170,8 +180,38 @@ static void *watchdog(void *arg) {
             abort();
         }
     }
+}
+
+/* Starts the watchdog's thread (0 if it cannot), and waits for it to end once g_watch_stop is set. */
+#ifdef _WIN32
+static HANDLE g_dog;
+static DWORD WINAPI watchdog(LPVOID arg) {
+    (void)arg;
+    watch();
+    return 0;
+}
+static int watchdog_start(void) {
+    g_dog = CreateThread(NULL, 0, watchdog, NULL, 0, NULL);
+    return g_dog != NULL;
+}
+static void watchdog_join(void) {
+    WaitForSingleObject(g_dog, INFINITE);
+    CloseHandle(g_dog);
+}
+#else
+static pthread_t g_dog;
+static void *watchdog(void *arg) {
+    (void)arg;
+    watch();
     return NULL;
 }
+static int watchdog_start(void) {
+    return pthread_create(&g_dog, NULL, watchdog, NULL) == 0;
+}
+static void watchdog_join(void) {
+    pthread_join(g_dog, NULL);
+}
+#endif
 
 /* ---- What the developer match does at each hand-off ---- */
 
@@ -365,7 +405,6 @@ static void after_render(void) {
 int dev_match_run(const Rom *rom, const DevMatchOptions *options) {
     static const GameSdkHooks hooks = { on_present, read_pad, before_render, after_render };
     static const DevMatchOptions none = { NULL, NULL, 0, 0, 0, NULL, NULL, 0, 0, 0, NULL, NULL, 0, 0, NULL, 0, 0 };
-    pthread_t dog;
     unsigned i;
     uint32_t seed;
     int match;
@@ -395,7 +434,7 @@ int dev_match_run(const Rom *rom, const DevMatchOptions *options) {
             port_fatal("dev-match: cannot write the resource log %s", g_options->res_log);
         }
     }
-    if (!g_options->no_watchdog && pthread_create(&dog, NULL, watchdog, NULL) != 0) {
+    if (!g_options->no_watchdog && !watchdog_start()) {
         port_fatal("dev-match: cannot start the watchdog thread");
     }
 
@@ -448,7 +487,7 @@ int dev_match_run(const Rom *rom, const DevMatchOptions *options) {
 
     if (!g_options->no_watchdog) {
         atomic_store(&g_watch_stop, 1);
-        pthread_join(dog, NULL);
+        watchdog_join();
     }
     if (g_log != NULL) {
         fclose(g_log);
