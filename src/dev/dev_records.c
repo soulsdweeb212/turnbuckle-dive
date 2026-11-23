@@ -311,6 +311,185 @@ void dev_records_recolour(unsigned character) {
     }
 }
 
+/* ---- The Player Console ---- */
+
+extern s16 D_8007DFB0[]; /* each entity's costume: the entry of its character's model list it loaded (func_8000C91C) */
+void buildWrestlerNameRecord(s32 id, s32 variant, u8 *out);
+int game_vars_overlay(void);                                                      /* src/game_vars.h */
+void game_sdk_set_anim_hook(void (*hook)(int slot, int anim, int previous, int mode)); /* src/game_sdk.h */
+
+#define N64_WRESTLERS 0x800F9D10u   /* D_800F9D10 */
+#define N64_WRESTLER_SIZE 0x3B0u    /* a Wrestler on the N64 (four of them end at 0x800FABD0) */
+#define N64_ENTITY_CHARACTERS 0x8006A2A4u /* D_8006A2A4 */
+#define ZONE_FLAGS (WR_FLAG_IN_RING | WR_FLAG_ON_APRON | WR_FLAG_ON_FLOOR)
+#define UNSEEN 0x7FFF /* no value noted yet for a slot: the first one seen is not logged as a change */
+
+static uint8_t zone_of(u64 flags) {
+    return (uint8_t)(((flags & WR_FLAG_IN_RING) ? DEV_ZONE_RING : 0) | ((flags & WR_FLAG_ON_APRON) ? DEV_ZONE_APRON : 0) |
+                     ((flags & WR_FLAG_ON_FLOOR) ? DEV_ZONE_FLOOR : 0));
+}
+
+/* Copies one of the game's names, which ends at its first zero byte or at its field's end. */
+static void copy_name(char *out, size_t size, const u8 *name, size_t field) {
+    size_t n = 0;
+
+    while (n < field && n + 1 < size && name[n] != 0) {
+        out[n] = (char)name[n];
+        n++;
+    }
+    out[n] = 0;
+}
+
+int dev_players_read(DevPlayer out[DEV_WRESTLERS], uint32_t *match_frame) {
+    int i;
+
+    memset(out, 0, sizeof(DevPlayer) * DEV_WRESTLERS);
+    *match_frame = D_800E2FAC;
+    if (game_vars_overlay() != 2) {
+        return 0;
+    }
+    for (i = 0; i < DEV_WRESTLERS; i++) {
+        const Wrestler *w = &D_800F9D10[i];
+        DevPlayer *o = &out[i];
+
+        o->character = w->characterId;
+        o->n64_record = N64_WRESTLERS + (uint32_t)i * N64_WRESTLER_SIZE;
+        o->character_offset = (uint32_t)offsetof(Wrestler, characterId);
+        o->n64_character = o->n64_record + o->character_offset;
+        o->n64_entity_character = N64_ENTITY_CHARACTERS + 2u * (uint32_t)i;
+        o->entity_character = D_8006A2A4[i];
+        o->pc_record = w;
+        o->costume = -1;
+        if (w->characterId == -1) {
+            continue;
+        }
+        o->bank = (uint8_t)((w->characterId >> 8) & 0xF);
+        o->entry = (uint8_t)((w->characterId & 0xFF) - 1);
+        /* The costume the game loaded for the slot's entity, when that entity shows this character. */
+        if (D_8006A2A4[i] == (u16)w->characterId) {
+            o->costume = D_8007DFB0[i];
+        }
+        {
+            /* The game's own name record (0x2A bytes): the long name at +0, the short one at +0x19. */
+            u8 rec[0x2A];
+
+            buildWrestlerNameRecord(w->characterId, o->costume < 0 ? 0 : o->costume, rec);
+            copy_name(o->name, sizeof(o->name), rec, 25);
+            copy_name(o->short_name, sizeof(o->short_name), rec + 0x19, 11);
+        }
+        o->anim = w->animId;
+        o->anim_frame = w->animFrame;
+        o->anim_frames = w->anim.frameCount;
+        o->state = w->state;
+        o->x = w->x;
+        o->y = w->y;
+        o->z = w->z;
+        o->zone = zone_of(w->flags);
+        o->ring_side = w->ringSide;
+    }
+    return 1;
+}
+
+/* The log: a ring of the latest events, filled by the game's func_800D427C (through port_anim_started) and by
+ * dev_players_frame, emptied by dev_players_take. All of it runs on the game's thread. */
+#define EVENTS 1024u
+static DevEvent g_events[EVENTS];
+static uint32_t g_event_head; /* events written so far */
+static uint32_t g_event_tail; /* events taken so far */
+static int16_t g_seen_anim[DEV_WRESTLERS];
+static int16_t g_seen_zone[DEV_WRESTLERS];
+static uint32_t g_seen_frame;
+
+static void forget_slots(void) {
+    int i;
+
+    for (i = 0; i < DEV_WRESTLERS; i++) {
+        g_seen_anim[i] = UNSEEN;
+        g_seen_zone[i] = UNSEEN;
+    }
+}
+
+static void add_event(int kind, int slot, int value, int previous, int mode) {
+    const Wrestler *w = &D_800F9D10[slot];
+    DevEvent *e = &g_events[g_event_head % EVENTS];
+
+    e->match_frame = D_800E2FAC;
+    e->kind = (uint8_t)kind;
+    e->slot = (int8_t)slot;
+    e->character = w->characterId;
+    e->value = (int16_t)value;
+    e->previous = (int16_t)previous;
+    e->mode = mode;
+    e->x = w->x;
+    e->y = w->y;
+    e->z = w->z;
+    g_event_head++;
+}
+
+/* game_sdk_set_anim_hook's hook: the game's func_800D427C is changing slot's animation. */
+static void on_anim(int slot, int anim, int previous, int mode) {
+    if (slot < 0 || slot >= DEV_WRESTLERS) {
+        return;
+    }
+    add_event(DEV_EVENT_ANIM, slot, anim, previous, mode);
+    g_seen_anim[slot] = (int16_t)anim;
+}
+
+void dev_players_listen(void) {
+    forget_slots();
+    game_sdk_set_anim_hook(on_anim);
+}
+
+void dev_players_frame(void) {
+    int i;
+
+    if (game_vars_overlay() != 2) {
+        forget_slots();
+        return;
+    }
+    /* A new match starts its frame count again: what was noted belongs to the last one. */
+    if (D_800E2FAC < g_seen_frame) {
+        forget_slots();
+    }
+    g_seen_frame = D_800E2FAC;
+    for (i = 0; i < DEV_WRESTLERS; i++) {
+        const Wrestler *w = &D_800F9D10[i];
+        int16_t zone;
+
+        if (w->characterId == -1) {
+            continue;
+        }
+        if (w->animId != g_seen_anim[i]) {
+            if (g_seen_anim[i] != UNSEEN) {
+                add_event(DEV_EVENT_ANIM_DIRECT, i, w->animId, g_seen_anim[i], 0);
+            }
+            g_seen_anim[i] = w->animId;
+        }
+        zone = zone_of(w->flags);
+        if (zone != g_seen_zone[i]) {
+            if (g_seen_zone[i] != UNSEEN) {
+                add_event(DEV_EVENT_ZONE, i, zone, g_seen_zone[i], 0);
+            }
+            g_seen_zone[i] = zone;
+        }
+    }
+}
+
+size_t dev_players_take(DevEvent *out, size_t max, uint32_t *lost) {
+    size_t n = 0;
+
+    *lost = 0;
+    if (g_event_head - g_event_tail > EVENTS) {
+        *lost = g_event_head - g_event_tail - EVENTS;
+        g_event_tail = g_event_head - EVENTS;
+    }
+    while (n < max && g_event_tail != g_event_head) {
+        out[n++] = g_events[g_event_tail % EVENTS];
+        g_event_tail++;
+    }
+    return n;
+}
+
 const char *dev_state_name(int state) {
     return state >= 0 && state < 0x92 && kStateNames[state] != NULL ? kStateNames[state] : "";
 }

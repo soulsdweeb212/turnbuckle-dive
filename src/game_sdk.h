@@ -60,6 +60,11 @@ uint32_t game_sdk_held_song(void);
 void game_sdk_set_costume_colour(unsigned character, int colour, int32_t rgb);
 int32_t game_sdk_costume_colour(unsigned character, int colour);
 
+/* Who hears of each animation the game starts (port_anim_started, which the game's func_800D427C calls when it changes
+ * a wrestler's animation): slot 0 to 3, the new and the previous animation id, and the caller's mode. NULL, the
+ * default, hears nothing. The Player Console (src/dev/player_console.cpp) sets it. */
+void game_sdk_set_anim_hook(void (*hook)(int slot, int anim, int previous, int mode));
+
 /* How many times the game has handed over a frame (GAME_PRESENT_FRAME) since the program started. */
 uint32_t game_sdk_frames(void);
 

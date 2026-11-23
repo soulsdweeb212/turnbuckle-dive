@@ -393,7 +393,7 @@ without a depth buffer, so that order alone decides which object covers which.
   every title (1 to 9; the original game's 9, saved in the settings file as `gChampionshipMatches`): the game reads it
   when a run starts (`port_championship_matches`, `src/game_sdk.c`), and a shorter run leaves out the first contenders
   and still ends with the title match. Without a window (`--headless`, the tests) a run has 9 matches. Its Debug menu
-  opens the Match Inspector, the Move List (below, "The Move List"), the Sound Player (below, "The Sound Player"),
+  opens the Match Inspector, the Player Console (below, "The Player Console"), the Move List (below, "The Move List"), the Sound Player (below, "The Sound Player"),
   the Sound Test and LibUltraShip's Console, Stats and Gfx Debugger. At the bar's right-hand end, Quit closes
   the window and ends the program, and Reset starts the program again with the same options, so the game boots afresh
   (as the Boot setting says), as after a console's reset button (Ctrl+R and the console's `reset` do the same). The game
@@ -444,6 +444,35 @@ volume slider is the game's own music volume (`func_80003418`; the game sets 127
 Sound is on only in the developer boot's window (`--dev-boot`) without a pad script or a pad file to replay (above,
 "What the port provides to the game"); in other runs the window says so. The Sound Test beside it plays the sound
 banks' raw samples on the synthesizer alone, at a chosen note.
+
+### The Player Console
+
+The Player Console (`src/dev/player_console.cpp`; F1, Debug, Player Console) shows each player of the match live, as
+the game holds it, and logs what changes. Its table has one row per player:
+
+- the game's own name for the character, from the game's function `buildWrestlerNameRecord` (with the costume the game
+  loaded, which is what makes Glacier's alternate costumes "Mortis");
+- the character id as the game stores it (`0xBNN`), split into its bank and its entry in the bank;
+- where the player stands, from the game's zone flags: in the ring, on the apron or on the floor (two at once while
+  climbing in or diving out);
+- the position, the side of the ring, the animation id (a resource id) with its frame and length, and the action state.
+
+"Memory" shows where the ids sit: each wrestler record's N64 address (`D_800F9D10` + slot × 0x3B0) and PC address,
+the character id's offset in it (+0x002) and its N64 address, and the slot's entry of the game's character table
+`D_8006A2A4`.
+
+The log adds a line, with the match frame and the player's position, each time:
+
+- the game's own `func_800D427C` starts an animation: the decompilation calls the port's `port_anim_started` from it
+  on PC (its `include/port.h`), with the new and the replaced animation id and the caller's mode;
+- an animation id changes without that function (about 20 places in the game set it themselves), found at the end of
+  the frame and marked "set directly";
+- a player's zone changes (entering or leaving the ring).
+
+Filters pick the kinds of line and the players; Copy puts the shown lines on the clipboard, and Save writes them to
+`player_console.txt` beside the program. The log keeps its last 5000 lines, and only the lines in view are drawn. The
+console only reads the game's records and functions (`src/dev/dev_records.c`, `dev_players_*`), in the game's frame
+hand-off, as the Match Inspector does.
 
 ### The Move List
 

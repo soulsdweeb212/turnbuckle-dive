@@ -110,6 +110,65 @@ int dev_records_costume(int n, DevCostume *out);
  * once. */
 void dev_records_recolour(unsigned character);
 
+/* The Player Console (src/dev/player_console.cpp): each player as the game holds it, and a log of what changes. */
+
+/* Where a player stands, from the game's zone flags (WR_FLAG_IN_RING, WR_FLAG_ON_APRON, WR_FLAG_ON_FLOOR). Normally one
+ * is set; two while climbing in from the apron (ring and apron) or diving off it (apron and floor). */
+#define DEV_ZONE_RING 1
+#define DEV_ZONE_APRON 2
+#define DEV_ZONE_FLOOR 4
+
+/* One player, slot 0 to 3. */
+typedef struct {
+    int16_t character;           /* the record's characterId as the game stores it: 0xBNN; -1 for an empty slot */
+    uint8_t bank;                /* its bank, bits 8..11 */
+    uint8_t entry;               /* its entry in the bank, the low byte minus 1 */
+    int16_t costume;             /* the costume the game loaded for the slot (D_8007DFB0), -1 when unknown */
+    char name[26];               /* the game's long and short names (buildWrestlerNameRecord) */
+    char short_name[12];
+    uint32_t n64_record;         /* the record's N64 address: D_800F9D10 + slot * 0x3B0 */
+    uint32_t n64_character;      /* characterId's N64 address: n64_record + 0x002 */
+    uint32_t n64_entity_character; /* the slot's entry of the game's character table D_8006A2A4: 0x8006A2A4 + 2 * slot */
+    uint16_t entity_character;   /* that entry's value */
+    const void *pc_record;       /* the record in the PC's memory, for a debugger */
+    uint32_t character_offset;   /* characterId's offset in the record (0x002 on both machines) */
+    int16_t anim;                /* animId, a resource id (0xE39 and up) */
+    int16_t anim_frame;          /* animFrame, counting up from 0 */
+    int16_t anim_frames;         /* the animation's length in frames (anim.frameCount) */
+    int16_t state;               /* the action state (dev_state_name) */
+    float x, y, z;               /* root position; Y 90 on the mat and the apron, 0 on the floor */
+    uint8_t zone;                /* DEV_ZONE_* bits */
+    int16_t ring_side;           /* side of the ring: 0 +Z, 1 +X, 2 -Z, 3 -X */
+} DevPlayer;
+
+/* Fills out with the four players and returns 1 while a match runs (overlay 2 loaded); returns 0 otherwise, when the
+ * records hold no match. Call it while the game waits in a hand-off, as every function here. */
+int dev_players_read(DevPlayer out[DEV_WRESTLERS], uint32_t *match_frame);
+
+/* One line of the Player Console's log. */
+#define DEV_EVENT_ANIM 0        /* the game's func_800D427C started an animation */
+#define DEV_EVENT_ANIM_DIRECT 1 /* the animation id changed without func_800D427C (the game set animId itself) */
+#define DEV_EVENT_ZONE 2        /* the player's zone changed */
+typedef struct {
+    uint32_t match_frame; /* D_800E2FAC when it happened */
+    uint8_t kind;         /* DEV_EVENT_* */
+    int8_t slot;
+    int16_t character;
+    int16_t value;    /* the new animation id, or the new zone */
+    int16_t previous; /* the animation id or the zone it replaces */
+    int32_t mode;     /* func_800D427C's mode (DEV_EVENT_ANIM only) */
+    float x, y, z;
+} DevEvent;
+
+/* Starts listening to the game (game_sdk_set_anim_hook). */
+void dev_players_listen(void);
+/* Called once per game frame, in the hand-off: notes the animation and zone changes that did not pass through
+ * func_800D427C. */
+void dev_players_frame(void);
+/* Moves up to max of the events since the last call into out, oldest first, and returns how many. When more than the
+ * buffer holds (1024) came in between, the oldest are lost and *lost says how many. */
+size_t dev_players_take(DevEvent *out, size_t max, uint32_t *lost);
+
 /* A wrestler state's short name ("" for one docs/wrestler.md does not identify), and a match phase's name. */
 const char *dev_state_name(int state);
 const char *dev_phase_name(int phase);

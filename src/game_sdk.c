@@ -91,6 +91,19 @@ int32_t game_sdk_costume_colour(unsigned character, int colour) {
     return entry != NULL && (*entry & COSTUME_SET) ? (int32_t)(*entry & 0xFFFFFF) : -1;
 }
 
+static void (*g_anim_hook)(int slot, int anim, int previous, int mode);
+
+void game_sdk_set_anim_hook(void (*hook)(int slot, int anim, int previous, int mode)) {
+    g_anim_hook = hook;
+}
+
+/* The game's func_800D427C calls it when it changes a wrestler's animation (port.h); it only passes the news on. */
+void port_anim_started(int32_t slot, int16_t anim, int16_t previous, int32_t mode) {
+    if (g_anim_hook != NULL) {
+        g_anim_hook((int)slot, anim, previous, (int)mode);
+    }
+}
+
 /* A colour's 16 shades, lightest first, shaped as the game's own (its colour table, resource 0xA51: rows of 16
  * shades): shade 7 is the colour itself; the lighter shades go toward white, 7% of the way a step (49% at shade 0),
  * and the darker ones toward black, by 1/16 a step (half the colour at shade 15). These are averages of the game's 13

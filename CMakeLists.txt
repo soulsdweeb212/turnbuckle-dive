@@ -622,7 +622,7 @@ if(TD_BUILD_HELLO)
         # The developer match's window, the Match Inspector (src/dev/inspector.cpp): turnbuckle-dive --dev-match opens
         # it unless --headless is given, and the splash screen before the developer boot (src/splash.cpp). They need
         # LibUltraShip, so they come with td_window.
-        target_sources(turnbuckle-dive PRIVATE src/dev/inspector.cpp src/dev/move_list.cpp src/dev/costume_colours.cpp
+        target_sources(turnbuckle-dive PRIVATE src/dev/inspector.cpp src/dev/move_list.cpp src/dev/player_console.cpp src/dev/costume_colours.cpp
             src/dev/sound_test.cpp src/dev/sound_player.cpp src/audio/sound_output.cpp src/splash.cpp)
         target_link_libraries(turnbuckle-dive PRIVATE td_window)
         target_compile_definitions(turnbuckle-dive PRIVATE TD_INSPECTOR)

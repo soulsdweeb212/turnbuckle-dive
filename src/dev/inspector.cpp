@@ -44,6 +44,7 @@
 #include "game_sdk.h"
 #include "costume_colours.h"
 #include "move_list.h"
+#include "player_console.h"
 #include "audio/sound_output.h"
 #include "sound_player.h"
 #include "sound_test.h"
@@ -525,12 +526,13 @@ extern "C" int dev_inspector_start(void) {
     gLus.window->GetGui()->AddGuiWindow(std::make_shared<LUS::InputEditorWindow>(
         "gInputEditorShown", "Input Editor", gLus.ctx->GetChildren().GetFirst<LUS::ControlDeck>(), gLus.window));
     td::AddMoveListWindow(cvars, gLus.window);
+    td::AddPlayerConsoleWindow(cvars, gLus.window);
     td::AddCostumeColoursWindow(cvars, gLus.window);
     td::AddSoundTestWindow(cvars, gLus.window);
     td::AddSoundPlayerWindow(cvars, gLus.window);
     // The game's settings, kept in the settings file: read now, and changed from the Settings menu.
     game_sdk_set_championship_matches(cvars->GetInteger(kChampionshipMatches, 9));
-    td::AddDebugMenu(gLus.window, { "Match Inspector", td::kMoveListWindow, td::kSoundPlayerWindow, td::kSoundTestWindow }, { "Input Editor", td::kCostumeColoursWindow },
+    td::AddDebugMenu(gLus.window, { "Match Inspector", td::kPlayerConsoleWindow, td::kMoveListWindow, td::kSoundPlayerWindow, td::kSoundTestWindow }, { "Input Editor", td::kCostumeColoursWindow },
                      [] { gResetAsked = true; }, DrawGameSettings);
     AddConsoleCommands();
     return 0;
@@ -559,6 +561,7 @@ extern "C" void dev_inspector_frame(void* user) {
     if (gFrames != nullptr && gFrames() < gSkipUntil) {
         return;
     }
+    td::PlayerConsoleGameFrame();
     for (int i = 0; i < gControl.slow; i++) {
         DrawWindowFrame();
     }
