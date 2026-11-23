@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Turnbuckle Dive
+Comment=A native PC port; needs your own ROM of the game
+Exec=turnbuckle-dive
+Icon=turnbuckle-dive
+Categories=Game;
+Terminal=false

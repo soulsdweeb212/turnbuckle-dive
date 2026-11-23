@@ -251,3 +251,47 @@ git push -u origin ci-change
   3.4.12 pinned in `cmake/libultraship.cmake`).
 - The saved vcpkg zips are listed under Actions, then Caches. Deleting them is safe: the next run builds the libraries
   again.
+
+## Releases
+
+A release is what a player downloads from the repository's Releases page: the program, built with the whole game's
+code, and nothing of the game's data. The player brings their own ROM; on its first launch the program writes the
+game's archive `revenge.o2r` from it (docs/GAME_CODE.md, "The game's archive"), and from then on runs from that.
+
+The recipe is [.github/workflows/release.yml](../.github/workflows/release.yml). It runs when a tag whose name starts
+with `v` is pushed. On a Linux runner it:
+
+1. gets this repository and, beside it in `source`, the decompilation's `port-groundwork` branch, as a build on your
+   own computer has them (docs/GAME_CODE.md, "Where the game's C comes from");
+2. checks that the tag is the program's version: tag `v0.0.1` needs `VERSION 0.0.1` in `CMakeLists.txt`;
+3. configures with the `relwithdebinfo` preset and stops if the game's code was left out. There is no ROM on the
+   runner, so the list of game files comes from the decompilation's `port/game_files.txt`;
+4. builds, runs the tests (those that need the ROM are skipped), and starts the program once with no ROM, which must
+   say where to put the ROM and end with code 1;
+5. packs the program into an AppImage, one file that runs on most Linux systems (`tools/make_appimage.sh`);
+6. creates the release, marked as a pre-release, with the AppImage, its SHA-256 checksum and notes that say how to
+   use it and which commits of both repositories it was built from.
+
+"Run workflow" on the Actions tab runs steps 1 to 5 and keeps the AppImage with the run (under Artifacts) without
+publishing anything, which is how to try the recipe before a real release.
+
+**To make a release:** set the new version in `CMakeLists.txt` (`project(turnbuckle-dive VERSION ...)`), commit and
+push it, then tag that commit and push the tag:
+
+```
+git tag v0.0.2
+git push origin v0.0.2
+```
+
+**The AppImage.** `tools/make_appimage.sh BUILD_DIR OUTPUT` copies `turnbuckle-dive` (without its debug information)
+and `f3d.o2r` (LibUltraShip's shaders, which hold no game data) into a folder laid out as a small Linux system, and
+runs linuxdeploy, a tool that copies in the libraries the program needs that a system may lack (libzip, tinyxml2,
+spdlog, fmt) and packs the folder into one file. The script downloads linuxdeploy once, at a fixed version, into
+`tools/.cache`. The AppImage's launcher, `packaging/AppRun`, decides where the program keeps its files: an AppImage
+runs from a read-only folder, so it sets `$SHIP_HOME` to the folder that holds the AppImage when that can be written
+to (the player puts the ROM there too), or else to `~/.local/share/turnbuckle-dive`. `packaging/` also holds the
+desktop entry and the icon, which are the port's own.
+
+The runner is Ubuntu 24.04, so the AppImage needs a Linux system with glibc 2.39 or newer (Ubuntu 24.04, Fedora 40,
+Debian 13 and later). Windows is not built yet: the game's C needs GCC or Clang, and the Windows job uses Visual
+Studio's compiler (docs/GAME_CODE.md, "Where the game's C comes from").

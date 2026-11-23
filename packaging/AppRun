@@ -1,0 +1,16 @@
+#!/bin/sh
+# Turnbuckle Dive's AppImage launcher (docs/CI.md, "Releases"). An AppImage runs from a read-only folder, so the program's
+# own files (the game's archive revenge.o2r, settings, saves, logs) go in $SHIP_HOME instead: the folder that holds the
+# AppImage when it can be written to, so that the ROM and those files sit beside it, or else
+# ~/.local/share/turnbuckle-dive. A $SHIP_HOME already set is kept.
+HERE="$(dirname "$(readlink -f "$0")")"
+if [ -z "$SHIP_HOME" ]; then
+    if [ -n "$APPIMAGE" ] && [ -w "$(dirname "$APPIMAGE")" ]; then
+        SHIP_HOME="$(dirname "$APPIMAGE")"
+    else
+        SHIP_HOME="${XDG_DATA_HOME:-$HOME/.local/share}/turnbuckle-dive"
+        mkdir -p "$SHIP_HOME"
+    fi
+    export SHIP_HOME
+fi
+exec "$HERE/usr/bin/turnbuckle-dive" "$@"

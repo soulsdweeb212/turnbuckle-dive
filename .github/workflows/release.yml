@@ -1,0 +1,142 @@
+# Releases: when a version tag (v0.0.1, ...) is pushed, GitHub builds the program with the whole game's code and
+# publishes it on the repository's Releases page. docs/CI.md ("Releases") explains in plain words what is in a release, how to
+# make one, and why no game data is in it. "Run workflow" on the Actions tab builds the files without publishing them.
+#
+# The game's code comes from the decompilation's port-groundwork branch, cloned beside this repository as CMake expects
+# (docs/GAME_CODE.md). No ROM is used: the list of game files comes from the decompilation's port/game_files.txt, and
+# the program writes the game's archive from the player's own ROM on its first launch.
+
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    name: Linux AppImage
+    # The AppImage runs on Linux systems with the C library of this Ubuntu (glibc 2.39) or newer.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    outputs:
+      decomp: ${{ steps.decomp.outputs.commit }}
+    steps:
+      - name: Get the code, with the LibUltraShip submodule
+        uses: actions/checkout@v7
+        with:
+          path: turnbuckle-dive
+          submodules: recursive
+
+      - name: Get the decompilation (branch port-groundwork) beside it
+        uses: actions/checkout@v7
+        with:
+          repository: soulsdweeb212/wcw-nwo-revenge
+          ref: port-groundwork
+          path: source
+
+      - name: Note the decompilation's commit, for the release notes
+        id: decomp
+        run: echo "commit=$(git -C source rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Check that the tag is the program's version
+        # A tag v1.2.3 must match project(... VERSION 1.2.3) in CMakeLists.txt, which the program shows.
+        if: startsWith(github.ref, 'refs/tags/')
+        working-directory: turnbuckle-dive
+        run: |
+          version=$(sed -n 's/^ *VERSION \([0-9.]*\)$/\1/p' CMakeLists.txt | head -1)
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "The tag $GITHUB_REF_NAME is not the program's version v$version (CMakeLists.txt)"; exit 1
+          fi
+
+      - name: Install the tools and libraries
+        # The same list as ci.yml's Linux job (keep them the same), with its apt retries.
+        timeout-minutes: 10
+        run: |
+          printf 'Acquire::Retries "5";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\n' |
+            sudo tee /etc/apt/apt.conf.d/80-retries > /dev/null
+          sudo apt-get update --error-on=any
+          sudo apt-get install -y build-essential gdb cmake ninja-build pkg-config libpng-dev libglew-dev libgl-dev libegl-dev libgles-dev libzip-dev zipcmp zipmerge ziptool nlohmann-json3-dev libtinyxml2-dev libspdlog-dev libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxfixes-dev libxi-dev libxss-dev libxtst-dev libxkbcommon-dev libwayland-dev libdecor-0-dev libpulse-dev libasound2-dev libudev-dev libdbus-1-dev
+          sudo apt-get install -y file
+
+      - name: Configure (preset "relwithdebinfo"), and check that it compiles the game
+        working-directory: turnbuckle-dive
+        run: |
+          cmake --preset relwithdebinfo | tee configure.log
+          grep -q "td_game_all compiles the game's" configure.log ||
+            { echo "Configure left out the game's code; see its 'Game code:' lines above"; exit 1; }
+
+      - name: Build
+        working-directory: turnbuckle-dive
+        run: cmake --build --preset relwithdebinfo
+
+      - name: Run the tests
+        # Those that need the ROM are skipped here.
+        working-directory: turnbuckle-dive
+        run: ctest --preset relwithdebinfo
+
+      - name: Check that the program starts and asks for the ROM
+        # With no ROM anywhere it must say where to put one and end with code 1.
+        working-directory: turnbuckle-dive
+        run: |
+          home=$(mktemp -d)
+          set +e
+          SHIP_HOME="$home" timeout 60 build/relwithdebinfo/turnbuckle-dive --headless --frames 10 2> err.txt
+          code=$?
+          set -e
+          cat err.txt
+          [ "$code" = 1 ] && grep -q "No ROM found" err.txt
+
+      - name: Pack the AppImage
+        working-directory: turnbuckle-dive
+        run: |
+          name="TurnbuckleDive-${GITHUB_REF_NAME//\//-}-x86_64.AppImage"
+          tools/make_appimage.sh build/relwithdebinfo "$GITHUB_WORKSPACE/$name"
+          cd "$GITHUB_WORKSPACE" && sha256sum "$name" > "$name.sha256"
+
+      - name: Keep the AppImage with the run
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-appimage
+          path: |
+            TurnbuckleDive-*.AppImage
+            TurnbuckleDive-*.AppImage.sha256
+          if-no-files-found: error
+
+  publish:
+    name: Publish the release
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: linux
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Get the files the build made
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-appimage
+
+      - name: Create the release, marked as a pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DECOMP: ${{ needs.linux.outputs.decomp }}
+        run: |
+          cat > notes.md <<EOF
+          A native PC port of WCW/nWo Revenge, built with LibUltraShip. **No game data is included:** you need your
+          own ROM of the game (SHA-1 \`e1711a2511394b9357b5f1ac8ca5cc17bd674836\`).
+
+          **Linux:** download the AppImage, make it executable (\`chmod +x\`), put your ROM (any name ending in .z64,
+          .n64 or .v64) in the same folder, and run it. The first launch writes the game's archive \`revenge.o2r\` from
+          the ROM, in that folder; after that the ROM is no longer needed. Settings, saves and logs are kept there too.
+          If that folder cannot be written to, they go in \`~/.local/share/turnbuckle-dive\` instead.
+
+          F1 shows the developer menu (Debug: Match Inspector, Player Console, Move List, Sound Player and more).
+
+          Built from turnbuckle-dive ${GITHUB_SHA::7} and the decompilation's port-groundwork ${DECOMP}.
+          EOF
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --prerelease \
+            --title "Turnbuckle Dive $GITHUB_REF_NAME" --notes-file notes.md \
+            TurnbuckleDive-*.AppImage TurnbuckleDive-*.AppImage.sha256
