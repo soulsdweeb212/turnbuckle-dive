@@ -206,6 +206,15 @@ jobs:
             TurnbuckleDive-*.zip.sha256
           if-no-files-found: error
 
+      - name: Keep the program's debug symbols with the run
+        # Not in the zip or the release: turnbuckle-dive.pdb names the functions of this one build, so the addresses in
+        # a crash log from it (logs/turnbuckle-dive.log) can be turned into function names and source lines.
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-pdb
+          path: turnbuckle-dive/build/windows-clang-relwithdebinfo/turnbuckle-dive.pdb
+          if-no-files-found: error
+
   publish:
     name: Publish the release
     if: startsWith(github.ref, 'refs/tags/')

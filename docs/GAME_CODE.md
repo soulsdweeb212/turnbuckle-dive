@@ -261,6 +261,15 @@ variables. Storage on PC is of two kinds:
   list that starts inside another (`D_800C5D48`, the last two commands of `D_800C5D10`) is a name for the PC command
   of the same number in that array.
 
+**Alignment.** A block variable starts where its N64 address puts it, so it is aligned as on the N64, often to 8
+bytes or fewer. Clang takes any array of 16 bytes or more to start at a multiple of 16, even one it only declares, and
+copies such arrays with SSE instructions that stop the program when that is not so: the first Windows test build
+stopped in the game's controller read, which copies `D_80048320[4]` into `D_80048338[4]` (24 bytes at 0x80048338).
+So when Clang compiles a game file (clang-cl on Windows), `src/game_extern.h` comes before it and gives every `extern`
+declaration `__attribute__((aligned(1)))`: Clang then assumes nothing about where a game variable starts and uses
+the unaligned forms of those instructions. A game file defines no variable of its own, so this moves none. GCC
+assumes no more than an array's element type needs, and does not read that file.
+
 One variable with storage of its own gets zeroed bytes before it (`tools/game_vars.py`, `GUARD_BEFORE`): the
 wrestlers, `D_800F9D10`. The game uses -1 for "no wrestler" and reads fields of `D_800F9D10[-1]` where it then does
 not use them; on PC those reads find one record of zeros.

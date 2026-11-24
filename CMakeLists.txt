@@ -116,6 +116,15 @@ function(td_game_code target)
         list(TRANSFORM options PREPEND /clang:)
     endif()
     target_compile_options(${target} PRIVATE ${options})
+    # Clang (and clang-cl) only: src/game_extern.h before each file, so that Clang assumes no alignment for the game's
+    # variables beyond what their N64 addresses give (that file says why).
+    if(CMAKE_C_COMPILER_ID STREQUAL "Clang")
+        if(MSVC)
+            target_compile_options(${target} PRIVATE "/FI${PROJECT_SOURCE_DIR}/src/game_extern.h")
+        else()
+            target_compile_options(${target} PRIVATE -include ${PROJECT_SOURCE_DIR}/src/game_extern.h)
+        endif()
+    endif()
     # In a Debug build, the debug information also holds the game's macros, so a debugger knows names such as
     # WR_FLAG_LEGAL (in VS Code's Watch, D_800F9D10[0].flags & WR_FLAG_LEGAL). Visual Studio's debug information has
     # no macros.
