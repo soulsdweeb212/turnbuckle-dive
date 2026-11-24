@@ -3,7 +3,8 @@
 #
 #   tools/make_appimage.sh BUILD_DIR OUTPUT
 #
-# BUILD_DIR is a build folder that holds turnbuckle-dive and f3d.o2r (LibUltraShip's shaders, no game data); OUTPUT is
+# BUILD_DIR is a build folder that holds turnbuckle-dive, f3d.o2r (LibUltraShip's shaders, no game data) and the game
+# pad list gamecontrollerdb.txt with its licence (lib/SDL_GameControllerDB); OUTPUT is
 # the AppImage to write. linuxdeploy copies in the libraries the program needs that a Linux system may not have
 # (libzip, tinyxml2, spdlog, fmt), leaves out those every system has its own of (the C library, OpenGL), and packs the
 # folder. It is downloaded once into tools/.cache at a fixed version. The AppImage holds no game data: the program
@@ -27,7 +28,7 @@ appdir="$(mktemp -d)/AppDir"
 mkdir -p "$appdir/usr/bin"
 cp "$build/turnbuckle-dive" "$appdir/usr/bin/"
 strip --strip-debug "$appdir/usr/bin/turnbuckle-dive"
-cp "$build/f3d.o2r" "$appdir/usr/bin/"
+cp "$build/f3d.o2r" "$build/gamecontrollerdb.txt" "$build/gamecontrollerdb.LICENSE.txt" "$appdir/usr/bin/"
 
 # Run linuxdeploy without FUSE (CI runners and containers have none): it unpacks itself instead.
 APPIMAGE_EXTRACT_AND_RUN=1 ARCH=x86_64 LDAI_OUTPUT="$out" "$linuxdeploy" --appdir "$appdir" \

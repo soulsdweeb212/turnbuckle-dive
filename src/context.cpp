@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <exception>
+#include <filesystem>
 #include <fstream>
 #include <string>
 #include <thread>
@@ -20,12 +21,14 @@
 #endif
 
 #include <SDL3/SDL.h>
+#include <spdlog/spdlog.h>
 
 extern "C" {
 #include "audio/synth.h"
 }
 #include "fast/Fast3dWindow.h"
 #include "frame.h"
+#include "pad_ports.h"
 #include "libultraship/bridge/UltraBridge.h"
 #include "libultraship/controller/controldeck/ControlDeck.h"
 #include "libultraship/controller/controldevice/controller/mapping/ControllerDefaultMappings.h"
@@ -170,6 +173,28 @@ bool OnWsl() {
 #else
     return false;
 #endif
+}
+
+// SDL_GameControllerDB's list of game pads (lib/SDL_GameControllerDB, zlib licence), which tells SDL where the buttons
+// and sticks are on pads it has no mapping of its own for, as the other LibUltraShip ports ship it. The program's own
+// folder (beside the settings) is looked at first, so that a player can drop in a newer list, then the folder the
+// program came with (the same on Windows; inside the AppImage on Linux). std::filesystem::exists with an error code:
+// its other form throws when a folder cannot be read, which stopped BattleShip's Windows releases at start-up.
+// Without the list SDL still knows the common pads (Xbox pads, PlayStation, Switch).
+void AddControllerDatabase() {
+    for (const std::string& path : { Ship::Context::GetPathRelativeToAppDirectory("gamecontrollerdb.txt"),
+                                     Ship::Context::GetPathRelativeToAppBundle("gamecontrollerdb.txt") }) {
+        std::error_code error;
+        if (std::filesystem::exists(path, error)) {
+            const int added = SDL_AddGamepadMappingsFromFile(path.c_str());
+            if (added < 0) {
+                SPDLOG_ERROR("Could not read the game pad list {}: {}", path, SDL_GetError());
+            } else {
+                SPDLOG_INFO("Game pads: {} mappings from {}", added, path);
+            }
+            return;
+        }
+    }
 }
 
 } // namespace
@@ -333,12 +358,14 @@ LibUltraShip StartLibUltraShip(const char* program, bool withCrashHandler, int w
     audio->Init();
     bridge->UpdateCaches(ctx);
 
-    // Game pads (XInput and other pads on Windows, any pad SDL knows on Linux). LibUltraShip starts SDL's game pad
-    // part in its osContInit, which the port does not use (the game's osContInit is game_sdk.c's), so the program
-    // starts it here, as LibUltraShip does: SDL reads the pads on a thread of its own, which the DirectX 11 window also
-    // needs, since SDL does not run that window's messages. Then the pads plugged in already are opened; one plugged in
-    // later is opened when SDL reports it (LibUltraShip's SDLAddRemoveDeviceEventHandler). Without this part the
-    // keyboard still plays.
+    // Game pads (XInput and other pads on Windows, any pad SDL knows on Linux). LibUltraShip starts SDL's game pad part
+    // in its osContInit, which the port does not use (the game's osContInit is game_sdk.c's, because LibUltraShip's
+    // writes past the game's pad records: docs/GAME_CODE.md, "Playing the match"), so the program does what it does,
+    // here: it gives SDL the controller database, then starts the game pad part, with SDL reading the pads on a thread
+    // of its own, which the DirectX 11 window also needs, since SDL does not run that window's messages. Then the pads
+    // plugged in already are opened; one plugged in later is opened when SDL reports it (LibUltraShip's
+    // SDLAddRemoveDeviceEventHandler). Without the game pad part the keyboard still plays.
+    AddControllerDatabase();
     SDL_SetHint(SDL_HINT_JOYSTICK_THREAD, "1");
     if (SDL_InitSubSystem(SDL_INIT_GAMEPAD)) {
         deck->GetConnectedPhysicalDeviceManager()->RefreshConnectedSDLGamepads();
@@ -346,6 +373,15 @@ LibUltraShip StartLibUltraShip(const char* program, bool withCrashHandler, int w
         std::fprintf(stderr, "%s: game pads cannot be read: %s\n", program, SDL_GetError());
     }
     deck->Init(&sControllerBits);
+    // Controller 1 has its mappings now (the keyboard's and a game pad's, LibUltraShip's Init). Controllers 2 to 4 get
+    // a game pad's, the same buttons, the first time the program starts, so that a second pad plays controller 2 at
+    // once (src/pad_ports.h). The settings file keeps them, and any change made in F1, Settings, Input Editor.
+    for (uint8_t port = 1; port < 4; port++) {
+        auto controller = deck->GetControllerByPort(port);
+        if (controller != nullptr && !controller->HasConfig()) {
+            controller->AddDefaultMappings(Ship::PhysicalDeviceType::SDLGamepad);
+        }
+    }
     return { ctx, window, bridge };
 }
 
@@ -366,6 +402,10 @@ void ShowGamePicture(const std::shared_ptr<Fast::Fast3dWindow>& window, bool rea
 void StopLibUltraShip(LibUltraShip* lus) {
     if (lus->window == nullptr) {
         return;
+    }
+    // A pad left rumbling would go on after the program ends.
+    if (auto deck = lus->ctx->GetChildren().GetFirst<LUS::ControlDeck>()) {
+        StopRumble(*deck);
     }
     if (WindowIsRunning()) {
         lus->window->Close();

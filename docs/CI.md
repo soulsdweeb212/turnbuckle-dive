@@ -274,7 +274,8 @@ with `v` is pushed. It builds on a Linux runner and a Windows runner at the same
    use it and which commits of both repositories it was built from.
 
 The Windows runner does steps 1, 3 and 4 the same way with the preset `windows-clang-relwithdebinfo`, then packs a zip
-of `turnbuckle-dive.exe` and `f3d.o2r`. Step 6 waits for both and publishes the AppImage and the zip together.
+of `turnbuckle-dive.exe`, `f3d.o2r` and the game pad list `gamecontrollerdb.txt` with its licence
+(`gamecontrollerdb.LICENSE.txt`). Step 6 waits for both and publishes the AppImage and the zip together.
 
 "Run workflow" on the Actions tab runs everything but step 6 and keeps the AppImage and the zip with the run (under
 Artifacts) without publishing anything, which is how to try the recipe before a real release.
@@ -287,8 +288,8 @@ git tag v0.0.2
 git push origin v0.0.2
 ```
 
-**The AppImage.** `tools/make_appimage.sh BUILD_DIR OUTPUT` copies `turnbuckle-dive` (without its debug information)
-and `f3d.o2r` (LibUltraShip's shaders, which hold no game data) into a folder laid out as a small Linux system, and
+**The AppImage.** `tools/make_appimage.sh BUILD_DIR OUTPUT` copies `turnbuckle-dive` (without its debug information),
+`f3d.o2r` (LibUltraShip's shaders, which hold no game data) and the game pad list with its licence into a folder laid out as a small Linux system, and
 runs linuxdeploy, a tool that copies in the libraries the program needs that a system may lack (libzip, tinyxml2,
 spdlog, fmt) and packs the folder into one file. The script downloads linuxdeploy once, at a fixed version, into
 `tools/.cache`. The AppImage's launcher, `packaging/AppRun`, decides where the program keeps its files: an AppImage

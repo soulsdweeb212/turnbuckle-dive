@@ -548,10 +548,32 @@ comes back when you untick.
 ./build/debug/turnbuckle-dive --dev-match --players 1
 ```
 
-The controllers come from LibUltraShip's control deck, read once a frame just before the game reads its pads.
-Controller 1 starts with Turnbuckle Dive's own defaults (`src/context.cpp`), which take the place of LibUltraShip's. The
-program starts SDL's game pad part itself before the deck (`src/context.cpp`), since LibUltraShip starts it in its own
-`osContInit`, which the port replaces; a pad plugged in later is found while the program runs. The defaults:
+The controllers come from LibUltraShip's control deck, read once a frame just before the game reads its pads. They
+work as in the other LibUltraShip ports, with three things the port does itself, because it uses the game's own
+`osContInit` and the functions after it (`src/game_sdk.c`): LibUltraShip's write past the game's 6-byte pad records and
+post no message when a read is done, which the game waits for.
+
+- **SDL's game pad part.** LibUltraShip starts it in its `osContInit`, so the program starts it before the deck
+  (`src/context.cpp`). It first gives SDL the game pad list of SDL_GameControllerDB (`gamecontrollerdb.txt`, beside the
+  program; `lib/SDL_GameControllerDB` holds it with its zlib licence, and `CMakeLists.txt` names the commit it comes
+  from), which tells SDL where the buttons are on pads SDL has no mapping of its own for. A newer list put in the
+  program's folder (beside the settings) is read instead. A pad plugged in while the program runs is found then.
+- **A controller for each pad** (`src/pad_ports.h`). LibUltraShip gives every pad to controller 1. Here the first pad
+  plays controller 1 (with the keyboard), the second controller 2, and so on, in the order they were plugged in; a pad
+  keeps its controller while it stays plugged in, and one plugged in later takes the lowest free controller. The game
+  is told which controllers are plugged in, controller 1 always, so a second player can join by plugging in a pad.
+  Controllers 2 to 4 get the game pad defaults below the first time the program starts. In F1, Settings, Input Editor
+  a controller's pads can still be changed.
+- **The Rumble Pak.** A controller whose pad can rumble has a Rumble Pak for the game, which finds it as it looks for
+  one every few frames (`func_80003E78`), and then starts and stops the pad's rumble through `osMotorInit` and
+  `__osMotorAccess`. The program stops all rumble when it ends. The menus' Controller Pak check (`osPfsInitPak`) still
+  answers "no pak": on the N64 it answers 10 for a Rumble Pak, which the menus turn into another branch
+  (`func_800BB360`, `func_800BCDF4`), not yet checked on PC.
+
+A run with a pad file to replay or record, or a pad script, keeps controller 1 alone and no Rumble Pak, so that it plays
+the same way every time (`dev_pads_set_window_ports`, `src/dev/dev_pads.h`).
+
+Controller 1 starts with Turnbuckle Dive's own defaults (`src/context.cpp`), which take the place of LibUltraShip's:
 
 | N64 | Keyboard | Gamepad (Xbox names) |
 |---|---|---|

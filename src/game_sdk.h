@@ -32,6 +32,14 @@ typedef struct {
 
 /* Sets the hooks, and which controllers are plugged in: bit n for controller n + 1. */
 void game_sdk_set(const GameSdkHooks *hooks, unsigned plugged);
+/* Changes which controllers are plugged in while the game runs (a game pad plugged in or taken out); the game sees it
+ * at its next controller read. */
+void game_sdk_set_plugged(unsigned plugged);
+/* Which plugged-in controllers have a Rumble Pak (bit n for controller n + 1; none at first), and the function that
+ * starts (on 1) or stops (0) controller `channel`'s motor when the game asks (NULL: none). A pak taken out while its
+ * motor runs is stopped. */
+void game_sdk_set_rumble_paks(unsigned paks);
+void game_sdk_set_rumble(void (*rumble)(int channel, int on));
 
 /* How many random numbers (guRandom) each frame hand-off and each wait for the retrace draws, in place of the N64's
  * idle thread: 1 by default, 0 to compare with the original game run without its idle thread's calls (docs/GAME_CODE.md,

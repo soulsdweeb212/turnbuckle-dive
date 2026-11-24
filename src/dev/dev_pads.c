@@ -184,6 +184,14 @@ void dev_pads_set_window(int channel, uint16_t buttons, int8_t stick_x, int8_t s
     }
 }
 
+void dev_pads_set_window_ports(unsigned plugged, unsigned rumble_paks) {
+    if (g_replay != NULL || g_record != NULL || g_scripted) {
+        return;
+    }
+    game_sdk_set_plugged(plugged | 1u);
+    game_sdk_set_rumble_paks(rumble_paks);
+}
+
 void dev_pads_record(uint32_t frame, int channel, const GamePad *pad) {
     uint8_t e[10];
 

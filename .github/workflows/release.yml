@@ -187,12 +187,14 @@ jobs:
         run: if (Test-Path logs) { Get-ChildItem logs -Filter *.log | ForEach-Object { Get-Content $_.FullName -Tail 100 } }
 
       - name: Pack the zip
-        # The program and LibUltraShip's shaders (f3d.o2r), which it opens from its own folder.
+        # The program, LibUltraShip's shaders (f3d.o2r) and the game pad list (gamecontrollerdb.txt, with its zlib
+        # licence), which it opens from its own folder.
         run: |
           $name = "TurnbuckleDive-$($env:GITHUB_REF_NAME -replace '/','-')-windows-x64"
           New-Item -ItemType Directory $name | Out-Null
-          Copy-Item turnbuckle-dive/build/windows-clang-relwithdebinfo/turnbuckle-dive.exe, `
-                    turnbuckle-dive/build/windows-clang-relwithdebinfo/f3d.o2r $name
+          $build = "turnbuckle-dive/build/windows-clang-relwithdebinfo"
+          Copy-Item "$build/turnbuckle-dive.exe", "$build/f3d.o2r", "$build/gamecontrollerdb.txt", `
+                    "$build/gamecontrollerdb.LICENSE.txt" $name
           Compress-Archive -Path $name -DestinationPath "$name.zip"
           $hash = (Get-FileHash "$name.zip" -Algorithm SHA256).Hash.ToLower()
           "$hash  $name.zip" | Out-File -Encoding ascii "$name.zip.sha256"
@@ -248,6 +250,10 @@ jobs:
           .n64 or .v64) in the same folder, and run it. The first launch writes the game's archive \`revenge.o2r\` from
           the ROM, in that folder; after that the ROM is no longer needed. Settings, saves and logs are kept there too.
           If that folder cannot be written to, they go in \`~/.local/share/turnbuckle-dive\` instead.
+
+          Game pads: each pad plays a controller of its own, in the order they are plugged in (the first plays
+          controller 1, with the keyboard); a pad that can rumble gives its controller a Rumble Pak. F1, Settings, Input
+          Editor changes the buttons.
 
           F1 shows the developer menu (Debug: Match Inspector, Player Console, Move List, Sound Player and more).
 

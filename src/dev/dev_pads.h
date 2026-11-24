@@ -46,6 +46,13 @@ void dev_pads_window(int channel, GamePad *pad);
  * 0x2000, Start 0x1000, the d-pad 0x0F00, L 0x20, R 0x10, the C buttons 0x0F) and the stick, -80 to 80 each way. The
  * Match Inspector's window sets it from LibUltraShip's controllers at every frame. */
 void dev_pads_set_window(int channel, uint16_t buttons, int8_t stick_x, int8_t stick_y);
+/* Which of the window's controllers are plugged in (bit n for controller n + 1: controller 1, which the keyboard plays,
+ * and one more for each game pad, src/pad_ports.h) and which have a Rumble Pak (a pad that can rumble). The Match
+ * Inspector sets them at every frame. They reach the game (game_sdk_set_plugged, game_sdk_set_rumble_paks) only in a
+ * run whose pads all come from the window: with a pad file to replay or record, or a pad script, the run keeps
+ * controller 1 alone and no Rumble Pak, so that a pad file holds the reads of controller 1 only and replays the same
+ * way. */
+void dev_pads_set_window_ports(unsigned plugged, unsigned rumble_paks);
 
 /* Writes one pad read to the recorded file, if there is one: "TDPADS02", then 10 bytes per read, little-endian: u32
  * frame, u8 channel, u8 0, u16 buttons, s8 stick x, s8 stick y. */

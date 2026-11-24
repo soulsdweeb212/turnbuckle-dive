@@ -22,7 +22,44 @@
 
 static GameSdkHooks g_hooks;
 static unsigned g_plugged = 1;
+static unsigned g_rumble_paks;            /* bit n: controller n + 1 has a Rumble Pak (only plugged-in controllers) */
+static unsigned g_rumbling;               /* bit n: controller n + 1's motor is on */
+static void (*g_rumble)(int channel, int on);
 static uint32_t g_frames;
+
+static void motor(int channel, int on) {
+    if (g_rumble != NULL) {
+        g_rumble(channel, on);
+    }
+    if (on) {
+        g_rumbling |= 1u << channel;
+    } else {
+        g_rumbling &= ~(1u << channel);
+    }
+}
+
+void game_sdk_set_rumble_paks(unsigned paks) {
+    unsigned gone;
+    int i;
+
+    paks &= g_plugged;
+    gone = g_rumbling & ~paks;
+    for (i = 0; i < 4; i++) {
+        if ((gone >> i) & 1) {
+            motor(i, 0); /* a pak taken out stops: the game cannot stop it any more */
+        }
+    }
+    g_rumble_paks = paks;
+}
+
+void game_sdk_set_plugged(unsigned plugged) {
+    g_plugged = plugged & 0xFu;
+    game_sdk_set_rumble_paks(g_rumble_paks);
+}
+
+void game_sdk_set_rumble(void (*rumble)(int channel, int on)) {
+    g_rumble = rumble;
+}
 
 void game_sdk_set(const GameSdkHooks *hooks, unsigned plugged) {
     if (hooks != NULL) {
@@ -30,7 +67,7 @@ void game_sdk_set(const GameSdkHooks *hooks, unsigned plugged) {
     } else {
         memset(&g_hooks, 0, sizeof(g_hooks));
     }
-    g_plugged = plugged & 0xFu;
+    game_sdk_set_plugged(plugged);
 }
 
 uint32_t game_sdk_frames(void) {
@@ -430,17 +467,30 @@ int32_t osPfsFindFile(void *pfs, uint16_t company, uint32_t game, uint8_t *name,
     return 1;
 }
 
-/* No Rumble Pak is plugged in: osMotorInit answers 1 (PFS_ERR_NOPACK), as the N64 does without one. */
+/* The Rumble Pak. A controller has one when the program says so (game_sdk_set_rumble_paks: a game pad that can rumble,
+ * on that controller's port). The game looks for one every few frames (func_80003E78, func_800042BC): osMotorInit
+ * answers 0 and notes the controller's number in the game's record of the pak, at the place the N64's OSPfs keeps its
+ * channel (offset 8), or 1 (PFS_ERR_NOPACK) without a pak, as the N64 does. __osMotorAccess then starts (flag 1) or
+ * stops (0) that controller's motor through game_sdk_set_rumble's function. osPfsInitPak still answers "no pak" for a
+ * controller with a Rumble Pak: on the N64 it answers 10 then, which the menus' pak check (func_800BB360) turns into a
+ * result that takes another branch in the menus (func_800BCDF4), not yet checked on PC. */
 int32_t port_osMotorInit(void *mq, void *pfs, int32_t channel) {
     (void)mq;
-    (void)pfs;
-    (void)channel;
-    return 1;
+    if (channel < 0 || channel > 3 || !((g_rumble_paks >> channel) & 1)) {
+        return 1;
+    }
+    memcpy((uint8_t *)pfs + 8, &channel, sizeof(channel));
+    return 0;
 }
 
 int32_t port_osMotorAccess(void *pfs, int32_t flag) {
-    (void)pfs;
-    (void)flag;
+    int32_t channel;
+
+    memcpy(&channel, (const uint8_t *)pfs + 8, sizeof(channel));
+    if (channel < 0 || channel > 3 || !((g_rumble_paks >> channel) & 1)) {
+        return 1; /* PFS_ERR_NOPACK */
+    }
+    motor(channel, flag != 0);
     return 0;
 }
 

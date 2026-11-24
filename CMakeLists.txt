@@ -645,18 +645,31 @@ if(TD_BUILD_HELLO)
     # LibUltraShip and these settings. LibUltraShip keeps its GBI choice private; code that builds display lists must
     # use the same one. Its headers include <windows.h> on Windows, whose min and max macros would break std::min and
     # std::max. f3d_o2r: the programs open f3d.o2r, LibUltraShip's shaders, when they start.
-    add_library(td_window STATIC src/context.cpp src/frame.cpp src/debug.cpp)
+    add_library(td_window STATIC src/context.cpp src/frame.cpp src/debug.cpp src/pad_ports.cpp)
     target_link_libraries(td_window PUBLIC libultraship)
     target_include_directories(td_window PUBLIC src)
     target_compile_definitions(td_window PUBLIC F3DEX_GBI_2 $<$<PLATFORM_ID:Windows>:NOMINMAX>)
     td_strict(td_window)
     add_dependencies(td_window f3d_o2r)
+    # SDL_GameControllerDB's list of game pads, which the programs give SDL when they start (src/context.cpp), and its
+    # licence (zlib), beside the programs as f3d.o2r is; the releases ship both. lib/SDL_GameControllerDB holds the
+    # list as of commit f510b74438d08d7dd55ed06673f473bd1cc28b85 of github.com/mdqinc/SDL_GameControllerDB; to update
+    # it, replace the two files with those of a newer commit and change the commit here.
+    configure_file(lib/SDL_GameControllerDB/gamecontrollerdb.txt ${CMAKE_BINARY_DIR}/gamecontrollerdb.txt COPYONLY)
+    configure_file(lib/SDL_GameControllerDB/LICENSE ${CMAKE_BINARY_DIR}/gamecontrollerdb.LICENSE.txt COPYONLY)
     # libzip, which LibUltraShip reads .o2r archives with, also writes the game's archive (src/archive_write.c).
     find_package(libzip REQUIRED)
 
     add_executable(hello hello/main.cpp)
     target_link_libraries(hello PRIVATE td_window)
     td_strict(hello)
+
+    # How the game pads are given controller ports (src/pad_ports.h), checked with SDL's virtual pads: no pad and no
+    # window needed (tests/pad_ports/main.cpp says what it checks).
+    add_executable(test_pad_ports tests/pad_ports/main.cpp)
+    target_link_libraries(test_pad_ports PRIVATE td_window)
+    td_strict(test_pad_ports)
+    add_test(NAME pad_ports COMMAND test_pad_ports)
 
     if(TARGET td_game_all)
         # The developer match's window, the Match Inspector (src/dev/inspector.cpp): turnbuckle-dive --dev-match opens

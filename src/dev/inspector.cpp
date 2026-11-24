@@ -47,6 +47,7 @@
 #include "game_sdk.h"
 #include "costume_colours.h"
 #include "move_list.h"
+#include "pad_ports.h"
 #include "player_console.h"
 #include "audio/sound_output.h"
 #include "sound_player.h"
@@ -533,6 +534,12 @@ extern "C" int dev_inspector_start(void) {
     td::AddCostumeColoursWindow(cvars, gLus.window);
     td::AddSoundTestWindow(cvars, gLus.window);
     td::AddSoundPlayerWindow(cvars, gLus.window);
+    // The game's Rumble Pak motors (src/game_sdk.c) start and stop the pads' rumble.
+    game_sdk_set_rumble([](int channel, int on) {
+        if (auto deck = gLus.ctx != nullptr ? gLus.ctx->GetChildren().GetFirst<LUS::ControlDeck>() : nullptr) {
+            td::Rumble(*deck, channel, on != 0);
+        }
+    });
     // The game's settings, kept in the settings file: read now, and changed from the Settings menu.
     game_sdk_set_championship_matches(cvars->GetInteger(kChampionshipMatches, 9));
     td::AddDebugMenu(gLus.window, { "Match Inspector", td::kPlayerConsoleWindow, td::kMoveListWindow, td::kSoundPlayerWindow, td::kSoundTestWindow }, { "Input Editor", td::kCostumeColoursWindow },
@@ -542,12 +549,17 @@ extern "C" int dev_inspector_start(void) {
 }
 
 // The controllers, as LibUltraShip's control deck maps them (keyboard or gamepad; F1, Settings, Input Editor changes the
-// mapping), read once a frame just before the game goes on, so the game's pad reads of the next frame see them.
+// mapping), read once a frame just before the game goes on, so the game's pad reads of the next frame see them. Each
+// game pad has a controller of its own (src/pad_ports.h); the game is told which controllers are plugged in and which
+// have a Rumble Pak (dev_pads_set_window_ports).
 void ReadPads() {
     auto deck = gLus.ctx->GetChildren().GetFirst<LUS::ControlDeck>();
     OSContPad pads[MAXCONTROLLERS] = {};
 
     if (deck != nullptr) {
+        auto devices = deck->GetConnectedPhysicalDeviceManager();
+        const unsigned plugged = td::RoutePads(*devices);
+        dev_pads_set_window_ports(plugged, td::RumblePorts(*devices) & plugged);
         deck->WriteToPad(pads);
     }
     for (int i = 0; i < 4 && i < MAXCONTROLLERS; i++) {
@@ -611,7 +623,8 @@ extern "C" void dev_inspector_set_command(int argc, char** argv) {
 }
 
 extern "C" void dev_inspector_stop(void) {
-    sound_output_close(); // the sound device goes with the context
+    game_sdk_set_rumble(nullptr); // the controllers go with the context, which stops their rumble
+    sound_output_close();         // the sound device goes with the context
     td::StopLibUltraShip(&gLus);
 }
 
