@@ -346,7 +346,7 @@ void DrawGameSettings() {
 
     // How the game starts, read when the program starts (so it applies from the next start or Reset).
     if (ImGui::BeginMenu("Boot")) {
-        int boot = cvars->GetInteger(kBootScreen, DEV_BOOT_SCREEN_ORIGINAL);
+        int boot = cvars->GetInteger(kBootScreen, DEV_BOOT_SCREEN_TURNBUCKLE_DIVE);
         bool changed = ImGui::RadioButton("Original: the legal screen", &boot, DEV_BOOT_SCREEN_ORIGINAL);
 
         changed |= ImGui::RadioButton("Turnbuckle Dive: the spinning cube", &boot, DEV_BOOT_SCREEN_TURNBUCKLE_DIVE);
@@ -644,7 +644,7 @@ extern "C" void dev_inspector_use_save_file(void) {
 extern "C" int dev_inspector_boot_screen(void) {
     auto cvars = gLus.ctx->GetChildren().GetFirst<Ship::ConsoleVariable>();
 
-    return cvars->GetInteger(kBootScreen, DEV_BOOT_SCREEN_ORIGINAL) == DEV_BOOT_SCREEN_TURNBUCKLE_DIVE
+    return cvars->GetInteger(kBootScreen, DEV_BOOT_SCREEN_TURNBUCKLE_DIVE) == DEV_BOOT_SCREEN_TURNBUCKLE_DIVE
                ? DEV_BOOT_SCREEN_TURNBUCKLE_DIVE
                : DEV_BOOT_SCREEN_ORIGINAL;
 }

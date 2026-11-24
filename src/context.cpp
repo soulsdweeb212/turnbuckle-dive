@@ -333,6 +333,18 @@ LibUltraShip StartLibUltraShip(const char* program, bool withCrashHandler, int w
     audio->Init();
     bridge->UpdateCaches(ctx);
 
+    // Game pads (XInput and other pads on Windows, any pad SDL knows on Linux). LibUltraShip starts SDL's game pad
+    // part in its osContInit, which the port does not use (the game's osContInit is game_sdk.c's), so the program
+    // starts it here, as LibUltraShip does: SDL reads the pads on a thread of its own, which the DirectX 11 window also
+    // needs, since SDL does not run that window's messages. Then the pads plugged in already are opened; one plugged in
+    // later is opened when SDL reports it (LibUltraShip's SDLAddRemoveDeviceEventHandler). Without this part the
+    // keyboard still plays.
+    SDL_SetHint(SDL_HINT_JOYSTICK_THREAD, "1");
+    if (SDL_InitSubSystem(SDL_INIT_GAMEPAD)) {
+        deck->GetConnectedPhysicalDeviceManager()->RefreshConnectedSDLGamepads();
+    } else {
+        std::fprintf(stderr, "%s: game pads cannot be read: %s\n", program, SDL_GetError());
+    }
     deck->Init(&sControllerBits);
     return { ctx, window, bridge };
 }

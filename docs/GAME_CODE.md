@@ -549,7 +549,9 @@ comes back when you untick.
 ```
 
 The controllers come from LibUltraShip's control deck, read once a frame just before the game reads its pads.
-Controller 1 starts with Turnbuckle Dive's own defaults (`src/context.cpp`), which take the place of LibUltraShip's:
+Controller 1 starts with Turnbuckle Dive's own defaults (`src/context.cpp`), which take the place of LibUltraShip's. The
+program starts SDL's game pad part itself before the deck (`src/context.cpp`), since LibUltraShip starts it in its own
+`osContInit`, which the port replaces; a pad plugged in later is found while the program runs. The defaults:
 
 | N64 | Keyboard | Gamepad (Xbox names) |
 |---|---|---|
@@ -888,8 +890,8 @@ memory, so that it goes the same on every run; so does the developer match.
 F1, Settings, Boot chooses how the game starts; the settings file keeps the choice as `gBootScreen`, and it applies
 from the next start or Reset:
 
-- **Original** (the default, 0): as on the N64, the game's legal screen first.
-- **Turnbuckle Dive** (1): the port's splash screen in place of the legal screen and the THQ logo, for about four
+- **Original** (0): as on the N64, the game's legal screen first.
+- **Turnbuckle Dive** (the default, 1): the port's splash screen in place of the legal screen and the THQ logo, for about four
   seconds: a cube turning above the port's name, "A NATIVE PORT" and the build, the commit the program was built from,
   such as "BUILD AD9DDB0" (`TD_COMMIT`, which `cmake/commit.cmake` works out at every build; the program's first line
   prints it too). Pressing any button on any controller ends it early (a button already held when it starts counts once it has been let go). It is not part of the game. The
