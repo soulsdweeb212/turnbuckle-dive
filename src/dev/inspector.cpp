@@ -26,6 +26,9 @@
 #include <vector>
 #ifdef _WIN32
 #include <process.h>
+// Windows' GL/gl.h uses names (WINGDIAPI, APIENTRY) that <windows.h> defines.
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
 #else
 #include <unistd.h>
 #endif
