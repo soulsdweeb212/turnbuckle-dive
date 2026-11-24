@@ -1,0 +1,72 @@
+Give the DirectX window's members starting values
+
+The Windows release crashed as its window opened (exception 0xc0000005). GfxWindowBackendDXGI::Init calls
+ShowWindow, which sends WM_ACTIVATEAPP to the window procedure, and that calls mOnAllKeysUp when it is not
+null. mOnAllKeysUp had no initial value and is only set later, by SetKeyboardCallbacks, so the program jumped
+to whatever address the heap held. Builds by Visual Studio's own compiler happened to find zeros there; the
+clang-cl release did not. The mouse and focus members the window procedure reads (mIsMouseCaptured, mInFocus,
+mMousePressed, ...) had no initial value either; they now start as false or zero.
+
+SetFullscreenChangedCallback assigned its parameter to itself (the parameter has the member's name), so the
+DirectX window never kept the callback and never told the program that fullscreen changed; it now sets the
+member, as the SDL window does.
+
+Still present in LibUltraShip main on 2026-11-24; drop this patch once it is fixed there.
+
+--- a/include/fast/backends/gfx_dxgi.h
++++ b/include/fast/backends/gfx_dxgi.h
+@@ -94,13 +94,13 @@
+     int32_t mPosX, mPosY; // Screen coordinates
+     double mDetectedHz;
+     double mDisplayPeriod; // (1000 / dxgi.mDetectedHz) in ms
+-    void (*mOnAllKeysUp)(void);
+-    POINT mRawMouseDeltaBuf;
+-    float mMouseWheel[2];
+-    bool mIsMouseCaptured;
+-    bool mIsMouseHovered;
+-    bool mInFocus;
+-    bool mHasMousePosition;
++    void (*mOnAllKeysUp)(void) = nullptr;
++    POINT mRawMouseDeltaBuf = {};
++    float mMouseWheel[2] = {};
++    bool mIsMouseCaptured = false;
++    bool mIsMouseHovered = false;
++    bool mInFocus = false;
++    bool mHasMousePosition = false;
+ 
+     // These need to be public to be accessible in the window callback
+     std::shared_ptr<Ship::FileDrop> mFileDrop;
+@@ -119,7 +119,7 @@
+     HRESULT(__stdcall* CreateDXGIFactory1)(REFIID riid, void** factory);
+     HRESULT(__stdcall* CreateDXGIFactory2)(UINT flags, REFIID iid, void** factory);
+ 
+-    bool mLastMaximizedState;
++    bool mLastMaximizedState = false;
+ 
+     bool mDXGI11_4;
+     Microsoft::WRL::ComPtr<IDXGIFactory2> mFactory;
+@@ -136,11 +136,11 @@
+     uint32_t mAppliedMaxFrameLatency;
+     HANDLE mTimer;
+     bool mTearingSupport;
+-    bool mMousePressed[5];
++    bool mMousePressed[5] = {};
+     LARGE_INTEGER mPreviousPresentTime;
+ 
+     RAWINPUTDEVICE mRawInputDevice[1];
+-    POINT mPrevMouseCursorPos;
++    POINT mPrevMouseCursorPos = {};
+ 
+     std::shared_ptr<Ship::Config> mConfig;
+ };
+--- a/src/fast/backends/gfx_dxgi.cpp
++++ b/src/fast/backends/gfx_dxgi.cpp
+@@ -626,7 +626,7 @@
+ }
+ 
+ void GfxWindowBackendDXGI::SetFullscreenChangedCallback(void (*mOnFullscreenChanged)(bool is_now_fullscreen)) {
+-    mOnFullscreenChanged = mOnFullscreenChanged;
++    this->mOnFullscreenChanged = mOnFullscreenChanged;
+ }
+ 
+ void GfxWindowBackendDXGI::SetCursorVisibility(bool visible) {

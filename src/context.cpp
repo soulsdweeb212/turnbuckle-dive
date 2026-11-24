@@ -59,7 +59,7 @@ constexpr unsigned int kGlVersion = 0x1F02;
 // SDL cannot create the window, LibUltraShip's SDL backend logs it and carries on without one; when SDL cannot create
 // the window's OpenGL context, it carries on without logging anything; and an OpenGL older than 3.0 lets it start too.
 // The first frame then crashes. So this asks SDL and OpenGL themselves. Only SDL's OpenGL backend, the one Linux
-// uses, is asked: Windows' own backend, DXGI, opens its window without SDL.
+// uses and Windows' default, is asked: Windows' other backend, DXGI (DirectX 11), opens its window without SDL.
 bool WindowOpened(const char* program, const std::shared_ptr<Fast::Fast3dWindow>& window) {
     if (window->GetWindowBackend() != Fast::FAST3D_SDL_OPENGL) {
         return true;
@@ -288,6 +288,14 @@ LibUltraShip StartLibUltraShip(const char* program, bool withCrashHandler, int w
         config->SetInt("Window.Width", width);
         config->SetInt("Window.Height", height);
     }
+#ifdef _WIN32
+    // On Windows the window draws with OpenGL too, until the settings file names another backend (the settings menu
+    // offers DirectX 11): LibUltraShip would otherwise pick DirectX 11, the first it lists. One renderer on every
+    // system keeps the pictures alike. A saved backend is kept.
+    if (config->GetInt("Window.Backend.Id", -1) < 0) {
+        config->SetInt("Window.Backend.Id", Fast::FAST3D_SDL_OPENGL);
+    }
+#endif
     auto window = std::make_shared<Fast::Fast3dWindow>(config, cvars, nullptr);
     ctx->GetChildren().Add(window);
     auto deck = std::make_shared<LUS::ControlDeck>(std::vector<CONTROLLERBUTTONS_T>(), DefaultMappings(), ButtonNames(),

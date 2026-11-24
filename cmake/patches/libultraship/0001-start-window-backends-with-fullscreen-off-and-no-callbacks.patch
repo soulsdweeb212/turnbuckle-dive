@@ -1,0 +1,37 @@
+Start the window backends with fullscreen off and no callbacks
+
+GfxWindowBackend::mFullScreen had no initial value, and neither backend constructor sets it, so it held
+whatever the heap held (0xc4 in a Linux debug build). IsFullscreen() then reported a normal window as
+fullscreen, Window::SaveWindowToConfig() saved Window.Fullscreen.Enabled = true on exit, and the next run
+started fullscreen. SetFullscreenImpl() also compares against it to skip redundant switches.
+
+The callbacks (mOnKeyDown, mOnKeyUp, mOnMouseButtonDown, mOnMouseButtonUp, mOnFullscreenChanged) had no
+initial value either. The backends call them only when they are not null, but the window sends messages before
+the program sets them (on Windows, ShowWindow sends focus and key messages during the backend's Init), so a
+key or click then called whatever address the heap held. They now start as nullptr. Patch 0013 does the same
+for the DirectX backend's own members.
+
+Still present in LibUltraShip main on 2026-11-24; drop this patch once it is fixed there.
+
+--- a/include/fast/backends/gfx_window_manager_api.h
++++ b/include/fast/backends/gfx_window_manager_api.h
+@@ -42,13 +42,13 @@
+     virtual bool IsFullscreen() = 0;
+ 
+   protected:
+-    void (*mOnFullscreenChanged)(bool isNowFullscreen);
+-    bool (*mOnKeyDown)(int scancode);
+-    bool (*mOnKeyUp)(int scancode);
+-    bool (*mOnMouseButtonDown)(int btn);
+-    bool (*mOnMouseButtonUp)(int btn);
++    void (*mOnFullscreenChanged)(bool isNowFullscreen) = nullptr;
++    bool (*mOnKeyDown)(int scancode) = nullptr;
++    bool (*mOnKeyUp)(int scancode) = nullptr;
++    bool (*mOnMouseButtonDown)(int btn) = nullptr;
++    bool (*mOnMouseButtonUp)(int btn) = nullptr;
+     uint32_t mTargetFps = 60;
+-    bool mFullScreen;
++    bool mFullScreen = false;
+     bool mIsRunning = true;
+     bool mVsyncEnabled = true;
+ };

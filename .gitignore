@@ -47,3 +47,7 @@ CMakeUserPresets.json
 # Python's compiled modules
 __pycache__/
 tools/.cache/
+
+# Release downloads kept beside the code for trying them (never committed)
+*.AppImage
+*.AppImage.sha256

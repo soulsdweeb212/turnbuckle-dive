@@ -306,7 +306,9 @@ keeps building with cl). Everything is linked into the one `.exe`:
 the libraries vcpkg builds are static (`x64-windows-static`), and so is the C library, so a player installs nothing
 first (no Visual C++ redistributable). The `.exe` is a console program: a console window opens beside the game with its
 messages. It keeps its files (the archive, settings, saves, logs) in its own folder, so the zip is unpacked into a
-folder that can be written to.
+folder that can be written to. It draws with OpenGL, as on Linux (`src/context.cpp` writes that into a new settings
+file); LibUltraShip's DirectX 11 window stays on offer in the settings menu. CI's checks run without a window, so
+only a person starting the `.exe` on Windows tries the window code.
 
 **For a player who starts the program by double-clicking it**, on either system, there is no terminal to read its
 messages in, so when the program cannot start the game (no ROM, or not the supported one) it also shows the message in
