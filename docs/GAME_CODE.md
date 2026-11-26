@@ -457,7 +457,10 @@ through the game's code and then the port's music player just as the game's own 
 - Songs, by the game's song number (1 to 21, with the resource each is kept in, from the song table `D_80030D0C`):
   started with `func_8000E55C`, the function the menus and the match call at every frame with the song they want. It
   fades out the song playing (over the frames the Fade slider sets), and once that is quiet the next call loads the new
-  song into the game's song buffer and starts it.
+  song into the game's song buffer and starts it. While it plays, the game's own song calls wait; when the game goes on
+  to another screen (another menu, between the menus and the match, or a screen that asks for another song, which the
+  game's `func_8000E55C` reports through `port_song_asked`), the player's song fades out and the new screen plays its
+  own, as from the main menu into Championship.
 - Sound effects, by number in the effect table (those the table has), with `func_800032A4` at a volume (128 plays the
   effect as written), as a match starts them (`playEntitySound`).
 - Menu sounds, by the ids the menus use (0x401 to 0x42B, each with the effect it plays), with `func_8000DEE4`, as the
@@ -466,7 +469,7 @@ through the game's code and then the port's music player just as the game's own 
 Songs and effects are listed in the order they are stored in the ROM (the songs are resources 0x210 to 0x224, in that
 order; the effects' streams are not quite in the order of their numbers), each with a category, and a filter shows one
 category. A song is BGM (a match's, the title screen's idle demo, the ending credits, or a title win's), menu BGM,
-entrance music, unused (song 21, which the game never asks for) or unclear (song 18, which plays in a scene after a
+entrance music, unused (song 21, which the game never asks for) or misc. (song 18, which plays in a scene after a
 championship match that has not been identified); its row says where it plays, and whether that was heard in a run of
 the game or only read from the code that asks for songs (`func_800ABE60` for the menus, `func_800BCD30` for the scenes
 around a match, `func_800AF978` for the match's song). There are no wrestlers' own themes: every entrance plays song 16

@@ -127,5 +127,8 @@ extern uint32_t *D_800482E4;
 /* And the addresses of the game's three framebuffers, which the window copies the picture into for the monitors
  * (src/screen_copy.h). */
 extern void *D_8002EEB0[];
+/* And the menu on the screen (an index into the game's menus, D_800E8230), by which the Sound Player sees the screen
+ * change (src/game_sdk.h, game_sdk_scene_changed). */
+extern int16_t D_80038A90;
 
 #endif

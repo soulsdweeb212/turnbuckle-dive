@@ -35,6 +35,9 @@ void sp_take_songs(int fade);
 int sp_request_song(int song, int fade);
 int sp_held_song_playing(void);
 void sp_give_songs(int fade);
+/* Whether the game has gone on to another screen since sp_take_songs (game_sdk_scene_changed in src/game_sdk.h):
+ * another menu, between the menus and the match, or a screen asking for another song. Its own song should then play. */
+int sp_scene_changed(void);
 
 /* Starts effect `number` at `volume` (128: as written) as the game's matches do; returns its handle (0: not played). */
 uint32_t sp_play_effect(int number, int volume);

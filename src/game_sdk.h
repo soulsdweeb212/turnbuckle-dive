@@ -59,6 +59,10 @@ void game_sdk_set_championship_matches(int matches);
 void game_sdk_hold_songs(int hold);
 void game_sdk_player_calls(int on);
 uint32_t game_sdk_held_song(void);
+/* Whether the game has gone on to another screen since game_sdk_hold_songs(1): another menu (D_80038A90), the other
+ * overlay (the menus' or the match's code), or the screen asking for another song than the first it asked for then
+ * (port.h's port_song_asked). The Sound Player then gives the songs back, so the new screen plays its own. */
+int game_sdk_scene_changed(void);
 
 /* The player's own costume colours. Each wrestler (the game's character id, bank << 8 | entry + 1) may have its own
  * colour, 0xRRGGBB, for colour 1 and for colour 2 of its costume, in place of the colour the game's Costume Change menu

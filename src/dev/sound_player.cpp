@@ -10,8 +10,9 @@
 // playing, and once that is quiet a later call starts the new one; so the window asks again at every frame until the
 // song has started, for at most kRequestFrames frames. The game's screens ask for their own song at every frame and
 // would fade the player's out at once, so while the player has a song the game's own song calls wait
-// (sp_take_songs); when the player's song is stopped or ends, the songs go back to the game (sp_give_songs) and the
-// screen starts its own again.
+// (sp_take_songs); when the player's song is stopped or ends, or the game goes on to another screen (another menu,
+// between the menus and the match, or a screen that asks for another song: sp_scene_changed), the songs go back to the
+// game (sp_give_songs) and the screen starts its own again.
 #include "sound_player.h"
 
 #include <algorithm>
@@ -41,9 +42,9 @@ constexpr int kRequestFrames = 600;
 // What each song is, found by running the game through its screens and by reading the code that asks for songs
 // (func_800ABE60 for the menus, func_800BCD30 for the scenes around a match, func_800AF978 for the match's song, which
 // func_80090030 plays). seen: heard on that screen in a run; otherwise read from the code only.
-enum class SongKind { Bgm, MenuBgm, Entrance, Unused, Unclear };
+enum class SongKind { Bgm, MenuBgm, Entrance, Unused, Misc };
 
-constexpr const char* kKindNames[] = { "BGM", "Menu BGM", "Entrance", "Unused", "Unclear" };
+constexpr const char* kKindNames[] = { "BGM", "Menu BGM", "Entrance", "Unused", "Misc." };
 
 struct SongInfo {
     SongKind kind;
@@ -71,14 +72,14 @@ constexpr std::array<SongInfo, SP_SONGS> kSongs = { {
     { SongKind::MenuBgm, "The screen after a match", false },
     { SongKind::Entrance, "The first wrestler's walk-out (and the third in a battle royal)", true },
     { SongKind::Entrance, "The second wrestler's walk-out (and the fourth in a battle royal)", true },
-    { SongKind::Unclear, "An after-match scene that shows the opponents", false },
+    { SongKind::Misc, "An after-match scene that shows the opponents", false },
     { SongKind::Bgm, "Winning a title: the ceremony and the screen after it", false },
     { SongKind::MenuBgm, "The screen after a match in Championship", false },
     { SongKind::Unused, "The game never asks for it", false },
 } };
 
 // The filter's choices: all, then each kind.
-constexpr const char* kFilterNames[] = { "All", "BGM", "Menu BGM", "Entrance", "Unused", "Unclear" };
+constexpr const char* kFilterNames[] = { "All", "BGM", "Menu BGM", "Entrance", "Unused", "Misc." };
 
 class SoundPlayerWindow : public Ship::GuiWindow {
   public:
@@ -92,6 +93,13 @@ class SoundPlayerWindow : public Ship::GuiWindow {
     // the game when the player's has ended.
     void UpdateElement() override {
         if (sound_music() == nullptr) {
+            return;
+        }
+        // A new screen plays its own song: the player's fades out and the songs go back to the game.
+        if ((mWanted > 0 || mPlaying > 0) && sp_scene_changed()) {
+            sp_give_songs(mFade);
+            mWanted = 0;
+            mPlaying = 0;
             return;
         }
         if (mWanted > 0) {
@@ -142,7 +150,7 @@ class SoundPlayerWindow : public Ship::GuiWindow {
         } else if (mWanted > 0) {
             ImGui::Text("Starting song %d", mWanted);
         } else if (sp_song_playing() && current > 0) {
-            ImGui::Text("The game plays song %d", current);
+            ImGui::Text("Ingame is playing Song %d", current);
         } else {
             ImGui::TextDisabled(sp_song_playing() ? "A song is fading out" : "No song is playing");
         }

@@ -19,6 +19,7 @@
 #include "audio/sound.h"
 #include "game.h"
 #include "game_sdk.h"
+#include "game_vars.h"
 
 static GameSdkHooks g_hooks;
 static unsigned g_plugged = 1;
@@ -731,14 +732,42 @@ void osWritebackDCacheAll(void) {
 /* The game loads every song into one buffer of this size (D_800487F0) before it starts it. */
 #define SONG_BUFFER 0x8000
 
-/* The Sound Player's hold on the songs (game_sdk_hold_songs). */
+/* The Sound Player's hold on the songs (game_sdk_hold_songs), and the screen the game was on when it took them: the
+ * menu, the overlay, and the song that screen asks for (-1 until it has asked), with whether it has asked for another
+ * since (game_sdk_scene_changed). */
 static int g_hold_songs;
 static int g_player_calls;
 static uint32_t g_held_song;
+static int g_scene_menu;
+static int g_scene_overlay;
+static int g_scene_song = -1;
+static int g_scene_song_changed;
 
 void game_sdk_hold_songs(int hold) {
     g_hold_songs = hold;
     g_held_song = 0;
+    g_scene_menu = D_80038A90;
+    g_scene_overlay = game_vars_overlay();
+    g_scene_song = -1;
+    g_scene_song_changed = 0;
+}
+
+/* The game's func_8000E55C calls it with the song a screen asks for (port.h). Only the game's own calls count; the
+ * Sound Player's go through func_8000E55C too. */
+void port_song_asked(int32_t song) {
+    if (!g_hold_songs || g_player_calls) {
+        return;
+    }
+    if (g_scene_song < 0) {
+        g_scene_song = song;
+    } else if (song != g_scene_song) {
+        g_scene_song_changed = 1;
+    }
+}
+
+int game_sdk_scene_changed(void) {
+    return g_hold_songs &&
+           (g_scene_song_changed || D_80038A90 != g_scene_menu || game_vars_overlay() != g_scene_overlay);
 }
 
 void game_sdk_player_calls(int on) {

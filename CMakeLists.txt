@@ -396,7 +396,7 @@ if(TD_GAME_CODE)
 
         # The SDK functions the developer program's files call and the port does not provide yet (src/game_sdk.c).
         add_library(td_game_sdk STATIC src/game_sdk.c)
-        target_link_libraries(td_game_sdk PUBLIC td_core)
+        target_link_libraries(td_game_sdk PUBLIC td_core td_game_vars)
         td_strict(td_game_sdk)
     endif()
 endif()

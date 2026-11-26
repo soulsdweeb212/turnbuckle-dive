@@ -28,6 +28,7 @@ s32 MusHandleAsk(u32 handle);
 void game_sdk_hold_songs(int hold);
 void game_sdk_player_calls(int on);
 u32 game_sdk_held_song(void);
+int game_sdk_scene_changed(void);
 
 extern s16 D_80030D0C[]; /* the song table: a resource id for each song number */
 extern s16 D_80036748;   /* the song last asked for */
@@ -63,6 +64,10 @@ int sp_request_song(int song, int fade) {
     func_8000E55C(song, (s16)fade, 0x50);
     game_sdk_player_calls(0);
     return D_80036748 == song && game_sdk_held_song() != 0;
+}
+
+int sp_scene_changed(void) {
+    return game_sdk_scene_changed();
 }
 
 int sp_held_song_playing(void) {
