@@ -110,7 +110,9 @@ The steps below have the same names as on GitHub.
 4. *Configure (preset "windows-relwithdebinfo")*: LibUltraShip's CMake downloads vcpkg into `build/_vcpkg` and has it
    build (or unzip) the libraries, then everything else happens as on Linux.
 5. *Save the libraries vcpkg built*: stores the zips for the next run, even if a later step fails.
-6. *Build*, 7. *Run the tests*, 8. *Check hello's picture*: as on Linux. On Windows, hello draws with Direct3D 11.
+6. *Build*, 7. *Run the tests*, 8. *Check hello's picture*: as on Linux. On Windows, hello draws with Direct3D 11
+   (Windows' software renderer): the runner has no OpenGL driver, and a program on Windows draws with OpenGL unless
+   its settings file names another backend, so the step first writes `hello.cfg.json` naming DirectX 11.
 9. *Show LibUltraShip's log*, only when a step failed. On Windows, LibUltraShip writes its messages to
    `logs/hello.log` next to hello rather than to the step's output, so this step prints that file.
 
@@ -308,8 +310,9 @@ the libraries vcpkg builds are static (`x64-windows-static`), and so is the C li
 first (no Visual C++ redistributable). The `.exe` is a console program: a console window opens beside the game with its
 messages. It keeps its files (the archive, settings, saves, logs) in its own folder, so the zip is unpacked into a
 folder that can be written to. It draws with OpenGL, as on Linux (`src/context.cpp` writes that into a new settings
-file); LibUltraShip's DirectX 11 window stays on offer in the settings menu. CI's checks run without a window, so
-only a person starting the `.exe` on Windows tries the window code.
+file); LibUltraShip's DirectX 11 window stays on offer in the settings menu. CI's Windows check of hello draws with
+DirectX 11, since GitHub's Windows runner has no OpenGL driver, so only a person starting the `.exe` on Windows tries
+its OpenGL window.
 
 **For a player who starts the program by double-clicking it**, on either system, there is no terminal to read its
 messages in, so when the program cannot start the game (no ROM, or not the supported one) it also shows the message in

@@ -119,11 +119,16 @@ jobs:
         run: ctest --preset windows-relwithdebinfo
 
       - name: Check hello's picture
-        # Same check as on Linux; here hello draws with Direct3D 11 (Windows' software renderer on this machine). Some
-        # LibUltraShip errors open a message box that nobody can close here, so the step is stopped after 2 minutes.
+        # Same check as on Linux; here hello draws with Direct3D 11 (Windows' software renderer on this machine). This
+        # machine has no OpenGL driver, and on Windows a program draws with OpenGL unless its settings file names
+        # another backend (src/context.cpp), so the step first writes hello's settings file with LibUltraShip's
+        # DirectX 11 backend (id 1). Some LibUltraShip errors open a message box that nobody can close here, so the
+        # step is stopped after 2 minutes.
         working-directory: build/windows-relwithdebinfo
         timeout-minutes: 2
-        run: .\hello.exe --check --frames 30
+        run: |
+          Set-Content -Path hello.cfg.json -Value '{ "Window": { "Backend": { "Id": 1 } } }'
+          .\hello.exe --check --frames 30
 
       - name: Show LibUltraShip's log (only when a step failed)
         # On Windows, LibUltraShip writes its messages to this file next to hello rather than to the step's output.
