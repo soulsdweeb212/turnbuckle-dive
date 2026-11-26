@@ -641,11 +641,12 @@ if(TD_BUILD_HELLO)
     include(cmake/libultraship.cmake)
 
     # What the programs that open a LibUltraShip window share: its start-up (src/context.cpp), drawing and checking
-    # the game's picture (src/frame.cpp), and the debug menu (src/debug.cpp). PUBLIC: what links td_window also gets
-    # LibUltraShip and these settings. LibUltraShip keeps its GBI choice private; code that builds display lists must
-    # use the same one. Its headers include <windows.h> on Windows, whose min and max macros would break std::min and
-    # std::max. f3d_o2r: the programs open f3d.o2r, LibUltraShip's shaders, when they start.
-    add_library(td_window STATIC src/context.cpp src/frame.cpp src/debug.cpp src/pad_ports.cpp)
+    # the game's picture (src/frame.cpp), the debug menu (src/debug.cpp), a port of its own for each game pad
+    # (src/pad_ports.cpp) and the picture for the game's monitors (src/screen_copy.cpp). PUBLIC: what links td_window
+    # also gets LibUltraShip and these settings. LibUltraShip keeps its GBI choice private; code that builds display
+    # lists must use the same one. Its headers include <windows.h> on Windows, whose min and max macros would break
+    # std::min and std::max. f3d_o2r: the programs open f3d.o2r, LibUltraShip's shaders, when they start.
+    add_library(td_window STATIC src/context.cpp src/frame.cpp src/debug.cpp src/pad_ports.cpp src/screen_copy.cpp)
     target_link_libraries(td_window PUBLIC libultraship)
     target_include_directories(td_window PUBLIC src)
     target_compile_definitions(td_window PUBLIC F3DEX_GBI_2 $<$<PLATFORM_ID:Windows>:NOMINMAX>)
@@ -670,6 +671,13 @@ if(TD_BUILD_HELLO)
     target_link_libraries(test_pad_ports PRIVATE td_window)
     td_strict(test_pad_ports)
     add_test(NAME pad_ports COMMAND test_pad_ports)
+
+    # How a frame's display list is read for the monitors (src/screen_copy.h), with lists made by the test: no window
+    # needed (tests/screen_copy/main.cpp says what it checks).
+    add_executable(test_screen_copy tests/screen_copy/main.cpp)
+    target_link_libraries(test_screen_copy PRIVATE td_window)
+    td_strict(test_screen_copy)
+    add_test(NAME screen_copy COMMAND test_screen_copy)
 
     if(TARGET td_game_all)
         # The developer match's window, the Match Inspector (src/dev/inspector.cpp): turnbuckle-dive --dev-match opens

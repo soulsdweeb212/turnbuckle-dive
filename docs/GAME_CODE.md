@@ -382,6 +382,31 @@ Fast3D decodes each texture once and keeps it; a texture whose bytes the game ch
 is compiled" above, and LibUltraShip patch 0009). While the match is paused, the window draws the same
 frame's list again at each of its own frames.
 
+### The monitors
+
+Some screens show the game's own picture on a screen inside the picture: the big screen behind the menus from the
+arena select to the rules, and the screens of the entrance sets of Souled Out, Bash at the Beach and Halloween Havoc,
+which show the wrestlers walking out. The N64 draws each frame into one of three framebuffers in memory, 480 x 240
+pixels of RGBA16, in turn (the decompilation's `D_8002EEB0` holds their addresses; `func_80002CC4` takes them in
+turn). A monitor is a grid of 6 x 12 squares, each with a texture that `func_80091718` loads from the framebuffer the
+frame before was drawn into (the menus keep its address in `D_800E9F80`, from the frame record, in `func_800C5214`);
+the squares' texture coordinates run over the whole 480 x 240 picture, so together they show all of it. The menus'
+full-screen flash and fade (`emitFullscreenOverlay99908`) load the same framebuffer whole.
+
+Fast3D draws on the graphics card and never writes those framebuffers, so without help the monitors would show what
+the game cleared them to. After Fast3D has drawn a frame whose list loads a texture from a framebuffer, the window
+(`src/screen_copy.h`, called from `src/dev/inspector.cpp`) copies the picture it drew into the framebuffer that frame
+was drawn into, as the N64 keeps it: 480 x 240, RGBA16 with the biggest byte first, and the alpha bit set (on the N64
+that bit is the pixel's coverage, full wherever the frame drew; the monitors blend by it). The next frame's monitor
+then loads it with the game's own commands, unchanged. With OpenGL, Fast3D shrinks the picture into a framebuffer of
+its own of 480 x 240 on the graphics card, and that is read back; with Direct3D 11, the read-back shrinks Fast3D's game
+picture itself. These are the renderer's own copy and read-back, the ones behind LibUltraShip's `G_COPYFB` and
+`G_READFB` commands. The copy is made while frames read a framebuffer and for two seconds after the
+last one did, so a monitor that comes back into view finds a fresh picture; at other times the window reads nothing
+back. Only the first frame of a monitor's first appearance shows an older picture. On Direct3D 11 a picture that
+Fast3D draws straight into the window (a window exactly the picture's shape, without anti-aliasing) cannot be read
+back, and the monitors keep their last picture. The test `screen_copy` checks how a frame's list is read for this.
+
 ### The Match Inspector
 
 The Match Inspector (`src/dev/inspector.cpp`) is a window over the picture, hidden at first; F5 shows and hides it. It

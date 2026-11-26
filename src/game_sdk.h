@@ -95,6 +95,11 @@ int game_sdk_sram_file(const char *path);
  * runs on after the hand-off; a present hook can draw it as often as it likes. */
 const void *game_sdk_frame(uint32_t *count, uint32_t *tasks);
 
+/* The addresses of the game's three framebuffers (D_8002EEB0, game.h): its frames are drawn into them in turn, and its
+ * monitors read the one the frame before was drawn into, which the window fills with that frame's picture
+ * (src/screen_copy.h). */
+void game_sdk_framebuffers(uint8_t *out[3]);
+
 #ifdef __cplusplus
 }
 #endif

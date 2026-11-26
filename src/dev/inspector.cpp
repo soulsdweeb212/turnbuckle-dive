@@ -48,6 +48,7 @@
 #include "costume_colours.h"
 #include "move_list.h"
 #include "pad_ports.h"
+#include "screen_copy.h"
 #include "player_console.h"
 #include "audio/sound_output.h"
 #include "sound_player.h"
@@ -451,7 +452,13 @@ void DrawWindowFrame() {
         }
     }
     if (count != 0) {
-        window->GetInterpreterWeak().lock()->Run(static_cast<Gfx*>(const_cast<void*>(frame)), {});
+        auto interp = window->GetInterpreterWeak().lock();
+        td::Framebuffers framebuffers;
+
+        interp->Run(static_cast<Gfx*>(const_cast<void*>(frame)), {});
+        // The monitors of the menus and of some entrance sets show the frame before (src/screen_copy.h).
+        game_sdk_framebuffers(framebuffers.at);
+        td::CopyPictureForMonitors(*interp, static_cast<const Gfx*>(frame), framebuffers);
     } else {
         window->RunGuiOnly();
     }

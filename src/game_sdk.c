@@ -246,6 +246,14 @@ const void *game_sdk_frame(uint32_t *count, uint32_t *tasks) {
     return g_frame;
 }
 
+void game_sdk_framebuffers(uint8_t *out[3]) {
+    int i;
+
+    for (i = 0; i < 3; i++) {
+        out[i] = (uint8_t *)D_8002EEB0[i];
+    }
+}
+
 static void sram_flush(void); /* the save memory (below) */
 
 void port_present(int32_t kind) {

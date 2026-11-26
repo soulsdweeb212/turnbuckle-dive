@@ -124,5 +124,8 @@ void port_gfx_submit(const struct Gfx *list, uint32_t count, int32_t last);
  * tools/game_vars.py writes into the build folder (src/game_vars.h). */
 extern uint32_t *D_800482E0;
 extern uint32_t *D_800482E4;
+/* And the addresses of the game's three framebuffers, which the window copies the picture into for the monitors
+ * (src/screen_copy.h). */
+extern void *D_8002EEB0[];
 
 #endif
