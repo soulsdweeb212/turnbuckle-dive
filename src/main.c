@@ -180,13 +180,14 @@ int main(int argc, char **argv) {
                             "(docs/GAME_CODE.md, \"Every file of the developer program\")\n");
             return 1;
 #endif
+        } else if (strcmp(argv[i], "--headless") == 0) {
+            /* In every build: a build without the game's files takes it too, so its tests can pass it (rom_missing). */
+            headless = 1;
 #ifdef TD_DEV_MATCH
         } else if (strcmp(argv[i], "--wr-log") == 0 && i + 1 < argc) {
             match_options.wr_log = argv[++i];
         } else if (strcmp(argv[i], "--res-log") == 0 && i + 1 < argc) {
             match_options.res_log = argv[++i];
-        } else if (strcmp(argv[i], "--headless") == 0) {
-            headless = 1;
         } else if (strcmp(argv[i], "--frames") == 0 && i + 1 < argc) {
             play_frames = (unsigned)strtoul(argv[++i], NULL, 0);
         } else if (strcmp(argv[i], "--no-splash") == 0) {
