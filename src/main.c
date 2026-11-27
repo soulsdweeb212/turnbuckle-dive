@@ -129,7 +129,7 @@ int main(int argc, char **argv) {
     unsigned capture_frames[64];
     unsigned capture_count = 0;
 #ifdef TD_DEV_MATCH
-    DevMatchOptions match_options = { NULL, NULL, 0, 0, 0, NULL, NULL, 0, 0, 0, NULL, NULL, 0, 0, NULL, 0, 0 };
+    DevMatchOptions match_options = { NULL, NULL, 0, 0, 0, NULL, NULL, 0, 0, 0, NULL, NULL, 0, 0, NULL, 0, 0, 0, 0 };
 #endif
     RomStatus status;
     Rom rom;
@@ -201,6 +201,10 @@ int main(int argc, char **argv) {
         } else if (strcmp(argv[i], "--time-limit") == 0 && i + 1 < argc) {
             int minutes = atoi(argv[++i]);
             match_options.time_limit = minutes == 0 ? -1 : minutes;
+        } else if (strcmp(argv[i], "--battle-royal") == 0) {
+            match_options.battle_royal = 1;
+        } else if (strcmp(argv[i], "--leak-per-frame") == 0 && i + 1 < argc) {
+            match_options.leak_per_frame = atoi(argv[++i]);
         } else if (strcmp(argv[i], "--matches") == 0 && i + 1 < argc) {
             match_options.matches = atoi(argv[++i]);
         } else if (strcmp(argv[i], "--record-pads") == 0 && i + 1 < argc) {
@@ -241,7 +245,7 @@ int main(int argc, char **argv) {
         } else if (strncmp(argv[i], "--", 2) == 0 || rom_arg != NULL) {
             fprintf(stderr, "Usage: turnbuckle-dive [--archive FILE] [--extract FILE | --res ID | --sound-dump DIR | --music-dump DIR | --sound-replay DIR | --dev-boot FRAMES [--no-splash] [--wr-log FILE] [--sound-lockstep DIR] [--pad-script FILE] [--record-pads FILE] [--replay-pads FILE] [--no-idle-randoms] | --dev-match [--headless] [--sound-lockstep DIR] [--wr-log FILE] [--res-log FILE] [--seed N] "
                             "[--no-watchdog] "
-                            "[--hide-group N]... [--screenshot FILE [--screenshot-frame N | --screenshot-every N]] [--dump-frame N FILE] [--no-idle-randoms] [--capture-match-frames N,N,... DIR] [--players 0|1] [--time-limit MINUTES] [--matches N] [--record-pads FILE] [--replay-pads FILE] [--pad-script FILE] [--pad-bot SEED]] [ROM]\n"
+                            "[--hide-group N]... [--screenshot FILE [--screenshot-frame N | --screenshot-every N]] [--dump-frame N FILE] [--no-idle-randoms] [--capture-match-frames N,N,... DIR] [--players 0|1] [--time-limit MINUTES] [--battle-royal] [--leak-per-frame BYTES] [--matches N] [--record-pads FILE] [--replay-pads FILE] [--pad-script FILE] [--pad-bot SEED]] [ROM]\n"
                             "With no mode, the game starts in its window, from its archive, which the first launch writes from the ROM;\n"
                             "--frames N stops it after N frames and --headless runs it without the window (for checks).\n");
             return 1;
@@ -409,7 +413,7 @@ int main(int argc, char **argv) {
                 static uint8_t faces[SPLASH_FACES * SPLASH_FACE_BYTES];
 
                 if (splash_faces_load(&rom, faces) == 0) {
-                    dev_inspector_splash(faces, TD_COMMIT);
+                    dev_inspector_splash(faces);
                     dev_inspector_skip_frames(BOOT_LOGOS_END);
                 }
             }

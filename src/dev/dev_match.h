@@ -52,6 +52,12 @@ typedef struct {
     /* The time limit: 0 for the default, 5 minutes; -1 for none (the match then ends only by a fall, a count-out and
      * the like); otherwise 10, 15, 30 or 60 minutes. */
     int time_limit;
+    /* 1: a battle royal of four wrestlers, each on their own (Sting, Hollywood Hogan, Giant and Ultimo Dragon), with
+     * the settings the menus write for one; 0: the singles match, Sting against Hollywood Hogan. */
+    int battle_royal;
+    /* Bytes to allocate at every frame and never free: a leak on purpose, which the memory check must catch (the test
+     * dev_match_detects_leak); 0 for none. */
+    int leak_per_frame;
 } DevMatchOptions;
 
 /* Runs one CPU-vs-CPU match on the checked ROM and checks the G6 gate (docs/GAME_CODE.md, "The developer match"):

@@ -55,7 +55,7 @@ different after any change; a digest is such a fingerprint taken over many piece
 | `rom_missing` | `turnbuckle-dive`, given a ROM path that does not exist, starts and says "file not found". |
 | `rom_loader` | The game's own loader loads all 7657 resources of your ROM (its textures, models, animations and the rest of the game's data), and their digest is the one the test knows ([GAME_CODE.md](GAME_CODE.md) explains it). |
 | `rom_loader_detects_change` | The same with one byte of one resource changed after loading. This test passes when `rom_loader` reports that the digest does not match. |
-| `dev_match` | The developer match ([GAME_CODE.md](GAME_CODE.md), "The developer match") plays a whole CPU-against-CPU match without a window, writing the wrestler log, and checks the G6 gate: the match ends (phase 4) and never goes past its end, within 20000 frames, its first loads are resources 0x126 to 0x12A in order, and no frame takes 3 seconds. |
+| `dev_match` | The developer match ([GAME_CODE.md](GAME_CODE.md), "The developer match") plays a whole CPU-against-CPU match without a window, writing the wrestler log, and checks the G6 gate: the match ends (phase 4) and never goes past its end, within 20000 frames, its first loads are resources 0x126 to 0x12A in order, and no frame takes 3 seconds; and the memory check: the heap must not grow after the match's first minute ([GAME_CODE.md](GAME_CODE.md), "The memory check"). |
 | `dev_match_again` | The same match again, into a second log. |
 | `dev_match_other_seed` | The same with the random seed started elsewhere, a different match, into a third log. |
 | `dev_match_repeatable` | `tools/wr_log.py` compares the first two logs, every wrestler at every frame: they must be the same. |
@@ -68,6 +68,10 @@ different after any change; a digest is such a fingerprint taken over many piece
 | `dev_match_two_matches_same` | The second match's log must equal the first's, from its second entry on. |
 | `dev_match_pause_restart` | A pad script pauses the match and chooses the pause menu's restart: the match must start again and end. |
 | `dev_match_pinfall` | The pad bot (seed 4), no time limit: the match must end with a wrestler pinned. |
+| `dev_match_royal` | A battle royal of four wrestlers, each on their own, all played by the CPU, with a 10-minute limit (`--battle-royal --time-limit 10`), with the same checks as `dev_match`, into a log. |
+| `dev_match_royal_again` | The same battle royal again, into a second log. |
+| `dev_match_royal_repeatable` | The two battle royal logs must be the same, every wrestler at every frame. |
+| `dev_match_detects_leak` | A match that allocates 64 bytes at every frame and never frees them (`--leak-per-frame 64`). This test passes when the memory check fails the match, which shows that the check catches a leak. |
 | `game_vars` | Every game file of the developer program links with the game's variables, and the variables start as on the N64: each value in the PC's byte order equals the ROM's, each address table holds what its N64 addresses name, and each handler table entry is the function the N64 calls. |
 | `game_vars_detects_change` | The same with one value left in the N64's byte order. This test passes when the check reports it. |
 | `gdb_knows_game_macros` | gdb, reading `turnbuckle-dive`, prints the game's macro `WR_FLAG_LEGAL`: the debug information holds the game's macros. Only in a Debug build, with gdb installed. |

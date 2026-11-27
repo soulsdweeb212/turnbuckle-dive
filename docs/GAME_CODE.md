@@ -368,6 +368,31 @@ presses A on controller 1. It needs the build with every game file of the develo
 ./build/debug/turnbuckle-dive --dev-match
 ```
 
+`--battle-royal` plays a battle royal instead: Sting, Hollywood Hogan, Giant and Ultimo Dragon, each on their own, all
+four played by the CPU (with `--players 1`, Sting on controller 1). It writes what a run of the menus to a battle royal
+(Special Match, Battle Royal) writes, as the debugger showed it at the match's start: match type 3, the battle royal's
+flag (0x400) and no team bits, all four slots in the match, no count-out but the rule that a wrestler thrown over the
+top rope is out, run-ins off, and the menus' own records of the four slots. `--time-limit 10` gives it ten minutes.
+The frames a match may take before it counts as hung grow with its limit (the game's clock runs at 30 frames a second).
+
+```
+./build/debug/turnbuckle-dive --dev-match --headless --battle-royal --time-limit 10
+```
+
+### The memory check
+
+Every 300 frames the developer match reads how much memory the program holds (`src/dev/dev_memory.c`): the heap, the
+bytes that malloc and new have handed out and not had back (on Linux what the C library says, or AddressSanitizer in
+the asan preset; on Windows the busy blocks of the process's heap), and the program's resident memory. A headless run
+adds the heap to its line every 300 frames, and at the end says how long its frames took and how the heap went: one
+minute into the match, when the match has loaded what it starts with, at the end, and at most. In a headless run the
+heap must not hold more than 256 KiB above its value one minute in, or the match fails: memory taken again and again
+and never given back is a leak. LeakSanitizer (the asan preset) finds memory that nothing points to any more when the
+program ends; this check also finds memory the program still points to but keeps taking, such as a list that grows at
+every frame, and it works on Windows too. A match in the window only reports the heap once a minute, since the
+window's menus take memory as they open. `--leak-per-frame BYTES` allocates that much at every frame and never frees
+it, to show that the check catches a leak (the test `dev_match_detects_leak`).
+
 ### The picture
 
 The window shows the match as the game draws it. On the N64 a render thread builds each frame's display lists and
@@ -942,9 +967,7 @@ from the next start or Reset:
 
 - **Original** (0): as on the N64, the game's legal screen first.
 - **Turnbuckle Dive** (the default, 1): the port's splash screen in place of the legal screen and the THQ logo, for about four
-  seconds: a cube turning above the port's name, "A NATIVE PORT" and the build, the commit the program was built from,
-  such as "BUILD AD9DDB0" (`TD_COMMIT`, which `cmake/commit.cmake` works out at every build; the program's first line
-  prints it too). Pressing any button on any controller ends it early (a button already held when it starts counts once it has been let go). It is not part of the game. The
+  seconds: a cube turning above the port's name and "A NATIVE PORT". Pressing any button on any controller ends it early (a button already held when it starts counts once it has been let go). It is not part of the game. The
   boot's frames start after it, and the window leaves out the first 220 (`dev_inspector_skip_frames`): the legal screen
   (to frame 92), its cross-fade into the THQ logo (to 124), the THQ logo (to 188) and its cross-fade into the Asmik Ace
   logo (to 220), the same on every run. The game runs them at once, so the Asmik Ace logo follows the splash.

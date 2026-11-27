@@ -10,14 +10,13 @@
 //
 // The text is drawn with a small pixel font of the port's own, 5x7 dots for each letter: each dot is a rectangle
 // filled in fill mode: 4x3 picture pixels for the name and 3x2 for the line under it, which look square on screen, and
-// 2x1 for the version and "PRESS START".
+// 2x1 for "PRESS START".
 // The splash fades in from black and out to black: every colour of the frame is scaled by how far the fade has gone.
 #include "splash.h"
 
 #include <algorithm>
 #include <cctype>
 #include <cmath>
-#include <cstdio>
 #include <cstring>
 
 #include "fast/Fast3dWindow.h"
@@ -67,19 +66,6 @@ constexpr Glyph kFont[] = {
     { 'X', { "#...#", "#...#", ".#.#.", "..#..", ".#.#.", "#...#", "#...#" } },
     { 'Y', { "#...#", "#...#", ".#.#.", "..#..", "..#..", "..#..", "..#.." } },
     { 'Z', { "#####", "....#", "...#.", "..#..", ".#...", "#....", "#####" } },
-    { '0', { ".###.", "#...#", "#..##", "#.#.#", "##..#", "#...#", ".###." } },
-    { '1', { "..#..", ".##..", "..#..", "..#..", "..#..", "..#..", ".###." } },
-    { '2', { ".###.", "#...#", "....#", "...#.", "..#..", ".#...", "#####" } },
-    { '3', { "####.", "....#", "....#", ".###.", "....#", "....#", "####." } },
-    { '4', { "...#.", "..##.", ".#.#.", "#..#.", "#####", "...#.", "...#." } },
-    { '5', { "#####", "#....", "####.", "....#", "....#", "#...#", ".###." } },
-    { '6', { "..##.", ".#...", "#....", "####.", "#...#", "#...#", ".###." } },
-    { '7', { "#####", "....#", "...#.", "..#..", ".#...", ".#...", ".#..." } },
-    { '8', { ".###.", "#...#", "#...#", ".###.", "#...#", "#...#", ".###." } },
-    { '9', { ".###.", "#...#", "#...#", ".####", "....#", "...#.", ".##.." } },
-    { '.', { ".....", ".....", ".....", ".....", ".....", ".##..", ".##.." } },
-    { '-', { ".....", ".....", ".....", ".###.", ".....", ".....", "....." } },
-    { '/', { ".....", "....#", "...#.", "..#..", ".#...", "#....", "....." } },
 };
 
 const Glyph* FindGlyph(char c) {
@@ -207,7 +193,7 @@ void SetMatrices(float yaw, float pitch, float turn[3][3]) {
 }
 
 // The frame's display list for splash frame `frame`, faded by fade (0 to 1).
-void BuildFrame(int frame, float fade, const uint8_t* faces, const char* version) {
+void BuildFrame(int frame, float fade, const uint8_t* faces) {
     Gfx* g = sFrame;
     float turn[3][3];
     float t = static_cast<float>(frame) / 60.0f;
@@ -260,7 +246,6 @@ void BuildFrame(int frame, float fade, const uint8_t* faces, const char* version
     // The text.
     static const int kGold[3] = { 255, 204, 64 };
     static const int kWhite[3] = { 224, 224, 232 };
-    static const int kGrey[3] = { 120, 128, 150 };
     static const int kShadow[3] = { 90, 16, 16 };
     static const int kDark[3] = { 8, 8, 20 };
     gDPPipeSync(g++);
@@ -268,7 +253,6 @@ void BuildFrame(int frame, float fade, const uint8_t* faces, const char* version
     gDPSetRenderMode(g++, G_RM_NOOP, G_RM_NOOP2);
     g = DrawShadowedText(g, "TURNBUCKLE DIVE", 168, 4, 3, kGold, kShadow, fade);
     g = DrawShadowedText(g, "A NATIVE PORT", 196, 3, 2, kWhite, kDark, fade);
-    g = DrawText(g, version, 214, 2, 1, FadedFill(kGrey[0], kGrey[1], kGrey[2], fade));
     if (frame > kFade && (frame / 30) % 2 == 0) {
         g = DrawText(g, "PRESS START", 226, 2, 1, FadedFill(kWhite[0], kWhite[1], kWhite[2], fade));
     }
@@ -279,13 +263,11 @@ void BuildFrame(int frame, float fade, const uint8_t* faces, const char* version
 
 } // namespace
 
-bool RunSplash(const std::shared_ptr<Fast::Fast3dWindow>& window, const uint8_t* faces, const char* version,
+bool RunSplash(const std::shared_ptr<Fast::Fast3dWindow>& window, const uint8_t* faces,
                const std::function<bool()>& pressed) {
     bool armed = !pressed(); // a button held from before the splash does not end it
     int end = kFrames;       // the frame the fade out ends at
-    char label[64];
 
-    std::snprintf(label, sizeof(label), "BUILD %s", version);
     for (int frame = 0; frame < end; frame++) {
         float fade = std::min(1.0f, static_cast<float>(frame) / kFade);
 
@@ -299,7 +281,7 @@ bool RunSplash(const std::shared_ptr<Fast::Fast3dWindow>& window, const uint8_t*
             end = frame + kFade; // fade out from here
         }
         armed = armed || !down;
-        BuildFrame(frame, fade, faces, label);
+        BuildFrame(frame, fade, faces);
         window->GetMouseStateManager()->StartFrame();
         window->GetGui()->StartDraw();
         window->StartFrame();

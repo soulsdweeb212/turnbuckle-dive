@@ -596,13 +596,13 @@ extern "C" void dev_inspector_frame(void* user) {
     ReadPads();
 }
 
-extern "C" void dev_inspector_splash(const uint8_t* faces, const char* version) {
+extern "C" void dev_inspector_splash(const uint8_t* faces) {
     if (gLus.window == nullptr) {
         return;
     }
     // The splash turns its cube at 60 frames a second; the game's frames go at 30.
     gLus.window->SetTargetFps(60);
-    bool open = td::RunSplash(gLus.window, faces, version, [] {
+    bool open = td::RunSplash(gLus.window, faces, [] {
         auto deck = gLus.ctx->GetChildren().GetFirst<LUS::ControlDeck>();
         OSContPad pads[MAXCONTROLLERS] = {};
 

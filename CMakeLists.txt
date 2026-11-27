@@ -428,6 +428,7 @@ if(TARGET td_game_all)
     target_include_directories(td_dev_records PRIVATE src/dev)
     target_compile_options(td_dev_records PRIVATE ${TD_GAME_WARNINGS})
     target_sources(turnbuckle-dive PRIVATE src/resources.c src/splash_faces.c src/audio/music_dump.c src/dev/dev_match.c
+                   src/dev/dev_memory.c
                    src/dev/dev_boot.c
                    src/dev/dev_pads.c $<TARGET_OBJECTS:td_dev_records>
                    $<TARGET_OBJECTS:td_game_all>)
@@ -507,7 +508,8 @@ if(BUILD_TESTING)
         if(TARGET td_game_all)
             # The developer match (src/dev/dev_match.c) checks the G6 gate itself and exits with 1 when a check fails:
             # the match ends in phase 4 and never past it, within 20000 frames, its first loads are resources 0x126 to
-            # 0x12A, and no frame takes 3 seconds. It runs twice and writes the wrestler log both times;
+            # 0x12A, no frame takes 3 seconds, and the heap does not grow after the match's first minute (a leak;
+            # docs/GAME_CODE.md, "The developer match"). It runs twice and writes the wrestler log both times;
             # dev_match_repeatable then compares the two logs with tools/wr_log.py, frame by frame, and
             # dev_match_detects_change compares the first with a run whose random seed starts elsewhere, which must
             # differ (it shows that the comparison sees a different match). Without a ROM all four are skipped (77).
@@ -572,6 +574,31 @@ if(BUILD_TESTING)
                 COMMAND turnbuckle-dive --dev-match --headless --players 1 --pad-bot 4 --time-limit 0)
             set_tests_properties(dev_match_pinfall PROPERTIES SKIP_RETURN_CODE 77
                 PASS_REGULAR_EXPRESSION "state 39 \\(pinned\\).*\n(.*\n)*dev-match: passed")
+
+            # A battle royal of four wrestlers, each on their own, with a 10-minute limit: twice as many frames as the
+            # singles match, and four wrestlers' code at once. It runs twice; dev_match_royal_repeatable compares the
+            # two wrestler logs frame by frame.
+            add_test(NAME dev_match_royal COMMAND turnbuckle-dive --dev-match --headless --battle-royal --time-limit 10
+                     --wr-log ${td_wrlog}_royal_a.wrlog)
+            add_test(NAME dev_match_royal_again COMMAND turnbuckle-dive --dev-match --headless --battle-royal
+                     --time-limit 10 --wr-log ${td_wrlog}_royal_b.wrlog)
+            set_tests_properties(dev_match_royal dev_match_royal_again PROPERTIES
+                SKIP_RETURN_CODE 77 FIXTURES_SETUP dev_match_royal_logs)
+            add_test(NAME dev_match_royal_repeatable
+                COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tools/wr_log.py diff ${td_wrlog}_royal_a.wrlog
+                        ${td_wrlog}_royal_b.wrlog)
+            set_tests_properties(dev_match_royal_repeatable PROPERTIES
+                SKIP_RETURN_CODE 77 FIXTURES_REQUIRED dev_match_royal_logs)
+
+            # The memory check must catch a leak: this match allocates 64 bytes at every frame and never frees them,
+            # and must fail with the check's message. In the asan preset LeakSanitizer would report the same blocks
+            # when the program ends, so it is off for this test.
+            add_test(NAME dev_match_detects_leak COMMAND turnbuckle-dive --dev-match --headless --leak-per-frame 64)
+            set_tests_properties(dev_match_detects_leak PROPERTIES SKIP_RETURN_CODE 77
+                PASS_REGULAR_EXPRESSION "FAIL: the heap grew by [0-9]+ KiB after the match's first minute")
+            if(TD_SANITIZE)
+                set_tests_properties(dev_match_detects_leak PROPERTIES ENVIRONMENT "ASAN_OPTIONS=detect_leaks=0")
+            endif()
             if(TD_ORDER_CHECK)
                 # The byte-order check finds no read whose value differs from the N64's in the default match
                 # (docs/TESTING.md, "The byte-order check"). About a minute: every access of the game's code is checked.
