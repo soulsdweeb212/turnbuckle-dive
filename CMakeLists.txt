@@ -661,7 +661,9 @@ if(BUILD_TESTING)
             # read every game file that td_game_all compiles, and compares each call with the function it reaches, as
             # the N64, Linux and 64-bit Windows pass the arguments. It fails when a call would crash or pass a wrong
             # value on a PC, such as the 0 that two game files passed for a pointer, which crashed the Windows build
-            # (2026-11-26). Under a minute; no ROM needed. game_calls_detects_crash runs the checker on tests/calls,
+            # (2026-11-26). Under a minute; no ROM needed (without the ROM's data, the checker reads the two tables of
+            # function addresses it follows from the decompilation's port/call_tables.txt, and with it, it checks that
+            # file against the data). game_calls_detects_crash runs the checker on tests/calls,
             # a small stand-in for the decompilation in which that call is left as it was, and passes when the checker
             # rates it a crash: it shows that the check sees the mistake. The checker's answer is the same on any
             # machine, so the tests run it on Linux only (on Windows it would need clang and Python as well); the

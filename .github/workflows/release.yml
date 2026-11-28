@@ -23,6 +23,8 @@ jobs:
     # the game files the builds compile with the function it reaches, as the N64, Linux and 64-bit Windows pass the
     # arguments, and fails when one would crash or pass a wrong value on a PC. Its answer is the same on any machine,
     # so it runs once, here, and both builds wait for it: such a call stops the release before either file is made.
+    # The runner has no ROM, so the checker reads the two tables of function addresses in the game's data, through
+    # which two calls reach their functions, from the decompilation's port/call_tables.txt.
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:

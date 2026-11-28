@@ -240,6 +240,13 @@ any call rated a crash or a wrong value, with the file and line of each. It runs
 is the same on any machine, and on Windows it would need clang and Python as well. The release workflow runs it before
 it builds either file (docs/CI.md, "Releases").
 
+Two of the game's calls pick the function they call from a list of function addresses in the game's data: that is how
+a CPU wrestler runs the behaviour it chose. That data comes from the ROM, so the decompilation also keeps the names of
+the functions each list holds in `port/call_tables.txt`. Without the ROM (on GitHub, or before the decompilation's
+first build) the checker reads that file. With the ROM, it reads the data itself and fails when the file says
+otherwise, which happens only after one of those functions is renamed; it then prints the command that writes the
+file again (the decompilation's docs/port.md, "Checking the calls between game files").
+
 `game_calls_detects_crash` shows that the check sees the mistake. `tests/calls/decomp` is a small stand-in for the
 decompilation, with only what the checker reads (`build.json`, the file of Nintendo SDK functions, the port's choices
 in `tools/port_filelist.py` and two C files), in which the call that crashed is left as it was. The test passes when

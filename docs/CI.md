@@ -264,7 +264,9 @@ game's archive `revenge.o2r` from it (docs/GAME_CODE.md, "The game's archive"), 
 The recipe is [.github/workflows/release.yml](../.github/workflows/release.yml). It runs when a tag whose name starts
 with `v` is pushed. First, on a Linux runner of its own, it runs the call check (docs/TESTING.md, "The call check")
 over the game files the builds compile: a call that would crash or pass a wrong value on a PC stops the release there,
-before either file is made. Then it builds on a Linux runner and a Windows runner at the same time. On the Linux
+before either file is made. The runner has no ROM, so for the two calls that pick their function from a table of
+function addresses in the game's data, the checker reads what each table holds from the decompilation's
+`port/call_tables.txt`. Then it builds on a Linux runner and a Windows runner at the same time. On the Linux
 runner it:
 
 1. gets this repository and, beside it in `source`, the decompilation's `port-groundwork` branch, as a build on your
