@@ -331,12 +331,14 @@ if(TD_GAME_CODE)
         ERROR_VARIABLE td_match_error)
     set(td_match_files "")
     set(td_committed_files "")
+    set(td_game_list ${TD_GAME_FILES}) # the list file td_game_all compiles, which the test game_calls checks
     if(EXISTS ${TD_GAME_FILES})
         file(STRINGS ${TD_GAME_FILES} td_committed_files ENCODING UTF-8)
         set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${TD_GAME_FILES})
     endif()
     if(td_match_result EQUAL 0)
         file(STRINGS ${TD_MATCH_LIST} td_match_files ENCODING UTF-8)
+        set(td_game_list ${TD_MATCH_LIST})
         file(STRINGS ${TD_MATCH_DEPENDS} td_match_depends ENCODING UTF-8)
         set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${td_match_depends})
         if(NOT td_committed_files STREQUAL td_match_files)
@@ -654,6 +656,33 @@ if(BUILD_TESTING)
             set_tests_properties(game_vars_detects_change PROPERTIES
                 SKIP_RETURN_CODE 77
                 PASS_REGULAR_EXPRESSION "FAIL: main\\.data: .* is 0x[0-9A-F]+ on PC, 0x[0-9A-F]+ in the ROM")
+
+            # The call check (docs/TESTING.md, "The call check"): the decompilation's tools/port_calls.py has clang
+            # read every game file that td_game_all compiles, and compares each call with the function it reaches, as
+            # the N64, Linux and 64-bit Windows pass the arguments. It fails when a call would crash or pass a wrong
+            # value on a PC, such as the 0 that two game files passed for a pointer, which crashed the Windows build
+            # (2026-11-26). Under a minute; no ROM needed. game_calls_detects_crash runs the checker on tests/calls,
+            # a small stand-in for the decompilation in which that call is left as it was, and passes when the checker
+            # rates it a crash: it shows that the check sees the mistake. The checker's answer is the same on any
+            # machine, so the tests run it on Linux only (on Windows it would need clang and Python as well); the
+            # release workflow runs it before it builds either file (docs/CI.md, "Releases").
+            find_program(TD_CLANG clang)
+            if(TD_CLANG AND NOT WIN32)
+                add_test(NAME game_calls
+                    COMMAND ${Python3_EXECUTABLE} -B ${TD_DECOMP}/tools/port_calls.py --clang ${TD_CLANG}
+                            --files-from ${td_game_list}
+                    WORKING_DIRECTORY ${TD_DECOMP})
+                set_tests_properties(game_calls PROPERTIES TIMEOUT 600)
+                add_test(NAME game_calls_detects_crash
+                    COMMAND ${Python3_EXECUTABLE} -B ${TD_DECOMP}/tools/port_calls.py --clang ${TD_CLANG}
+                            --decomp ${PROJECT_SOURCE_DIR}/tests/calls/decomp
+                            --files-from ${PROJECT_SOURCE_DIR}/tests/calls/files.txt)
+                set_tests_properties(game_calls_detects_crash PROPERTIES
+                    PASS_REGULAR_EXPRESSION "poseCaller\\.c:[0-9]+: crash: poseModel \\(A3 ")
+            elseif(NOT WIN32)
+                message(STATUS "Game code: the call check (tests game_calls and game_calls_detects_crash) is left "
+                               "out: it needs clang")
+            endif()
         endif()
     endif()
 endif()

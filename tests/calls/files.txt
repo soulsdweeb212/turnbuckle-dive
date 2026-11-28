@@ -1,0 +1,3 @@
+# The file set of the test game_calls_detects_crash: the two files of the stand-in decompilation in decomp/.
+src/main/poseCaller.c
+src/main/poseModel.c

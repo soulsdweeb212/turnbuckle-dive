@@ -74,6 +74,8 @@ different after any change; a digest is such a fingerprint taken over many piece
 | `dev_match_detects_leak` | A match that allocates 64 bytes at every frame and never frees them (`--leak-per-frame 64`). This test passes when the memory check fails the match, which shows that the check catches a leak. |
 | `game_vars` | Every game file of the developer program links with the game's variables, and the variables start as on the N64: each value in the PC's byte order equals the ROM's, each address table holds what its N64 addresses name, and each handler table entry is the function the N64 calls. |
 | `game_vars_detects_change` | The same with one value left in the N64's byte order. This test passes when the check reports it. |
+| `game_calls` | The call check ("The call check" below): no call in the game files this build compiles would crash or pass a wrong value on a 64-bit PC, Linux or Windows. Needs clang; Linux only; no ROM needed. |
+| `game_calls_detects_crash` | The call check on `tests/calls`, a small stand-in for the decompilation with one call that crashes on 64-bit Windows: the 0 for a pointer that crashed the Windows build. This test passes when the check rates that call a crash. |
 | `gdb_knows_game_macros` | gdb, reading `turnbuckle-dive`, prints the game's macro `WR_FLAG_LEGAL`: the debug information holds the game's macros. Only in a Debug build, with gdb installed. |
 | `gdb_prints_wrestlers` | gdb, with `tools/gdb/wrestler.py`, prints a wrestler record as one readable line, and a state by its name. Same conditions. |
 | `sanitizer_catches_overflow` | Only in the asan preset: a program reads one byte past the wrestler records, and passes when AddressSanitizer reports it with the program's file and line. |
@@ -85,8 +87,8 @@ different after any change; a digest is such a fingerprint taken over many piece
 | `archive_check_guard` | A read inside a packed resource of the archive's ROM image. This test passes when the program stops and says that the archive keeps that data as files. |
 | `first_launch` | The player's launch, run three times with an empty folder of its own, each time booting the game for 300 frames without a window: the first launch must find the ROM, write the game's archive into the folder and boot from it; the second must boot from the archive without writing; after the archive is cut in half, the next launch must write it again. The test deletes the folder at its end. It runs on Linux only, where the folder can be given to the program in `SHIP_HOME` ([GAME_CODE.md](GAME_CODE.md), "The game's archive"). |
 
-Near the end, CTest prints how many passed, `100% tests passed, 0 tests failed out of 34` (35 in the asan and order presets), and
-then the time the tests took. The tests from `rom_loader` on, but for the two gdb tests, need your ROM. When they find none, CTest marks them `***Skipped` instead of `Passed`, still
+Near the end, CTest prints how many passed, `100% tests passed, 0 tests failed out of 42` (43 in the asan and order presets), and
+then the time the tests took. The tests from `rom_loader` on, but for the two gdb tests and the two call checks, need your ROM. When they find none, CTest marks them `***Skipped` instead of `Passed`, still
 counts them in that line, and names them at the very end, under `The following tests did not run:`.
 
 hello's check is not one of these tests: it is run by hand, below.
@@ -216,6 +218,36 @@ match runs.
 
 A finding is fixed in the game file, in a `#ifdef TARGET_PC` version of the line that reads the value the N64 reads
 (the decompilation's docs/port.md, "Byte order on PC").
+
+## The call check
+
+When one function calls another, the two must agree on how each argument travels: in which register or place in
+memory, and in how many bytes. The game's code often declares a function a little differently from how the function
+is written, for example a number where the function takes an address. On the N64 that does no harm, because numbers
+and addresses are both 4 bytes and travel the same way, and the decompilation keeps those declarations because the
+N64 code it must match depends on them. On a 64-bit PC an address is 8 bytes, and Linux and Windows each pass
+arguments their own way, so the same call can hand the function a broken address or a different number. That is what
+crashed the Windows build after about 2,400 frames of a match: two game files passed 0, meaning "no address", as the
+fifth argument, a 4-byte number in their declaration. 64-bit Windows passes the fifth argument and the later ones in
+8 bytes of memory, of which the caller wrote only 4, so the address's other half kept whatever was there. Linux passes
+it in a register, where the 0 arrives whole, so Linux never crashed.
+
+The decompilation's `tools/port_calls.py` finds such calls without running the game. It has clang read every game file
+the port compiles, finds the function each call reaches, works out on the N64, on Linux and on 64-bit Windows where
+each argument travels and how many of its bytes the caller writes and the function reads, and rates each difference:
+a crash, a wrong value, or harmless. The test `game_calls` runs it over the files `td_game_all` compiles and fails on
+any call rated a crash or a wrong value, with the file and line of each. It runs on Linux only: the checker's answer
+is the same on any machine, and on Windows it would need clang and Python as well. The release workflow runs it before
+it builds either file (docs/CI.md, "Releases").
+
+`game_calls_detects_crash` shows that the check sees the mistake. `tests/calls/decomp` is a small stand-in for the
+decompilation, with only what the checker reads (`build.json`, the file of Nintendo SDK functions, the port's choices
+in `tools/port_filelist.py` and two C files), in which the call that crashed is left as it was. The test passes when
+the checker rates that call a crash.
+
+A finding is fixed in the game file that makes the call: a `#ifdef TARGET_PC` declaration with the types of the
+function as it is written, and the N64's own declaration kept for the N64 (the decompilation's docs/port.md,
+"Prototypes on PC").
 
 ## What happens inside a program, from start to end
 

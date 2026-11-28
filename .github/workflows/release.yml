@@ -17,9 +17,40 @@ permissions:
   contents: read
 
 jobs:
+  calls:
+    name: Check the game's calls
+    # The call check (docs/TESTING.md, "The call check"): the decompilation's tools/port_calls.py compares every call in
+    # the game files the builds compile with the function it reaches, as the N64, Linux and 64-bit Windows pass the
+    # arguments, and fails when one would crash or pass a wrong value on a PC. Its answer is the same on any machine,
+    # so it runs once, here, and both builds wait for it: such a call stops the release before either file is made.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Get the decompilation (branch port-groundwork)
+        uses: actions/checkout@v7
+        with:
+          repository: soulsdweeb212/wcw-nwo-revenge
+          ref: port-groundwork
+          path: source
+
+      - name: Install clang, which reads the game's C for the check
+        # Ubuntu 24.04's clang 18, with which the checker was written; the apt retries are the build jobs'.
+        timeout-minutes: 10
+        run: |
+          printf 'Acquire::Retries "5";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\n' |
+            sudo tee /etc/apt/apt.conf.d/80-retries > /dev/null
+          sudo apt-get update --error-on=any
+          sudo apt-get install -y clang
+          clang --version
+
+      - name: Check every call of the game files the builds compile
+        working-directory: source
+        run: python3 -B tools/port_calls.py --files-from port/game_files.txt
+
   linux:
     name: Linux AppImage
     # The AppImage runs on Linux systems with the C library of this Ubuntu (glibc 2.39) or newer.
+    needs: calls
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     outputs:
@@ -111,6 +142,7 @@ jobs:
     # The game's C needs clang-cl (Clang with Visual Studio's options; GitHub's Windows machines have it), and CMake
     # allows one compiler family per build, so clang-cl compiles the C++ too. Everything is linked into the one .exe,
     # with the C library too, so a player needs to install nothing first (no Visual C++ redistributable).
+    needs: calls
     runs-on: windows-2022
     timeout-minutes: 120
     steps:

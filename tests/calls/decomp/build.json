@@ -1,0 +1,8 @@
+{
+  "segments": [{"name": "main", "kind": "code"}],
+  "functions": [
+    {"name": "poseModel", "vram": 2147487744, "seg": "main"},
+    {"name": "poseCaller", "vram": 2147487872, "seg": "main"}
+  ],
+  "symbols": {}
+}
